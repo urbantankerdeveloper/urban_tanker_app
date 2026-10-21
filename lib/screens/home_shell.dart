@@ -70,6 +70,13 @@ class _HomeShellState extends State<HomeShell> {
     String? couponMessage;
     var validatingCoupon = false;
     if (selectedAddress != null) locationController.text = selectedAddress;
+    if (!mounted) {
+      locationController.dispose();
+      dateController.dispose();
+      capacityController.dispose();
+      couponController.dispose();
+      return;
+    }
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -491,19 +498,25 @@ class _HomeShellState extends State<HomeShell> {
     await showModalBottomSheet<void>(
       context: context,
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: ThemeMode.values
-              .map((mode) => RadioListTile<ThemeMode>(
-                    title: Text(mode.name[0].toUpperCase() + mode.name.substring(1)),
+        child: RadioGroup<ThemeMode>(
+          groupValue: widget.controller.themeMode,
+          onChanged: (value) {
+            if (value != null) widget.controller.setThemeMode(value);
+            Navigator.pop(context);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: ThemeMode.values
+                .map(
+                  (mode) => RadioListTile<ThemeMode>(
+                    title: Text(
+                      mode.name[0].toUpperCase() + mode.name.substring(1),
+                    ),
                     value: mode,
-                    groupValue: widget.controller.themeMode,
-                    onChanged: (value) {
-                      if (value != null) widget.controller.setThemeMode(value);
-                      Navigator.pop(context);
-                    },
-                  ))
-              .toList(),
+                  ),
+                )
+                .toList(),
+          ),
         ),
       ),
     );

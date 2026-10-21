@@ -130,9 +130,12 @@ class CustomerAccountScreen extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(item.title),
-        content: Text(item.detail.isEmpty ? 'No additional details.' : item.detail),
+        content:
+            Text(item.detail.isEmpty ? 'No additional details.' : item.detail),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close')),
         ],
       ),
     );
@@ -468,12 +471,14 @@ class _MembershipSection extends ConsumerWidget {
                               .api
                               .updateMembership(status);
                           ref.invalidate(customerMembershipProvider);
+                          if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text('Membership marked $status.'),
                             ),
                           );
                         } catch (error) {
+                          if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text(error.toString())),
                           );
@@ -526,29 +531,29 @@ class _MembershipSection extends ConsumerWidget {
                         onTap: plan.id.isEmpty
                             ? null
                             : () async {
-                              try {
-                                await ref
-                                    .read(appControllerProvider)
-                                    .api
-                                    .requestMembership(plan.id);
-                                ref.invalidate(customerMembershipProvider);
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Membership request submitted.',
+                                try {
+                                  await ref
+                                      .read(appControllerProvider)
+                                      .api
+                                      .requestMembership(plan.id);
+                                  ref.invalidate(customerMembershipProvider);
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Membership request submitted.',
+                                        ),
                                       ),
-                                    ),
-                                  );
+                                    );
+                                  }
+                                } catch (error) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(error.toString())),
+                                    );
+                                  }
                                 }
-                              } catch (error) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(error.toString())),
-                                  );
-                                }
-                              }
                               },
                       ),
                     )
@@ -566,7 +571,8 @@ class _MembershipSection extends ConsumerWidget {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: Text('${status[0].toUpperCase()}${status.substring(1)} membership?'),
+            title: Text(
+                '${status[0].toUpperCase()}${status.substring(1)} membership?'),
             content: Text(
               status == 'cancelled'
                   ? 'This will cancel your current membership.'
@@ -645,9 +651,8 @@ class _AccountSection extends ConsumerWidget {
                                   ? item.offerDetail
                                   : item.detail,
                             ),
-                            trailing: item.status.isEmpty
-                                ? null
-                                : Text(item.status),
+                            trailing:
+                                item.status.isEmpty ? null : Text(item.status),
                             onTap: onItemTap == null
                                 ? null
                                 : () => onItemTap!(item),
