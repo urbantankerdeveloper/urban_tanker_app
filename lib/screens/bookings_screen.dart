@@ -103,6 +103,21 @@ class BookingDetailsScreen extends ConsumerWidget {
                   title: const Text('Delivery date'),
                   subtitle: Text(_formatDate(booking.deliveryDate)),
                 ),
+                if (booking.quotedAmountRupees != null)
+                  ListTile(
+                    leading: const Icon(Icons.currency_rupee_outlined),
+                    title: const Text('Quoted amount'),
+                    subtitle: Text(
+                      '₹${booking.quotedAmountRupees!.toStringAsFixed(2)}',
+                    ),
+                  ),
+                if (booking.paymentStatus != null &&
+                    booking.paymentStatus!.isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.payments_outlined),
+                    title: const Text('Payment status'),
+                    subtitle: Text(booking.paymentStatus!),
+                  ),
               ],
             ),
           ),

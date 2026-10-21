@@ -21,6 +21,11 @@ class Booking {
   final String? quotedAmount;
   final String? paymentStatus;
 
+  double? get quotedAmountRupees {
+    final paise = int.tryParse(quotedAmount ?? '');
+    return paise == null ? null : paise / 100;
+  }
+
   factory Booking.fromJson(Map<String, dynamic> json) {
     return Booking(
       id: (json['id'] ?? '').toString(),

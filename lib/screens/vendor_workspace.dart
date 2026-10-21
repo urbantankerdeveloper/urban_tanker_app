@@ -378,30 +378,167 @@ class VendorFleetScreen extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            const Text('Vehicles'),
+            Row(
+              children: [
+                const Expanded(child: Text('Vehicles')),
+                TextButton(
+                  onPressed: () => _addVehicle(context, ref),
+                  child: const Text('Add'),
+                ),
+              ],
+            ),
             ...value.vehicles.map(
               (vehicle) => ListTile(
                 leading: const Icon(Icons.local_shipping_outlined),
                 title: Text(vehicle.registrationNumber),
                 subtitle: Text(
                     '${vehicle.capacityLitres} litres • ${vehicle.verification}'),
-                trailing: Text(vehicle.active ? 'Active' : 'Inactive'),
+                trailing: TextButton(
+                  onPressed: () async {
+                    await ref.read(appControllerProvider).api.updateVendorVehicle(
+                          vehicle.id,
+                          isActive: !vehicle.active,
+                        );
+                    ref.invalidate(vendorDashboardProvider);
+                  },
+                  child: Text(vehicle.active ? 'Deactivate' : 'Activate'),
+                ),
               ),
             ),
             const SizedBox(height: 16),
-            const Text('Drivers'),
+            Row(
+              children: [
+                const Expanded(child: Text('Drivers')),
+                TextButton(
+                  onPressed: () => _addDriver(context, ref),
+                  child: const Text('Add'),
+                ),
+              ],
+            ),
             ...value.drivers.map(
               (driver) => ListTile(
                 leading: const Icon(Icons.person_outline),
                 title: Text(driver.name),
                 subtitle: Text('${driver.mobile} • ${driver.verification}'),
-                trailing: Text(driver.active ? 'Active' : 'Inactive'),
+                trailing: TextButton(
+                  onPressed: () async {
+                    await ref.read(appControllerProvider).api.updateVendorDriver(
+                          driver.id,
+                          isActive: !driver.active,
+                        );
+                    ref.invalidate(vendorDashboardProvider);
+                  },
+                  child: Text(driver.active ? 'Deactivate' : 'Activate'),
               ),
+            ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _addVehicle(BuildContext context, WidgetRef ref) async {
+    final registration = TextEditingController();
+    final capacity = TextEditingController();
+    final saved = await _showRecordForm(
+      context,
+      title: 'Add vehicle',
+      fields: [('Registration number', registration), ('Capacity litres', capacity)],
+      submit: () async {
+        final litres = int.tryParse(capacity.text.trim());
+        if (litres == null || litres <= 0) {
+          throw const FormatException('Enter a valid capacity.');
+        }
+        await ref.read(appControllerProvider).api.createVendorVehicle(
+              registrationNumber: registration.text.trim(),
+              capacityLitres: litres,
+            );
+      },
+    );
+    registration.dispose();
+    capacity.dispose();
+    if (saved && context.mounted) ref.invalidate(vendorDashboardProvider);
+  }
+
+  Future<void> _addDriver(BuildContext context, WidgetRef ref) async {
+    final name = TextEditingController();
+    final mobile = TextEditingController();
+    final licence = TextEditingController();
+    final saved = await _showRecordForm(
+      context,
+      title: 'Add driver',
+      fields: [
+        ('Name', name),
+        ('10-digit mobile', mobile),
+        ('Licence number', licence),
+      ],
+      submit: () async {
+        if (!RegExp(r'^\d{10}$').hasMatch(mobile.text.trim())) {
+          throw const FormatException('Enter a valid 10-digit mobile number.');
+        }
+        await ref.read(appControllerProvider).api.createVendorDriver(
+              name: name.text.trim(),
+              mobile: mobile.text.trim(),
+              licenceNumber: licence.text.trim(),
+            );
+      },
+    );
+    name.dispose();
+    mobile.dispose();
+    licence.dispose();
+    if (saved && context.mounted) ref.invalidate(vendorDashboardProvider);
+  }
+
+  Future<bool> _showRecordForm(
+    BuildContext context, {
+    required String title,
+    required List<(String, TextEditingController)> fields,
+    required Future<void> Function() submit,
+  }) async {
+    String? error;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ...fields.map(
+                (field) => TextField(
+                  controller: field.$2,
+                  decoration: InputDecoration(labelText: field.$1),
+                ),
+              ),
+              if (error != null)
+                Text(
+                  error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  await submit();
+                  if (context.mounted) Navigator.pop(context, true);
+                } catch (value) {
+                  setState(() => error = value.toString());
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    return saved == true;
   }
 }
 

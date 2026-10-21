@@ -12,12 +12,11 @@ android {
         applicationId = "com.urbantanker.app"
         minSdk = 30
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutterVersionCode.toInt()
-        versionName = flutterVersionName
+        versionCode = 1
+        versionName = "1.0"
     }
 }
 
 flutter {
     source = "../.."
 }
-

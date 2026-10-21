@@ -52,6 +52,7 @@ class CustomerAccountScreen extends ConsumerWidget {
           empty: 'No contracts yet.',
           actionLabel: 'Request contract',
           onAction: () => _createContract(context, ref),
+          onItemTap: (item) => _showRecord(context, item),
         ),
         _AccountSection(
           title: 'Saved addresses',
@@ -90,6 +91,7 @@ class CustomerAccountScreen extends ConsumerWidget {
           empty: 'No support requests yet.',
           actionLabel: 'New request',
           onAction: () => _createSupport(context, ref),
+          onItemTap: (item) => _showRecord(context, item),
         ),
       ],
     );
@@ -126,12 +128,23 @@ class CustomerAccountScreen extends ConsumerWidget {
   }
 
   void _showRecord(BuildContext context, AccountRecord item) {
+    final details = item.data.entries
+        .where((entry) => entry.key != 'id' && entry.value != null)
+        .map(
+          (entry) => '${_label(entry.key)}: ${_displayValue(entry.value)}',
+        )
+        .join('\n');
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(item.title),
-        content:
-            Text(item.detail.isEmpty ? 'No additional details.' : item.detail),
+        content: SingleChildScrollView(
+          child: Text(
+            details.isEmpty
+                ? (item.detail.isEmpty ? 'No additional details.' : item.detail)
+                : details,
+          ),
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
@@ -139,6 +152,23 @@ class CustomerAccountScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _label(String key) {
+    return key
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map(
+          (part) => part.isEmpty
+              ? part
+              : '${part[0].toUpperCase()}${part.substring(1)}',
+        )
+        .join(' ');
+  }
+
+  String _displayValue(Object? value) {
+    if (value is Map || value is List) return value.toString();
+    return value.toString();
   }
 
   Future<void> _editProfile(

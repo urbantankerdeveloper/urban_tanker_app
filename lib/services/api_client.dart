@@ -530,6 +530,28 @@ class ApiClient {
         .toList();
   }
 
+  Future<void> registerDevice({
+    required String token,
+    required String platform,
+  }) async {
+    await request(
+      'POST',
+      '/devices/register',
+      body: {
+        'token': token,
+        'platform': platform,
+      },
+    );
+  }
+
+  Future<void> unregisterDevice(String token) async {
+    await request(
+      'DELETE',
+      '/devices/register',
+      body: {'token': token},
+    );
+  }
+
   Future<VendorDashboard> vendorDashboard() async {
     final response = await request('GET', '/vendor/dashboard');
     final decoded = jsonDecode(response.body);
@@ -552,6 +574,99 @@ class ApiClient {
   Future<List<VendorDriver>> vendorDrivers() async {
     final response = await request('GET', '/vendor/drivers');
     return _vendorList(response, VendorDriver.fromJson, 'vendor drivers');
+  }
+
+  Future<VendorVehicle> createVendorVehicle({
+    required String registrationNumber,
+    required int capacityLitres,
+    bool isActive = true,
+  }) async {
+    final response = await request('POST', '/vendor/vehicles', body: {
+      'registrationNumber': registrationNumber,
+      'capacityLitres': capacityLitres,
+      'isActive': isActive,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The vehicle response was invalid.');
+    }
+    return VendorVehicle.fromJson(decoded);
+  }
+
+  Future<VendorVehicle> updateVendorVehicle(
+    String id, {
+    String? registrationNumber,
+    int? capacityLitres,
+    bool? isActive,
+  }) async {
+    final response = await request('PATCH', '/vendor/vehicles/$id', body: {
+      if (registrationNumber != null) 'registrationNumber': registrationNumber,
+      if (capacityLitres != null) 'capacityLitres': capacityLitres,
+      if (isActive != null) 'isActive': isActive,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The vehicle update was invalid.');
+    }
+    return VendorVehicle.fromJson(decoded);
+  }
+
+  Future<VendorDriver> createVendorDriver({
+    required String name,
+    required String mobile,
+    required String licenceNumber,
+    bool isActive = true,
+  }) async {
+    final response = await request('POST', '/vendor/drivers', body: {
+      'name': name,
+      'mobileE164': mobile,
+      'licenceNumber': licenceNumber,
+      'isActive': isActive,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The driver response was invalid.');
+    }
+    return VendorDriver.fromJson(decoded);
+  }
+
+  Future<VendorDriver> updateVendorDriver(
+    String id, {
+    String? name,
+    String? mobile,
+    String? licenceNumber,
+    bool? isActive,
+  }) async {
+    final response = await request('PATCH', '/vendor/drivers/$id', body: {
+      if (name != null) 'name': name,
+      if (mobile != null) 'mobileE164': mobile,
+      if (licenceNumber != null) 'licenceNumber': licenceNumber,
+      if (isActive != null) 'isActive': isActive,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The driver update was invalid.');
+    }
+    return VendorDriver.fromJson(decoded);
+  }
+
+  Future<VendorPayout> requestVendorPayout({
+    required double amount,
+    DateTime? periodStart,
+    DateTime? periodEnd,
+  }) async {
+    final response = await request('POST', '/vendor/payouts/request', body: {
+      'amount': amount,
+      if (periodStart != null)
+        'periodStart': periodStart.toIso8601String().split('T').first,
+      if (periodEnd != null)
+        'periodEnd': periodEnd.toIso8601String().split('T').first,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The payout request response was invalid.');
+    }
+    return VendorPayout.fromJson(decoded);
   }
 
   Future<List<VendorPayout>> vendorPayouts() async {

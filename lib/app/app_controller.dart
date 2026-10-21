@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
 import '../services/realtime_service.dart';
+import '../services/push_notification_service.dart';
 
 class AppController extends ChangeNotifier {
   AppController._(this.api, this._preferences);
@@ -17,12 +19,18 @@ class AppController extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   bool busy = false;
   String? errorMessage;
+  late final PushNotificationService pushNotifications =
+      PushNotificationService(
+    api: api,
+    appId: const String.fromEnvironment('ONESIGNAL_APP_ID'),
+  );
 
   bool get isSignedIn => user != null;
 
   static Future<AppController> create() async {
     final preferences = await SharedPreferences.getInstance();
     final controller = AppController._(ApiClient(), preferences);
+    await controller.pushNotifications.initialize();
     controller.themeMode = switch (preferences.getString('theme_mode')) {
       'light' => ThemeMode.light,
       'dark' => ThemeMode.dark,
@@ -76,6 +84,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    await pushNotifications.clearIdentity();
     realtime?.dispose();
     realtime = null;
     user = null;
@@ -97,6 +106,10 @@ class AppController extends ChangeNotifier {
 
   void _setSession(AuthResult result) {
     user = result.user;
+    final userId = result.user.id;
+    if (userId != null) {
+      unawaited(pushNotifications.identify(userId));
+    }
     _preferences.setString(
       'session_user',
       jsonEncode({
