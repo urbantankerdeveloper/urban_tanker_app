@@ -30,7 +30,8 @@ class BookingsScreen extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             itemCount: items.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) => _BookingTile(booking: items[index]),
+            itemBuilder: (context, index) =>
+                _BookingTile(booking: items[index]),
           ),
         );
       },
@@ -84,7 +85,8 @@ class BookingDetailsScreen extends ConsumerWidget {
             style: Theme.of(context).textTheme.labelLarge,
           ),
           const SizedBox(height: 8),
-          Text(booking.location, style: Theme.of(context).textTheme.headlineSmall),
+          Text(booking.location,
+              style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 20),
           Card(
             child: Column(
@@ -116,7 +118,8 @@ class BookingDetailsScreen extends ConsumerWidget {
                   ListTile(
                     leading: const Icon(Icons.payments_outlined),
                     title: const Text('Payment status'),
-                    subtitle: Text(booking.paymentStatus!),
+                    subtitle:
+                        Text(_paymentLabel(booking.normalizedPaymentStatus)),
                   ),
               ],
             ),
@@ -194,15 +197,37 @@ class BookingDetailsScreen extends ConsumerWidget {
     );
   }
 
+  String _paymentLabel(String status) {
+    switch (status) {
+      case 'cod':
+        return 'Cash on delivery • Payment due at delivery';
+      case 'paid':
+        return 'Paid successfully';
+      case 'failed':
+        return 'Failed • Please contact support to retry payment';
+      case 'cancelled':
+        return 'Cancelled';
+      case 'pending':
+        return 'Pending confirmation';
+      default:
+        return status.replaceAll('_', ' ');
+    }
+  }
+
   Future<void> _cancel(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Cancel booking?'),
-        content: const Text('This action is sent to the server and cannot be undone.'),
+        content: const Text(
+            'This action is sent to the server and cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Cancel booking')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Cancel booking')),
         ],
       ),
     );
@@ -213,7 +238,8 @@ class BookingDetailsScreen extends ConsumerWidget {
       if (context.mounted) Navigator.pop(context);
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
@@ -235,27 +261,37 @@ class BookingDetailsScreen extends ConsumerWidget {
       if (context.mounted) Navigator.pop(context);
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
 
   Future<void> _requestOtp(BuildContext context, WidgetRef ref) async {
     try {
-      final expiresAt = await ref.read(appControllerProvider).api.requestDeliveryOtp(booking.id);
+      final expiresAt = await ref
+          .read(appControllerProvider)
+          .api
+          .requestDeliveryOtp(booking.id);
       if (context.mounted) {
         showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Delivery OTP requested'),
-            content: Text('The OTP was sent to your registered mobile number and expires at ${expiresAt.toLocal()}.'),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
+            content: Text(
+                'The OTP was sent to your registered mobile number and expires at ${expiresAt.toLocal()}.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'))
+            ],
           ),
         );
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
@@ -274,16 +310,24 @@ class BookingDetailsScreen extends ConsumerWidget {
               DropdownButton<int>(
                 value: rating,
                 items: [1, 2, 3, 4, 5]
-                    .map((value) => DropdownMenuItem(value: value, child: Text('$value stars')))
+                    .map((value) => DropdownMenuItem(
+                        value: value, child: Text('$value stars')))
                     .toList(),
                 onChanged: (value) => setState(() => rating = value ?? 5),
               ),
-              TextField(controller: review, decoration: const InputDecoration(labelText: 'Review (optional)')),
+              TextField(
+                  controller: review,
+                  decoration:
+                      const InputDecoration(labelText: 'Review (optional)')),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Submit')),
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Submit')),
           ],
         ),
       ),
@@ -299,11 +343,13 @@ class BookingDetailsScreen extends ConsumerWidget {
             review: review.text.trim().isEmpty ? null : review.text.trim(),
           );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thank you for rating the delivery.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Thank you for rating the delivery.')));
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
       review.dispose();

@@ -11,7 +11,8 @@ class CustomerProfile {
 
   factory CustomerProfile.fromJson(Map<String, dynamic> json) {
     return CustomerProfile(
-      name: (json['name'] ?? json['full_name'] ?? 'Urban Tanker customer').toString(),
+      name: (json['name'] ?? json['full_name'] ?? 'Urban Tanker customer')
+          .toString(),
       email: (json['email'] ?? '').toString(),
       phone: (json['phone'] ?? json['phone_e164'] ?? '').toString(),
     );
@@ -40,6 +41,16 @@ class AccountRecord {
           '')
       .toString();
   String get status => (data['status'] ?? '').toString();
+  bool get isDefault => data['is_default'] == true || data['isDefault'] == true;
+  String? get bookingId =>
+      data['bookingId']?.toString() ?? data['booking_id']?.toString();
+  String? get response => data['response']?.toString();
+  List<Map<String, dynamic>> get timeline => (data['timeline'] is List)
+      ? (data['timeline'] as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList()
+      : const [];
 
   String get offerDetail {
     final discountType = (data['discount_type'] ?? '').toString();
@@ -55,7 +66,9 @@ class AccountRecord {
     final expiryText = expiry == null
         ? ''
         : 'Valid until ${expiry.toLocal().toString().split(' ').first}';
-    return [discount, expiryText].where((value) => value.isNotEmpty).join(' • ');
+    return [discount, expiryText]
+        .where((value) => value.isNotEmpty)
+        .join(' • ');
   }
 }
 

@@ -55,6 +55,11 @@ final customerInvoiceProvider =
   return ref.watch(appControllerProvider).api.invoice(id);
 });
 
+final customerSupportRequestProvider =
+    FutureProvider.autoDispose.family<AccountRecord, String>((ref, id) {
+  return ref.watch(appControllerProvider).api.supportRequest(id);
+});
+
 final customerUsageProvider = FutureProvider.autoDispose<CustomerUsage>((ref) {
   return ref.watch(appControllerProvider).api.usage();
 });

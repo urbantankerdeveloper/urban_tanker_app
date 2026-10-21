@@ -60,18 +60,22 @@ class _AuthScreenState extends State<AuthScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text('URBAN TANKER',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: aqua,
-                              letterSpacing: 2,
-                              fontWeight: FontWeight.w800,
-                            )),
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: aqua,
+                                  letterSpacing: 2,
+                                  fontWeight: FontWeight.w800,
+                                )),
                     const SizedBox(height: 18),
                     Text(
-                      _signup ? 'Start with reliable water.' : 'Water, organised.',
-                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            fontWeight: FontWeight.w800,
-                          ),
+                      _signup
+                          ? 'Start with reliable water.'
+                          : 'Water, organised.',
+                      style:
+                          Theme.of(context).textTheme.headlineLarge?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurface,
+                                fontWeight: FontWeight.w800,
+                              ),
                     ),
                     const SizedBox(height: 8),
                     Text(_signup
@@ -81,7 +85,8 @@ class _AuthScreenState extends State<AuthScreen> {
                     if (_signup) ...[
                       TextFormField(
                         controller: _name,
-                        decoration: const InputDecoration(labelText: 'Full name'),
+                        decoration:
+                            const InputDecoration(labelText: 'Full name'),
                         validator: (value) =>
                             value == null || value.trim().length < 2
                                 ? 'Enter your name.'
@@ -93,10 +98,10 @@ class _AuthScreenState extends State<AuthScreen> {
                         keyboardType: TextInputType.phone,
                         decoration:
                             const InputDecoration(labelText: '10-digit mobile'),
-                        validator: (value) =>
-                            value == null || !RegExp(r'^\d{10}$').hasMatch(value)
-                                ? 'Enter a valid 10-digit mobile number.'
-                                : null,
+                        validator: (value) => value == null ||
+                                !RegExp(r'^\d{10}$').hasMatch(value)
+                            ? 'Enter a valid 10-digit mobile number.'
+                            : null,
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -105,9 +110,10 @@ class _AuthScreenState extends State<AuthScreen> {
                       keyboardType: TextInputType.emailAddress,
                       decoration:
                           const InputDecoration(labelText: 'Email or username'),
-                      validator: (value) => value == null || value.trim().isEmpty
-                          ? 'Enter your email or username.'
-                          : null,
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                              ? 'Enter your email or username.'
+                              : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -165,4 +171,3 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 }
-

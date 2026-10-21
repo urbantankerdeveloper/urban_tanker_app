@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
 import '../models/account.dart';
+import 'invoice_detail_screen.dart';
+import 'support_request_detail_screen.dart';
 
 class CustomerAccountScreen extends ConsumerWidget {
   const CustomerAccountScreen({super.key});
@@ -61,7 +63,7 @@ class CustomerAccountScreen extends ConsumerWidget {
           empty: 'No saved addresses yet.',
           actionLabel: 'Add address',
           onAction: () => _addAddress(context, ref),
-          onItemTap: (item) => _deleteAddress(context, ref, item),
+          onItemTap: (item) => _manageAddress(context, ref, item),
         ),
         _AccountSection(
           title: 'Wallet',
@@ -91,7 +93,14 @@ class CustomerAccountScreen extends ConsumerWidget {
           empty: 'No support requests yet.',
           actionLabel: 'New request',
           onAction: () => _createSupport(context, ref),
-          onItemTap: (item) => _showRecord(context, item),
+          onItemTap: (item) {
+            if (item.id.isEmpty) return;
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SupportRequestDetailScreen(requestId: item.id),
+              ),
+            );
+          },
         ),
       ],
     );
@@ -212,6 +221,7 @@ class CustomerAccountScreen extends ConsumerWidget {
     final address = TextEditingController();
     final city = TextEditingController();
     final pincode = TextEditingController();
+    var isDefault = false;
     await _showForm(
       context,
       title: 'Add address',
@@ -221,8 +231,97 @@ class CustomerAccountScreen extends ConsumerWidget {
         ('City', city),
         ('Pincode', pincode),
       ],
+      extraContent: StatefulBuilder(
+        builder: (context, setState) => CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          value: isDefault,
+          title: const Text('Use as default address'),
+          onChanged: (value) => setState(() => isDefault = value ?? false),
+        ),
+      ),
       submit: () async {
         await ref.read(appControllerProvider).api.createAddress(
+              label: label.text.trim(),
+              address: address.text.trim(),
+              city: city.text.trim(),
+              pincode: pincode.text.trim(),
+              isDefault: isDefault,
+            );
+        ref.invalidate(customerAddressesProvider);
+      },
+    );
+    label.dispose();
+    address.dispose();
+    city.dispose();
+    pincode.dispose();
+  }
+
+  Future<void> _manageAddress(
+    BuildContext context,
+    WidgetRef ref,
+    AccountRecord item,
+  ) async {
+    if (item.id.isEmpty) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit address'),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.star_outline),
+              title: Text(item.isDefault ? 'Default address' : 'Make default'),
+              onTap: item.isDefault
+                  ? null
+                  : () => Navigator.pop(context, 'default'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Delete address'),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (action == 'edit') {
+      await _editAddress(context, ref, item);
+    } else if (action == 'default') {
+      await _setDefaultAddress(context, ref, item);
+    } else if (action == 'delete') {
+      await _deleteAddress(context, ref, item);
+    }
+  }
+
+  Future<void> _editAddress(
+    BuildContext context,
+    WidgetRef ref,
+    AccountRecord item,
+  ) async {
+    final label = TextEditingController(text: item.data['label']?.toString());
+    final address =
+        TextEditingController(text: item.data['address']?.toString());
+    final city = TextEditingController(text: item.data['city']?.toString());
+    final pincode =
+        TextEditingController(text: item.data['pincode']?.toString());
+    await _showForm(
+      context,
+      title: 'Edit address',
+      fields: [
+        ('Label', label),
+        ('Address', address),
+        ('City', city),
+        ('Pincode', pincode),
+      ],
+      submit: () async {
+        await ref.read(appControllerProvider).api.updateAddress(
+              item.id,
               label: label.text.trim(),
               address: address.text.trim(),
               city: city.text.trim(),
@@ -235,6 +334,31 @@ class CustomerAccountScreen extends ConsumerWidget {
     address.dispose();
     city.dispose();
     pincode.dispose();
+  }
+
+  Future<void> _setDefaultAddress(
+    BuildContext context,
+    WidgetRef ref,
+    AccountRecord item,
+  ) async {
+    try {
+      await ref.read(appControllerProvider).api.updateAddress(
+            item.id,
+            isDefault: true,
+          );
+      ref.invalidate(customerAddressesProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Default address updated.')),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    }
   }
 
   Future<void> _deleteAddress(
@@ -348,37 +472,11 @@ class CustomerAccountScreen extends ConsumerWidget {
     AccountRecord item,
   ) {
     if (item.id.isEmpty) return;
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => Consumer(
-        builder: (context, ref, _) {
-          final invoice = ref.watch(customerInvoiceProvider(item.id));
-          return Padding(
-            padding: const EdgeInsets.all(20),
-            child: invoice.when(
-              loading: () => const CircularProgressIndicator(),
-              error: (error, _) => Text(error.toString()),
-              data: (value) => ListTile(
-                leading: const Icon(Icons.receipt_long_outlined),
-                title: Text(value.title),
-                subtitle: Text(_invoiceDetail(value)),
-              ),
-            ),
-          );
-        },
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => InvoiceDetailScreen(invoiceId: item.id),
       ),
     );
-  }
-
-  String _invoiceDetail(AccountRecord invoice) {
-    final fields = [
-      invoice.detail,
-      if (invoice.data['invoice_number'] != null)
-        'Invoice: ${invoice.data['invoice_number']}',
-      if (invoice.data['total'] != null) 'Total: ₹${invoice.data['total']}',
-      if (invoice.data['status'] != null) 'Status: ${invoice.data['status']}',
-    ];
-    return fields.where((value) => value.isNotEmpty).join('\n');
   }
 
   Future<void> _showForm(
@@ -386,6 +484,7 @@ class CustomerAccountScreen extends ConsumerWidget {
     required String title,
     required List<(String, TextEditingController)> fields,
     required Future<void> Function() submit,
+    Widget? extraContent,
   }) {
     return showDialog<bool>(
       context: context,
@@ -393,6 +492,7 @@ class CustomerAccountScreen extends ConsumerWidget {
         title: title,
         fields: fields,
         submit: submit,
+        extraContent: extraContent,
       ),
     ).then((saved) {
       if (saved == true && context.mounted) {
@@ -702,11 +802,13 @@ class _FormDialog extends StatefulWidget {
     required this.title,
     required this.fields,
     required this.submit,
+    this.extraContent,
   });
 
   final String title;
   final List<(String, TextEditingController)> fields;
   final Future<void> Function() submit;
+  final Widget? extraContent;
 
   @override
   State<_FormDialog> createState() => _FormDialogState();
@@ -756,6 +858,7 @@ class _FormDialogState extends State<_FormDialog> {
                 ),
               ),
             ),
+            if (widget.extraContent != null) widget.extraContent!,
             if (error != null)
               Text(
                 error!,

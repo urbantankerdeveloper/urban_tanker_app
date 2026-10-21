@@ -124,9 +124,11 @@ class VendorPayout {
 
   factory VendorPayout.fromJson(Map<String, dynamic> json) => VendorPayout(
         id: (json['id'] ?? '').toString(),
-        amountPaise: ((json['amount_paise'] ?? json['amount']) as num?)?.toInt() ?? 0,
+        amountPaise:
+            ((json['amount_paise'] ?? json['amount']) as num?)?.toInt() ?? 0,
         status: (json['status'] ?? 'pending').toString(),
-        reference: (json['reference'] ?? json['booking_reference'] ?? '').toString(),
+        reference:
+            (json['reference'] ?? json['booking_reference'] ?? '').toString(),
         createdAt: DateTime.tryParse((json['created_at'] ?? '').toString()),
         paidAt: DateTime.tryParse((json['paid_at'] ?? '').toString()),
       );
@@ -145,7 +147,8 @@ class VendorDashboard {
   final List<VendorVehicle> vehicles;
   final List<VendorDriver> drivers;
 
-  factory VendorDashboard.fromJson(Map<String, dynamic> json) => VendorDashboard(
+  factory VendorDashboard.fromJson(Map<String, dynamic> json) =>
+      VendorDashboard(
         orders: _records(json['orders'], VendorOrder.fromJson),
         vehicles: _records(json['vehicles'], VendorVehicle.fromJson),
         drivers: _records(json['drivers'], VendorDriver.fromJson),

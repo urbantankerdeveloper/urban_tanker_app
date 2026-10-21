@@ -45,7 +45,8 @@ class _NotificationInboxState extends State<NotificationInbox> {
               tooltip: 'Mark all as read',
               icon: const Icon(Icons.done_all),
               onPressed: () async {
-                await widget.controller.api.markAllNotificationsRead(widget.role);
+                await widget.controller.api
+                    .markAllNotificationsRead(widget.role);
                 if (mounted) _reload();
               },
             ),

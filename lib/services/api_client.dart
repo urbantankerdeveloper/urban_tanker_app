@@ -138,6 +138,33 @@ class ApiClient {
     return decoded;
   }
 
+  Future<Map<String, dynamic>> previewBookingQuote({
+    required String serviceId,
+    required String capacity,
+    required String location,
+    required String deliveryDate,
+    String? notes,
+    String paymentMethod = 'cod',
+    String? couponCode,
+  }) async {
+    final response =
+        await request('POST', '/customer/orders/quote-preview', body: {
+      'serviceId': serviceId,
+      'capacity': capacity,
+      'location': location,
+      'deliveryDate': deliveryDate,
+      if (notes != null) 'notes': notes,
+      'paymentMethod': paymentMethod,
+      if (couponCode != null && couponCode.trim().isNotEmpty)
+        'couponCode': couponCode.trim().toUpperCase(),
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The booking quote response was invalid.');
+    }
+    return decoded;
+  }
+
   Future<List<Booking>> bookings() async {
     final response = await request('GET', '/customer/orders');
     final decoded = jsonDecode(response.body);
@@ -380,16 +407,41 @@ class ApiClient {
     required String address,
     required String city,
     required String pincode,
+    bool isDefault = false,
   }) async {
     final response = await request('POST', '/customer/addresses', body: {
       'label': label,
       'address': address,
       'city': city,
       'pincode': pincode,
+      'isDefault': isDefault,
     });
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The address response was invalid.');
+    }
+
+    return AccountRecord(decoded);
+  }
+
+  Future<AccountRecord> updateAddress(
+    String id, {
+    String? label,
+    String? address,
+    String? city,
+    String? pincode,
+    bool? isDefault,
+  }) async {
+    final response = await request('PATCH', '/customer/addresses/$id', body: {
+      if (label != null) 'label': label,
+      if (address != null) 'address': address,
+      if (city != null) 'city': city,
+      if (pincode != null) 'pincode': pincode,
+      if (isDefault != null) 'isDefault': isDefault,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The address update response was invalid.');
     }
     return AccountRecord(decoded);
   }
@@ -409,6 +461,15 @@ class ApiClient {
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The support response was invalid.');
+    }
+    return AccountRecord(decoded);
+  }
+
+  Future<AccountRecord> supportRequest(String id) async {
+    final response = await request('GET', '/support/requests/$id');
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The support request response was invalid.');
     }
     return AccountRecord(decoded);
   }

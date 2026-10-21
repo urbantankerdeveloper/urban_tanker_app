@@ -4,6 +4,7 @@ import 'package:urban_tanker_app/models/session.dart';
 import 'package:urban_tanker_app/models/booking.dart';
 import 'package:urban_tanker_app/models/account.dart';
 import 'package:urban_tanker_app/models/vendor.dart';
+import 'package:urban_tanker_app/models/notification.dart';
 
 void main() {
   test('unknown server roles fail closed to customer', () {
@@ -55,6 +56,20 @@ void main() {
 
     expect(booking.quotedAmountRupees, 1250);
     expect(booking.paymentStatus, 'pending');
+    expect(booking.normalizedPaymentStatus, 'pending');
+  });
+
+  test('booking payment status normalizes COD and captured values', () {
+    expect(
+      Booking.fromJson({'id': '1', 'payment_status': 'cod'})
+          .normalizedPaymentStatus,
+      'cod',
+    );
+    expect(
+      Booking.fromJson({'id': '2', 'payment_status': 'captured'})
+          .normalizedPaymentStatus,
+      'paid',
+    );
   });
 
   test('customer profile supports backend profile field names', () {
@@ -91,6 +106,31 @@ void main() {
     expect(record.id, 'address-1');
     expect(record.title, 'Home');
     expect(record.detail, '12 Main Street');
+  });
+
+  test('support records expose booking and response timeline data', () {
+    final record = AccountRecord({
+      'id': 'support-1',
+      'subject': 'Delivery issue',
+      'bookingId': 'booking-1',
+      'timeline': [
+        {'type': 'customer', 'message': 'Help'},
+        {'type': 'support', 'message': 'We are checking'},
+      ],
+    });
+
+    expect(record.bookingId, 'booking-1');
+    expect(record.timeline, hasLength(2));
+  });
+
+  test('notification IDs ignore missing and blank payload values', () {
+    final item = NotificationItem.fromJson({
+      'id': 'notification-1',
+      'payload': {'bookingId': '  ', 'invoiceId': 'invoice-1'},
+    });
+
+    expect(item.bookingId, isNull);
+    expect(item.invoiceId, 'invoice-1');
   });
 
   test('offer records expose discount and expiry details', () {

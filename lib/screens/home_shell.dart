@@ -234,6 +234,36 @@ class _HomeShellState extends State<HomeShell> {
                   onPressed: () async {
                     if (!formKey.currentState!.validate()) return;
                     try {
+                      final quotePreview =
+                          await widget.controller.api.previewBookingQuote(
+                        serviceId: selectedService,
+                        capacity: capacityController.text,
+                        location: locationController.text.trim(),
+                        deliveryDate: dateController.text.trim(),
+                        couponCode: validatedCoupon == null
+                            ? null
+                            : couponController.text.trim(),
+                      );
+                      if (!context.mounted) return;
+                      final quote = quotePreview['quote'];
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Confirm booking quote'),
+                          content: Text(_quoteSummary(quote)),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Review'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Confirm booking'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed != true || !context.mounted) return;
                       final booking = await widget.controller.api.createBooking(
                         serviceId: selectedService,
                         capacity: capacityController.text,
@@ -271,6 +301,18 @@ class _HomeShellState extends State<HomeShell> {
         quote is Map<String, dynamic> ? quote : null,
       );
     }
+  }
+
+  String _quoteSummary(Object? quote) {
+    if (quote is! Map<String, dynamic>) return 'Quote unavailable.';
+    String money(Object? value) =>
+        value is num ? '₹${(value / 100).toStringAsFixed(2)}' : 'Unavailable';
+    return [
+      'Subtotal: ${money(quote['subtotalPaise'])}',
+      'Discount: ${money(quote['discountPaise'])}',
+      'GST: ${money(quote['gstPaise'])}',
+      'Total: ${money(quote['totalPaise'])}',
+    ].join('\n');
   }
 
   Future<void> _showBookingConfirmation(
@@ -331,6 +373,20 @@ class _HomeShellState extends State<HomeShell> {
                         controller: widget.controller,
                         role: role.name,
                         onNotificationSelected: (item) {
+                          final hasTarget = item.bookingId != null ||
+                              item.invoiceId != null ||
+                              item.supportRequestId != null;
+                          if (!hasTarget) {
+                            Navigator.of(context).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'This notification has no valid destination.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
                           final target = item.bookingId != null
                               ? role == WorkspaceRole.vendor
                                   ? 'Operations'

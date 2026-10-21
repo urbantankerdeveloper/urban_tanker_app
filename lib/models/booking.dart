@@ -26,6 +26,14 @@ class Booking {
     return paise == null ? null : paise / 100;
   }
 
+  String get normalizedPaymentStatus {
+    final value = (paymentStatus ?? '').trim().toLowerCase();
+    if (value.isEmpty) return 'pending';
+    if (value == 'cash_on_delivery' || value == 'cod') return 'cod';
+    if (value == 'success' || value == 'captured') return 'paid';
+    return value;
+  }
+
   factory Booking.fromJson(Map<String, dynamic> json) {
     return Booking(
       id: (json['id'] ?? '').toString(),

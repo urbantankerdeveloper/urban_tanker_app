@@ -32,4 +32,3 @@ class RealtimeService {
     _socket = null;
   }
 }
-

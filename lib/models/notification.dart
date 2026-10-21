@@ -30,7 +30,12 @@ class NotificationItem {
     );
   }
 
-  String? get bookingId => payload['bookingId']?.toString();
-  String? get invoiceId => payload['invoiceId']?.toString();
-  String? get supportRequestId => payload['supportRequestId']?.toString();
+  String? _id(String key) {
+    final value = payload[key]?.toString().trim();
+    return value == null || value.isEmpty || value == 'null' ? null : value;
+  }
+
+  String? get bookingId => _id('bookingId');
+  String? get invoiceId => _id('invoiceId');
+  String? get supportRequestId => _id('supportRequestId');
 }
