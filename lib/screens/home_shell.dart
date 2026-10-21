@@ -11,6 +11,7 @@ import 'bookings_screen.dart';
 import 'customer_account_screen.dart';
 import 'vendor_workspace.dart';
 import 'admin_workspace.dart';
+import 'dispatcher_workspace.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({required this.controller, super.key});
@@ -518,6 +519,15 @@ class _HomeShellState extends State<HomeShell> {
     }
     if (role == WorkspaceRole.admin && tab.label == 'Reports') {
       return const AdminReportsScreen();
+    }
+    if (role == WorkspaceRole.dispatcher && tab.label == 'Dispatch') {
+      return const DispatcherDispatchScreen();
+    }
+    if (role == WorkspaceRole.dispatcher && tab.label == 'Live') {
+      return const DispatcherLiveScreen();
+    }
+    if (role == WorkspaceRole.dispatcher && tab.label == 'Alerts') {
+      return const DispatcherAlertsScreen();
     }
     return _workspacePage(tab, user);
   }

@@ -459,6 +459,7 @@ class VendorFleetScreen extends ConsumerWidget {
                 title: Text(vehicle.registrationNumber),
                 subtitle: Text(
                     '${vehicle.capacityLitres} litres • ${vehicle.verification}'),
+                onTap: () => _editVehicle(context, ref, vehicle),
                 trailing: TextButton(
                   onPressed: () async {
                     await ref
@@ -489,6 +490,7 @@ class VendorFleetScreen extends ConsumerWidget {
                 leading: const Icon(Icons.person_outline),
                 title: Text(driver.name),
                 subtitle: Text('${driver.mobile} • ${driver.verification}'),
+                onTap: () => _editDriver(context, ref, driver),
                 trailing: PopupMenuButton<String>(
                   onSelected: (status) async {
                     try {
@@ -529,18 +531,10 @@ class VendorFleetScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            _VendorRecordsCard(
-              title: 'Complaints',
-              icon: Icons.report_problem_outlined,
-              loader: (api) => api.vendorComplaints(),
-              emptyMessage: 'No complaints recorded.',
-            ),
-            _VendorRecordsCard(
-              title: 'Documents',
-              icon: Icons.description_outlined,
-              loader: (api) => api.vendorDocuments(),
-              emptyMessage: 'No documents submitted.',
-            ),
+            const _VendorAvailabilityCard(),
+            _VendorComplaintCard(orders: value.orders),
+            const _VendorDocumentCard(),
+            _VendorAttendanceCard(drivers: value.drivers),
           ],
         ),
       ),
@@ -589,10 +583,78 @@ class VendorFleetScreen extends ConsumerWidget {
         if (!RegExp(r'^\d{10}$').hasMatch(mobile.text.trim())) {
           throw const FormatException('Enter a valid 10-digit mobile number.');
         }
+
         await ref.read(appControllerProvider).api.createVendorDriver(
               name: name.text.trim(),
               mobile: mobile.text.trim(),
               licenceNumber: licence.text.trim(),
+            );
+      },
+    );
+    name.dispose();
+    mobile.dispose();
+    licence.dispose();
+    if (saved && context.mounted) ref.invalidate(vendorDashboardProvider);
+  }
+
+  Future<void> _editVehicle(
+    BuildContext context,
+    WidgetRef ref,
+    VendorVehicle vehicle,
+  ) async {
+    final registration =
+        TextEditingController(text: vehicle.registrationNumber);
+    final capacity = TextEditingController(text: '${vehicle.capacityLitres}');
+    final saved = await _showRecordForm(
+      context,
+      title: 'Edit vehicle',
+      fields: [
+        ('Registration number', registration),
+        ('Capacity litres', capacity)
+      ],
+      submit: () async {
+        final litres = int.tryParse(capacity.text.trim());
+        if (litres == null || litres <= 0) {
+          throw const FormatException('Enter a valid capacity.');
+        }
+        await ref.read(appControllerProvider).api.updateVendorVehicle(
+              vehicle.id,
+              registrationNumber: registration.text.trim(),
+              capacityLitres: litres,
+            );
+      },
+    );
+    registration.dispose();
+    capacity.dispose();
+    if (saved && context.mounted) ref.invalidate(vendorDashboardProvider);
+  }
+
+  Future<void> _editDriver(
+    BuildContext context,
+    WidgetRef ref,
+    VendorDriver driver,
+  ) async {
+    final name = TextEditingController(text: driver.name);
+    final mobile = TextEditingController(text: driver.mobile);
+    final licence = TextEditingController();
+    final saved = await _showRecordForm(
+      context,
+      title: 'Edit driver',
+      fields: [
+        ('Name', name),
+        ('10-digit mobile', mobile),
+        ('Licence number (optional)', licence)
+      ],
+      submit: () async {
+        if (!RegExp(r'^\d{10}$').hasMatch(mobile.text.trim())) {
+          throw const FormatException('Enter a valid 10-digit mobile number.');
+        }
+        await ref.read(appControllerProvider).api.updateVendorDriver(
+              driver.id,
+              name: name.text.trim(),
+              mobile: mobile.text.trim(),
+              licenceNumber:
+                  licence.text.trim().isEmpty ? null : licence.text.trim(),
             );
       },
     );
@@ -654,18 +716,351 @@ class VendorFleetScreen extends ConsumerWidget {
   }
 }
 
+class _VendorAvailabilityCard extends ConsumerWidget {
+  const _VendorAvailabilityCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final services = ref.watch(vendorServicesProvider);
+    return Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.toggle_on_outlined),
+        title: const Text('Service availability'),
+        children: [
+          services.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+            error: (error, _) => ListTile(
+              title: const Text('Could not load service availability'),
+              subtitle: Text(error.toString()),
+              trailing: IconButton(
+                onPressed: () => ref.invalidate(vendorServicesProvider),
+                icon: const Icon(Icons.refresh),
+              ),
+            ),
+            data: (items) => items.isEmpty
+                ? const ListTile(title: Text('No services available.'))
+                : Column(
+                    children: items
+                        .map(
+                          (service) => SwitchListTile(
+                            title: Text(service.name),
+                            subtitle: Text(service.description),
+                            value: service.enabled,
+                            onChanged: (enabled) async {
+                              try {
+                                await ref
+                                    .read(appControllerProvider)
+                                    .api
+                                    .updateVendorServiceAvailability(
+                                      serviceCode: service.code,
+                                      enabled: enabled,
+                                    );
+                                ref.invalidate(vendorServicesProvider);
+                              } catch (error) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Availability update failed: $error',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                        )
+                        .toList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VendorComplaintCard extends ConsumerWidget {
+  const _VendorComplaintCard({required this.orders});
+
+  final List<VendorOrder> orders;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _VendorRecordsCard(
+      title: 'Complaints',
+      icon: Icons.report_problem_outlined,
+      loader: (api) => api.vendorComplaints(),
+      emptyMessage: 'No complaints recorded.',
+      action: () => _createComplaint(context, ref),
+      onTap: (record) => _showComplaint(context, ref, record),
+    );
+  }
+
+  Future<void> _createComplaint(BuildContext context, WidgetRef ref) async {
+    if (orders.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('A booking is required to create a complaint.')),
+      );
+      return;
+    }
+    final subject = TextEditingController();
+    final message = TextEditingController();
+    String bookingId = orders.first.id;
+    final saved = await _showVendorForm(
+      context,
+      title: 'Create complaint',
+      fields: [('Subject', subject), ('Message', message)],
+      extra: DropdownButtonFormField<String>(
+        initialValue: bookingId,
+        decoration: const InputDecoration(labelText: 'Booking'),
+        items: orders
+            .map((order) => DropdownMenuItem(
+                  value: order.id,
+                  child: Text(order.reference),
+                ))
+            .toList(),
+        onChanged: (value) => bookingId = value ?? bookingId,
+      ),
+      submit: () async {
+        await ref.read(appControllerProvider).api.createVendorComplaint(
+              bookingId: bookingId,
+              subject: subject.text.trim(),
+              message: message.text.trim(),
+            );
+      },
+    );
+    subject.dispose();
+    message.dispose();
+    if (saved && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Complaint submitted.')),
+      );
+    }
+  }
+
+  Future<void> _showComplaint(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> record,
+  ) async {
+    final resolution = TextEditingController(
+      text: (record['message'] ?? record['response'] ?? '').toString(),
+    );
+    final status = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text((record['subject'] ?? 'Complaint').toString()),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text((record['message'] ?? '').toString()),
+            TextField(
+              controller: resolution,
+              maxLines: 3,
+              decoration:
+                  const InputDecoration(labelText: 'Resolution / response'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'resolved'),
+            child: const Text('Resolve'),
+          ),
+        ],
+      ),
+    );
+    if (status == null || !context.mounted) return;
+    try {
+      await ref.read(appControllerProvider).api.updateVendorComplaint(
+            id: (record['id'] ?? '').toString(),
+            status: status,
+            resolution: resolution.text,
+          );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Complaint updated.')),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Complaint update failed: $error')),
+        );
+      }
+    } finally {
+      resolution.dispose();
+    }
+  }
+}
+
+class _VendorDocumentCard extends ConsumerWidget {
+  const _VendorDocumentCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _VendorRecordsCard(
+      title: 'Documents',
+      icon: Icons.description_outlined,
+      loader: (api) => api.vendorDocuments(),
+      emptyMessage: 'No documents submitted.',
+      action: () => _editDocument(context, ref),
+      onTap: (record) => _editDocument(context, ref, record),
+    );
+  }
+
+  Future<void> _editDocument(
+    BuildContext context,
+    WidgetRef ref, [
+    Map<String, dynamic>? record,
+  ]) async {
+    final type = TextEditingController(
+      text: (record?['document_type'] ?? record?['documentType'] ?? '')
+          .toString(),
+    );
+    final objectKey = TextEditingController(
+      text: (record?['object_key'] ?? record?['objectKey'] ?? '').toString(),
+    );
+    final expiry = TextEditingController(
+      text: (record?['expires_on'] ?? record?['expiresOn'] ?? '').toString(),
+    );
+    final saved = await _showVendorForm(
+      context,
+      title: record == null ? 'Submit document' : 'Resubmit document',
+      fields: [
+        ('Document type', type),
+        ('Object key / uploaded file path', objectKey),
+        ('Expiry date (YYYY-MM-DD)', expiry),
+      ],
+      submit: () async {
+        final id = record?['id']?.toString();
+        if (id == null || id.isEmpty) {
+          await ref.read(appControllerProvider).api.createVendorDocument(
+                documentType: type.text.trim(),
+                objectKey: objectKey.text.trim(),
+                expiresOn: expiry.text.trim(),
+              );
+        } else {
+          await ref.read(appControllerProvider).api.updateVendorDocument(
+                id: id,
+                documentType: type.text.trim(),
+                objectKey: objectKey.text.trim(),
+                expiresOn: expiry.text.trim(),
+              );
+        }
+      },
+    );
+    type.dispose();
+    objectKey.dispose();
+    expiry.dispose();
+    if (saved && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Document submitted.')),
+      );
+    }
+  }
+}
+
+class _VendorAttendanceCard extends ConsumerStatefulWidget {
+  const _VendorAttendanceCard({required this.drivers});
+
+  final List<VendorDriver> drivers;
+
+  @override
+  ConsumerState<_VendorAttendanceCard> createState() =>
+      _VendorAttendanceCardState();
+}
+
+class _VendorAttendanceCardState extends ConsumerState<_VendorAttendanceCard> {
+  DateTime selectedDate = DateTime.now();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.event_available_outlined),
+        title: const Text('Attendance history'),
+        subtitle: Text(_formatDate(selectedDate)),
+        children: [
+          ListTile(
+            title: const Text('Select date'),
+            trailing: IconButton(
+              icon: const Icon(Icons.calendar_month_outlined),
+              onPressed: () async {
+                final value = await showDatePicker(
+                  context: context,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                  initialDate: selectedDate,
+                );
+                if (value != null) setState(() => selectedDate = value);
+              },
+            ),
+          ),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: ref.read(appControllerProvider).api.vendorAttendance(
+                  date: selectedDate,
+                ),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                );
+              }
+              final records = snapshot.data ?? const [];
+              if (records.isEmpty) {
+                return const ListTile(title: Text('No attendance recorded.'));
+              }
+              return Column(
+                children: records.map((record) {
+                  final driver = widget.drivers.firstWhere(
+                    (item) => item.id == record['driver_id'],
+                    orElse: () => const VendorDriver(
+                      id: '',
+                      name: 'Driver',
+                      mobile: '',
+                      active: false,
+                      verification: '',
+                    ),
+                  );
+                  return ListTile(
+                    title: Text(driver.name),
+                    trailing: Text((record['status'] ?? '').toString()),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _VendorRecordsCard extends ConsumerWidget {
   const _VendorRecordsCard({
     required this.title,
     required this.icon,
     required this.loader,
     required this.emptyMessage,
+    this.action,
+    this.onTap,
   });
 
   final String title;
   final IconData icon;
   final Future<List<Map<String, dynamic>>> Function(ApiClient api) loader;
   final String emptyMessage;
+  final VoidCallback? action;
+  final void Function(Map<String, dynamic> record)? onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -673,6 +1068,12 @@ class _VendorRecordsCard extends ConsumerWidget {
       child: ExpansionTile(
         leading: Icon(icon),
         title: Text(title),
+        trailing: action == null
+            ? null
+            : IconButton(
+                onPressed: action,
+                icon: const Icon(Icons.add),
+              ),
         children: [
           FutureBuilder<List<Map<String, dynamic>>>(
             future: loader(ref.read(appControllerProvider).api),
@@ -710,6 +1111,7 @@ class _VendorRecordsCard extends ConsumerWidget {
                                   '')
                               .toString(),
                         ),
+                        onTap: onTap == null ? null : () => onTap!(record),
                       ),
                     )
                     .toList(),
@@ -720,6 +1122,69 @@ class _VendorRecordsCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<bool> _showVendorForm(
+  BuildContext context, {
+  required String title,
+  required List<(String, TextEditingController)> fields,
+  Widget? extra,
+  required Future<void> Function() submit,
+}) async {
+  String? error;
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (extra != null) extra,
+              ...fields.map(
+                (field) => Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: TextField(
+                    controller: field.$2,
+                    maxLines: field.$1 == 'Message' ? 4 : 1,
+                    decoration: InputDecoration(labelText: field.$1),
+                  ),
+                ),
+              ),
+              if (error != null)
+                Text(
+                  error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (fields.any((field) => field.$2.text.trim().isEmpty)) {
+                setState(() => error = 'Complete all fields.');
+                return;
+              }
+              try {
+                await submit();
+                if (context.mounted) Navigator.pop(context, true);
+              } catch (value) {
+                if (context.mounted) setState(() => error = value.toString());
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    ),
+  );
+  return saved == true;
 }
 
 class VendorEarningsScreen extends ConsumerWidget {

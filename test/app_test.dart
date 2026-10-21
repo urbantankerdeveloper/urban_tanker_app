@@ -208,4 +208,30 @@ void main() {
     expect(dashboard.orders.single.reference, 'UT-2001');
     expect(dashboard.orders.single.amountRupees, 2500);
   });
+
+  test('vendor services map current availability state', () {
+    final service = VendorService.fromJson({
+      'code': 'water_delivery',
+      'name': 'Water delivery',
+      'description': 'Scheduled tanker delivery',
+      'vendor_enabled': false,
+    });
+
+    expect(service.code, 'water_delivery');
+    expect(service.enabled, isFalse);
+  });
+
+  test('offline mutations retain entity identifiers', () {
+    final mutation = VendorOfflineMutation.fromJson({
+      'id': 'mutation-1',
+      'mutation_type': 'status',
+      'entity_type': 'booking',
+      'entity_id': 'booking-1',
+      'conflict_status': 'queued',
+      'payload': {'status': 'en_route'},
+    });
+
+    expect(mutation.entityId, 'booking-1');
+    expect(mutation.status, 'queued');
+  });
 }

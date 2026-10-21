@@ -168,6 +168,7 @@ class VendorOfflineMutation {
     required this.id,
     required this.type,
     required this.entityType,
+    required this.entityId,
     required this.status,
     required this.payload,
     required this.lastError,
@@ -176,6 +177,7 @@ class VendorOfflineMutation {
   final String id;
   final String type;
   final String entityType;
+  final String? entityId;
   final String status;
   final Map<String, dynamic> payload;
   final String? lastError;
@@ -185,10 +187,32 @@ class VendorOfflineMutation {
         id: (json['id'] ?? '').toString(),
         type: (json['mutation_type'] ?? '').toString(),
         entityType: (json['entity_type'] ?? '').toString(),
+        entityId: json['entity_id']?.toString(),
         status: (json['conflict_status'] ?? 'queued').toString(),
         payload: json['payload'] is Map
             ? Map<String, dynamic>.from(json['payload'] as Map)
             : const {},
         lastError: json['last_error']?.toString(),
+      );
+}
+
+class VendorService {
+  const VendorService({
+    required this.code,
+    required this.name,
+    required this.description,
+    required this.enabled,
+  });
+
+  final String code;
+  final String name;
+  final String description;
+  final bool enabled;
+
+  factory VendorService.fromJson(Map<String, dynamic> json) => VendorService(
+        code: (json['code'] ?? '').toString(),
+        name: (json['name'] ?? json['code'] ?? '').toString(),
+        description: (json['description'] ?? '').toString(),
+        enabled: json['vendor_enabled'] != false,
       );
 }

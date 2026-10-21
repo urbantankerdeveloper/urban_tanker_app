@@ -104,6 +104,11 @@ final vendorDriversProvider =
   return ref.watch(appControllerProvider).api.vendorDrivers();
 });
 
+final vendorServicesProvider =
+    FutureProvider.autoDispose<List<VendorService>>((ref) {
+  return ref.watch(appControllerProvider).api.vendorServices();
+});
+
 final vendorPayoutsProvider =
     FutureProvider.autoDispose<List<VendorPayout>>((ref) {
   return ref.watch(appControllerProvider).api.vendorPayouts();
@@ -117,4 +122,19 @@ final vendorOfflineMutationsProvider =
 final adminHealthProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
   return ref.watch(appControllerProvider).api.adminHealth();
+});
+
+final dispatcherOrdersProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
+  return ref.watch(appControllerProvider).api.adminOrders();
+});
+
+final dispatcherVendorsProvider =
+    FutureProvider.autoDispose<List<AccountRecord>>((ref) {
+  return ref.watch(appControllerProvider).api.adminVendors();
+});
+
+final dispatcherAlertsProvider =
+    FutureProvider.autoDispose<List<AccountRecord>>((ref) {
+  return ref.watch(appControllerProvider).api.adminAlerts();
 });

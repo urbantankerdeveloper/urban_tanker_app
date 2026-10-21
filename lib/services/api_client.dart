@@ -596,6 +596,7 @@ class ApiClient {
     final path = switch (role) {
       'vendor' => '/vendor/notifications',
       'admin' => '/admin/notifications',
+      'dispatcher' => '/admin/notifications',
       'customer' => '/customer/notifications',
       _ => throw UnsupportedError(
           'Notifications are not available for the $role workspace yet.',
@@ -784,6 +785,19 @@ class ApiClient {
     return _mapList(response, 'vendor complaints');
   }
 
+  Future<Map<String, dynamic>> updateVendorComplaint({
+    required String id,
+    required String status,
+    String? resolution,
+  }) async {
+    final response = await request('PATCH', '/vendor/complaints/$id', body: {
+      'status': status,
+      if (resolution != null && resolution.trim().isNotEmpty)
+        'resolution': resolution.trim(),
+    });
+    return _mapResponse(response, 'vendor complaint update');
+  }
+
   Future<Map<String, dynamic>> createVendorComplaint({
     required String bookingId,
     required String subject,
@@ -815,6 +829,20 @@ class ApiClient {
     return _mapResponse(response, 'vendor document');
   }
 
+  Future<Map<String, dynamic>> updateVendorDocument({
+    required String id,
+    String? objectKey,
+    String? documentType,
+    String? expiresOn,
+  }) async {
+    final response = await request('PATCH', '/vendor/documents/$id', body: {
+      if (objectKey != null) 'objectKey': objectKey,
+      if (documentType != null) 'documentType': documentType,
+      if (expiresOn != null) 'expiresOn': expiresOn,
+    });
+    return _mapResponse(response, 'vendor document update');
+  }
+
   Future<Map<String, dynamic>> updateVendorAttendance({
     required String driverId,
     required String status,
@@ -827,6 +855,27 @@ class ApiClient {
       'date': attendanceDate.toIso8601String().split('T').first,
     });
     return _mapResponse(response, 'driver attendance');
+  }
+
+  Future<List<Map<String, dynamic>>> vendorAttendance({
+    String? driverId,
+    DateTime? date,
+  }) async {
+    final query = <String, String>{
+      if (driverId != null) 'driverId': driverId,
+      if (date != null) 'date': date.toIso8601String().split('T').first,
+    };
+    final path = Uri(
+      path: '/vendor/attendance',
+      queryParameters: query.isEmpty ? null : query,
+    ).toString();
+    final response = await request('GET', path);
+    return _mapList(response, 'vendor attendance');
+  }
+
+  Future<List<VendorService>> vendorServices() async {
+    final response = await request('GET', '/vendor/services');
+    return _vendorList(response, VendorService.fromJson, 'vendor services');
   }
 
   Future<Map<String, dynamic>> updateVendorServiceAvailability({
@@ -882,6 +931,13 @@ class ApiClient {
     String? entityId,
     required Map<String, dynamic> payload,
   }) async {
+    final duplicate = await _findDuplicateOfflineMutation(
+      mutationType: mutationType,
+      entityType: entityType,
+      entityId: entityId,
+      payload: payload,
+    );
+    if (duplicate != null) return duplicate;
     final response = await request('POST', '/vendor/offline-mutations', body: {
       'mutationType': mutationType,
       'entityType': entityType,
@@ -893,6 +949,30 @@ class ApiClient {
       throw const FormatException('The offline mutation response was invalid.');
     }
     return VendorOfflineMutation.fromJson(decoded);
+  }
+
+  Future<VendorOfflineMutation?> _findDuplicateOfflineMutation({
+    required String mutationType,
+    required String entityType,
+    String? entityId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final pending = await vendorOfflineMutations();
+    for (final item in pending) {
+      if (item.status == 'discarded' ||
+          item.status == 'completed' ||
+          item.type != mutationType ||
+          item.entityType != entityType ||
+          item.payload['status'] != payload['status'] ||
+          item.payload['vehicleId'] != payload['vehicleId'] ||
+          item.payload['driverId'] != payload['driverId']) {
+        continue;
+      }
+      if (entityId == null || item.entityId == entityId) {
+        return item;
+      }
+    }
+    return null;
   }
 
   Future<VendorOfflineMutation> retryVendorMutation(String id) async {
@@ -909,6 +989,244 @@ class ApiClient {
 
   Future<void> discardVendorMutation(String id) async {
     await request('DELETE', '/vendor/offline-mutations/$id');
+  }
+
+  Future<Map<String, dynamic>> adminOrders({
+    int page = 1,
+    String? status,
+  }) async {
+    final response = await request(
+      'GET',
+      _adminPath(
+          '/orders', {'page': '$page', if (status != null) 'status': status}),
+    );
+    return _mapResponse(response, 'admin orders');
+  }
+
+  Future<List<AccountRecord>> adminAlerts() =>
+      _records('/admin/alerts', 'admin alerts');
+
+  Future<List<AccountRecord>> dispatcherVendors() => adminVendors();
+
+  Future<AccountRecord> dispatcherAssignOrder(
+    String orderId, {
+    String? vendorId,
+    String? vehicleId,
+    String? driverId,
+  }) =>
+      assignAdminOrder(
+        orderId,
+        vendorId: vendorId,
+        vehicleId: vehicleId,
+        driverId: driverId,
+      );
+
+  Future<AccountRecord> dispatcherUpdateStatus(
+    String orderId,
+    String status,
+  ) =>
+      updateAdminOrderStatus(orderId, status);
+
+  Future<AccountRecord> dispatcherCancelOrder(
+    String orderId,
+    String reason,
+  ) =>
+      cancelAdminOrder(orderId, reason);
+
+  Future<AccountRecord> assignAdminOrder(
+    String id, {
+    String? vendorId,
+    String? vehicleId,
+    String? driverId,
+  }) async {
+    final response =
+        await request('PATCH', '/admin/orders/$id/assignment', body: {
+      if (vendorId != null) 'vendorId': vendorId,
+      if (vehicleId != null) 'vehicleId': vehicleId,
+      if (driverId != null) 'driverId': driverId,
+    });
+    return AccountRecord(await _mapResponse(response, 'admin assignment'));
+  }
+
+  Future<AccountRecord> updateAdminOrderStatus(String id, String status) async {
+    final response = await request(
+      'PATCH',
+      '/admin/orders/$id/status',
+      body: {'status': status},
+    );
+    return AccountRecord(await _mapResponse(response, 'admin order status'));
+  }
+
+  Future<AccountRecord> cancelAdminOrder(String id, String reason) async {
+    final response = await request(
+      'POST',
+      '/admin/orders/$id/cancel',
+      body: {'reason': reason},
+    );
+    return AccountRecord(
+        await _mapResponse(response, 'admin order cancellation'));
+  }
+
+  Future<AccountRecord> adminVendor(String id) async =>
+      AccountRecord(await _adminMap('/vendors/$id', 'admin vendor'));
+
+  Future<AccountRecord> createAdminVendor(Map<String, dynamic> body) async {
+    final response = await request('POST', '/admin/vendors', body: body);
+    return AccountRecord(await _mapResponse(response, 'admin vendor'));
+  }
+
+  Future<AccountRecord> updateAdminVendor(
+      String id, Map<String, dynamic> body) async {
+    final response = await request('PATCH', '/admin/vendors/$id', body: body);
+    return AccountRecord(await _mapResponse(response, 'admin vendor update'));
+  }
+
+  Future<void> deleteAdminVendor(String id) async {
+    await request('DELETE', '/admin/vendors/$id');
+  }
+
+  Future<AccountRecord> adminCustomer(String id) async =>
+      AccountRecord(await _adminMap('/customers/$id', 'admin customer'));
+
+  Future<AccountRecord> createAdminCustomer(Map<String, dynamic> body) async {
+    final response = await request('POST', '/admin/customers', body: body);
+    return AccountRecord(await _mapResponse(response, 'admin customer'));
+  }
+
+  Future<AccountRecord> updateAdminCustomer(
+      String id, Map<String, dynamic> body) async {
+    final response = await request('PATCH', '/admin/customers/$id', body: body);
+    return AccountRecord(await _mapResponse(response, 'admin customer update'));
+  }
+
+  Future<void> deleteAdminCustomer(String id) async {
+    await request('DELETE', '/admin/customers/$id');
+  }
+
+  Future<AccountRecord> createAdminCoupon(Map<String, dynamic> body) async {
+    final response = await request('POST', '/admin/coupons', body: body);
+    return AccountRecord(await _mapResponse(response, 'admin coupon'));
+  }
+
+  Future<AccountRecord> updateAdminCoupon(
+      String id, Map<String, dynamic> body) async {
+    final response = await request('PATCH', '/admin/coupons/$id', body: body);
+    return AccountRecord(await _mapResponse(response, 'admin coupon update'));
+  }
+
+  Future<void> deleteAdminCoupon(String id) async {
+    await request('DELETE', '/admin/coupons/$id');
+  }
+
+  Future<List<AccountRecord>> adminServices() async =>
+      _records('/admin/services', 'admin services');
+
+  Future<AccountRecord> createAdminService(Map<String, dynamic> body) async {
+    final response = await request('POST', '/admin/services', body: body);
+    return AccountRecord(await _mapResponse(response, 'admin service'));
+  }
+
+  Future<AccountRecord> updateAdminService(
+      String id, Map<String, dynamic> body) async {
+    final response = await request('PATCH', '/admin/services/$id', body: body);
+    return AccountRecord(await _mapResponse(response, 'admin service update'));
+  }
+
+  Future<List<AccountRecord>> adminPayouts() async {
+    final page = await adminPayoutPage();
+    final rows = page['rows'];
+    if (rows is! List) {
+      throw const FormatException('The admin payouts response was invalid.');
+    }
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map(AccountRecord.new)
+        .toList();
+  }
+
+  Future<List<AccountRecord>> adminPartnerApplications({String? status}) async {
+    final path = _adminPath('/partner-applications', {
+      if (status != null) 'status': status,
+    });
+    return _records(path, 'partner applications');
+  }
+
+  Future<AccountRecord> reviewPartnerApplication(
+    String id, {
+    required String status,
+    String? reviewNote,
+  }) async {
+    final response = await request('PATCH', '/admin/partner-applications/$id',
+        body: {
+          'status': status,
+          if (reviewNote != null) 'reviewNote': reviewNote
+        });
+    return AccountRecord(await _mapResponse(response, 'partner review'));
+  }
+
+  Future<Map<String, dynamic>> adminReport(Map<String, dynamic> body) async {
+    final response = await request('POST', '/admin/reports', body: body);
+    return _mapResponse(response, 'admin report');
+  }
+
+  Future<void> adminStorageCleanup() async {
+    await request('POST', '/admin/storage/cleanup');
+  }
+
+  Future<void> sendAdminNotification(Map<String, dynamic> body) async {
+    await request('POST', '/admin/notifications', body: body);
+  }
+
+  Future<List<NotificationItem>> adminNotifications() async =>
+      notifications('admin');
+
+  Future<void> markAdminNotificationRead(String id) async {
+    await request('PATCH', '/admin/notifications/$id/read');
+  }
+
+  Future<Map<String, dynamic>> adminPayoutPage({int page = 1}) async {
+    final response =
+        await request('GET', _adminPath('/payouts', {'page': '$page'}));
+    return _mapResponse(response, 'admin payouts');
+  }
+
+  Future<AccountRecord> updateAdminPayout(String id, String status) async {
+    final response = await request(
+      'PATCH',
+      '/admin/payouts/$id/status',
+      body: {'status': status},
+    );
+    return AccountRecord(await _mapResponse(response, 'admin payout update'));
+  }
+
+  Future<Map<String, dynamic>> adminAuditLogs({
+    int page = 1,
+    String? actorId,
+    String? action,
+    String? entityType,
+  }) async {
+    final response = await request(
+      'GET',
+      _adminPath('/audit-logs', {
+        'page': '$page',
+        if (actorId != null && actorId.isNotEmpty) 'actorId': actorId,
+        if (action != null && action.isNotEmpty) 'action': action,
+        if (entityType != null && entityType.isNotEmpty)
+          'entityType': entityType,
+      }),
+    );
+    return _mapResponse(response, 'admin audit logs');
+  }
+
+  String _adminPath(String path, Map<String, String> query) {
+    final uri =
+        Uri(path: '/admin$path', queryParameters: query.isEmpty ? null : query);
+    return uri.toString();
+  }
+
+  Future<Map<String, dynamic>> _adminMap(String path, String label) async {
+    final response = await request('GET', '/admin$path');
+    return _mapResponse(response, label);
   }
 
   Future<List<T>> _vendorList<T>(
@@ -947,7 +1265,11 @@ class ApiClient {
   }
 
   Future<void> markNotificationRead(String role, String id) async {
-    final prefix = role == 'vendor' ? '/vendor' : '/customer';
+    final prefix = role == 'vendor'
+        ? '/vendor'
+        : role == 'dispatcher' || role == 'admin'
+            ? '/admin'
+            : '/customer';
     await request('PATCH', '$prefix/notifications/$id/read');
   }
 
