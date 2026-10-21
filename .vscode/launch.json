@@ -1,0 +1,54 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Urban Tanker: Debug",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "debug",
+      "toolArgs": [
+        "--dart-define=API_BASE_URL=http://10.0.2.2:3000/api",
+        "--dart-define=SOCKET_URL=http://10.0.2.2:3000",
+        "--dart-define=ONESIGNAL_APP_ID="
+      ]
+    },
+    {
+      "name": "Urban Tanker: Profile",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "profile",
+      "toolArgs": [
+        "--dart-define=API_BASE_URL=http://10.0.2.2:3000/api",
+        "--dart-define=SOCKET_URL=http://10.0.2.2:3000",
+        "--dart-define=ONESIGNAL_APP_ID="
+      ]
+    },
+    {
+      "name": "Urban Tanker: Release",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "release",
+      "toolArgs": [
+        "--dart-define=API_BASE_URL=http://10.0.2.2:3000/api",
+        "--dart-define=SOCKET_URL=http://10.0.2.2:3000",
+        "--dart-define=ONESIGNAL_APP_ID="
+      ]
+    },
+    {
+      "name": "Urban Tanker: Flutter Tests",
+      "request": "launch",
+      "type": "dart_test",
+      "program": "test/app_test.dart"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Urban Tanker: Debug with Tests",
+      "configurations": [
+        "Urban Tanker: Debug",
+        "Urban Tanker: Flutter Tests"
+      ],
+      "stopAll": true
+    }
+  ]
+}

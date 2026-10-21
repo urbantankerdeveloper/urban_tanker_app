@@ -1,0 +1,63 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Flutter: Analyze",
+      "type": "shell",
+      "command": "flutter analyze",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$dart-analyze"
+      ],
+      "group": "test"
+    },
+    {
+      "label": "Flutter: Test",
+      "type": "shell",
+      "command": "flutter test",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test"
+    },
+    {
+      "label": "Flutter: Build APK Debug",
+      "type": "shell",
+      "command": "flutter build apk --debug",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build"
+    },
+    {
+      "label": "Flutter: Build APK Profile",
+      "type": "shell",
+      "command": "flutter build apk --profile",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build"
+    },
+    {
+      "label": "Flutter: Build APK Release",
+      "type": "shell",
+      "command": "flutter build apk --release",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build"
+    },
+    {
+      "label": "Flutter: Build and Test",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Flutter: Analyze",
+        "Flutter: Test",
+        "Flutter: Build APK Debug"
+      ],
+      "group": "build"
+    }
+  ]
+}
