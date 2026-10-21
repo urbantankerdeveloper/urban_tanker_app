@@ -225,141 +225,6 @@ class CustomerAccountScreen extends ConsumerWidget {
     }
   }
 
-  class _UsageCard extends ConsumerWidget {
-    @override
-    Widget build(BuildContext context, WidgetRef ref) {
-      final usage = ref.watch(customerUsageProvider);
-      return Card(
-        child: usage.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(20),
-            child: LinearProgressIndicator(),
-          ),
-          error: (error, _) => _AccountError(
-            message: error.toString(),
-            retry: () => ref.invalidate(customerUsageProvider),
-          ),
-          data: (value) => Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Usage summary', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _UsageMetric(label: 'Deliveries', value: '${value.deliveries}'),
-                    _UsageMetric(label: 'Total spend', value: '₹${value.totalSpend.toStringAsFixed(0)}'),
-                    _UsageMetric(label: 'Average', value: '₹${value.averageAmount.toStringAsFixed(0)}'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-  }
-
-  class _UsageMetric extends StatelessWidget {
-    const _UsageMetric({required this.label, required this.value});
-    final String label;
-    final String value;
-
-    @override
-    Widget build(BuildContext context) => Column(
-          children: [
-            Text(value, style: Theme.of(context).textTheme.titleMedium),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        );
-  }
-
-  class _MembershipSection extends ConsumerWidget {
-    @override
-    Widget build(BuildContext context, WidgetRef ref) {
-      final membership = ref.watch(customerMembershipProvider);
-      return Card(
-        child: ExpansionTile(
-          leading: const Icon(Icons.workspace_premium_outlined),
-          title: const Text('Membership'),
-          children: [
-            membership.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.all(16),
-                child: CircularProgressIndicator(),
-              ),
-              error: (error, _) => _AccountError(
-                message: error.toString(),
-                retry: () => ref.invalidate(customerMembershipProvider),
-              ),
-              data: (value) => value == null
-                  ? ListTile(
-                      title: const Text('No membership yet.'),
-                      trailing: TextButton(
-                        onPressed: () => _showPlans(context, ref),
-                        child: const Text('View plans'),
-                      ),
-                    )
-                  : ListTile(
-                      title: Text(value.title),
-                      subtitle: Text(value.detail),
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (status) async {
-                          await ref.read(appControllerProvider).api.updateMembership(status);
-                          ref.invalidate(customerMembershipProvider);
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'active', child: Text('Active')),
-                          PopupMenuItem(value: 'paused', child: Text('Paused')),
-                          PopupMenuItem(value: 'cancelled', child: Text('Cancelled')),
-                        ],
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    Future<void> _showPlans(BuildContext context, WidgetRef ref) async {
-      final plans = await ref.read(customerMembershipPlansProvider.future);
-      if (!context.mounted) return;
-      showModalBottomSheet<void>(
-        context: context,
-        builder: (context) => SafeArea(
-          child: plans.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('No membership plans are currently available.'),
-                )
-              : ListView(
-                  shrinkWrap: true,
-                  children: plans
-                      .map(
-                        (plan) => ListTile(
-                          title: Text(plan.title),
-                          subtitle: Text(plan.detail),
-                          onTap: plan.id.isEmpty
-                              ? null
-                              : () async {
-                                  await ref
-                                      .read(appControllerProvider)
-                                      .api
-                                      .requestMembership(plan.id);
-                                  ref.invalidate(customerMembershipProvider);
-                                  if (context.mounted) Navigator.pop(context);
-                                },
-                        ),
-                      )
-                      .toList(),
-                ),
-        ),
-      );
-    }
-  }
-
   Future<void> _createSupport(BuildContext context, WidgetRef ref) async {
     final subject = TextEditingController();
     final message = TextEditingController();
@@ -449,6 +314,151 @@ class CustomerAccountScreen extends ConsumerWidget {
         title: title,
         fields: fields,
         submit: submit,
+      ),
+    );
+  }
+}
+
+class _UsageCard extends ConsumerWidget {
+  const _UsageCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final usage = ref.watch(customerUsageProvider);
+    return Card(
+      child: usage.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.all(20),
+          child: LinearProgressIndicator(),
+        ),
+        error: (error, _) => _AccountError(
+          message: error.toString(),
+          retry: () => ref.invalidate(customerUsageProvider),
+        ),
+        data: (value) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _UsageMetric(label: 'Deliveries', value: '${value.deliveries}'),
+              _UsageMetric(
+                label: 'Total spend',
+                value: '₹${value.totalSpend.toStringAsFixed(0)}',
+              ),
+              _UsageMetric(
+                label: 'Average',
+                value: '₹${value.averageAmount.toStringAsFixed(0)}',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UsageMetric extends StatelessWidget {
+  const _UsageMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          Text(value, style: Theme.of(context).textTheme.titleMedium),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      );
+}
+
+class _MembershipSection extends ConsumerWidget {
+  const _MembershipSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final membership = ref.watch(customerMembershipProvider);
+    return Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.workspace_premium_outlined),
+        title: const Text('Membership'),
+        children: [
+          membership.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+            error: (error, _) => _AccountError(
+              message: error.toString(),
+              retry: () => ref.invalidate(customerMembershipProvider),
+            ),
+            data: (value) => value == null
+                ? ListTile(
+                    title: const Text('No membership yet.'),
+                    trailing: TextButton(
+                      onPressed: () => _showPlans(context, ref),
+                      child: const Text('View plans'),
+                    ),
+                  )
+                : ListTile(
+                    title: Text(value.title),
+                    subtitle: Text(value.detail),
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (status) async {
+                        await ref
+                            .read(appControllerProvider)
+                            .api
+                            .updateMembership(status);
+                        ref.invalidate(customerMembershipProvider);
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'active', child: Text('Active')),
+                        PopupMenuItem(value: 'paused', child: Text('Paused')),
+                        PopupMenuItem(
+                          value: 'cancelled',
+                          child: Text('Cancelled'),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPlans(BuildContext context, WidgetRef ref) async {
+    final plans = await ref.read(customerMembershipPlansProvider.future);
+    if (!context.mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: plans.isEmpty
+            ? const Padding(
+                padding: EdgeInsets.all(20),
+                child: Text('No membership plans are currently available.'),
+              )
+            : ListView(
+                shrinkWrap: true,
+                children: plans
+                    .map(
+                      (plan) => ListTile(
+                        title: Text(plan.title),
+                        subtitle: Text(plan.detail),
+                        onTap: plan.id.isEmpty
+                            ? null
+                            : () async {
+                                await ref
+                                    .read(appControllerProvider)
+                                    .api
+                                    .requestMembership(plan.id);
+                                ref.invalidate(customerMembershipProvider);
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                      ),
+                    )
+                    .toList(),
+              ),
       ),
     );
   }
