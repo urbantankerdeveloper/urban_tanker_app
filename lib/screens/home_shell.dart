@@ -91,7 +91,7 @@ class _HomeShellState extends State<HomeShell> {
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: selectedService,
+                initialValue: selectedService,
                 decoration: const InputDecoration(labelText: 'Service'),
                 items: _services
                     .map((service) => DropdownMenuItem(
@@ -106,7 +106,7 @@ class _HomeShellState extends State<HomeShell> {
               const SizedBox(height: 12),
               if (addresses.isNotEmpty)
                 DropdownButtonFormField<String>(
-                  value: selectedAddress,
+                  initialValue: selectedAddress,
                   decoration: const InputDecoration(labelText: 'Saved address'),
                   items: addresses
                       .map((address) => DropdownMenuItem(
@@ -289,6 +289,20 @@ class _HomeShellState extends State<HomeShell> {
                       builder: (_) => NotificationInbox(
                         controller: widget.controller,
                         role: role.name,
+                        onNotificationSelected: (item) {
+                          final target = item.bookingId != null
+                              ? 'Bookings'
+                              : item.invoiceId != null
+                                  ? 'Account > Invoices'
+                                  : 'Account > Support requests';
+                          setState(() => _index = item.bookingId != null ? 1 : 2);
+                          Navigator.of(context).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('$target selected.'),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   );

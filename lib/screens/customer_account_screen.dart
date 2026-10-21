@@ -228,8 +228,21 @@ class CustomerAccountScreen extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      await ref.read(appControllerProvider).api.deleteAddress(item.id);
-      ref.invalidate(customerAddressesProvider);
+      try {
+        await ref.read(appControllerProvider).api.deleteAddress(item.id);
+        ref.invalidate(customerAddressesProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Address deleted.')),
+          );
+        }
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error.toString())),
+          );
+        }
+      }
     }
   }
 
@@ -275,11 +288,24 @@ class CustomerAccountScreen extends ConsumerWidget {
       ),
     );
     if (status != null) {
-      await ref.read(appControllerProvider).api.updateSubscription(
-            item.id,
-            status,
+      try {
+        await ref.read(appControllerProvider).api.updateSubscription(
+              item.id,
+              status,
+            );
+        ref.invalidate(customerSubscriptionsProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Subscription marked $status.')),
           );
-      ref.invalidate(customerSubscriptionsProvider);
+        }
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error.toString())),
+          );
+        }
+      }
     }
   }
 
@@ -300,14 +326,26 @@ class CustomerAccountScreen extends ConsumerWidget {
               loading: () => const CircularProgressIndicator(),
               error: (error, _) => Text(error.toString()),
               data: (value) => ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
                 title: Text(value.title),
-                subtitle: Text(value.detail),
+                subtitle: Text(_invoiceDetail(value)),
               ),
             ),
           );
         },
       ),
     );
+  }
+
+  String _invoiceDetail(AccountRecord invoice) {
+    final fields = [
+      invoice.detail,
+      if (invoice.data['invoice_number'] != null)
+        'Invoice: ${invoice.data['invoice_number']}',
+      if (invoice.data['total'] != null) 'Total: ₹${invoice.data['total']}',
+      if (invoice.data['status'] != null) 'Status: ${invoice.data['status']}',
+    ];
+    return fields.where((value) => value.isNotEmpty).join('\n');
   }
 
   Future<void> _showForm(
@@ -419,11 +457,27 @@ class _MembershipSection extends ConsumerWidget {
                     subtitle: Text(value.detail),
                     trailing: PopupMenuButton<String>(
                       onSelected: (status) async {
-                        await ref
-                            .read(appControllerProvider)
-                            .api
-                            .updateMembership(status);
-                        ref.invalidate(customerMembershipProvider);
+                        final confirmed = await _confirmMembershipChange(
+                          context,
+                          status,
+                        );
+                        if (!confirmed || !context.mounted) return;
+                        try {
+                          await ref
+                              .read(appControllerProvider)
+                              .api
+                              .updateMembership(status);
+                          ref.invalidate(customerMembershipProvider);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Membership marked $status.'),
+                            ),
+                          );
+                        } catch (error) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(error.toString())),
+                          );
+                        }
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'active', child: Text('Active')),
@@ -442,7 +496,17 @@ class _MembershipSection extends ConsumerWidget {
   }
 
   Future<void> _showPlans(BuildContext context, WidgetRef ref) async {
-    final plans = await ref.read(customerMembershipPlansProvider.future);
+    List<AccountRecord> plans;
+    try {
+      plans = await ref.read(customerMembershipPlansProvider.future);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+      return;
+    }
     if (!context.mounted) return;
     showModalBottomSheet<void>(
       context: context,
@@ -462,12 +526,29 @@ class _MembershipSection extends ConsumerWidget {
                         onTap: plan.id.isEmpty
                             ? null
                             : () async {
+                              try {
                                 await ref
                                     .read(appControllerProvider)
                                     .api
                                     .requestMembership(plan.id);
                                 ref.invalidate(customerMembershipProvider);
-                                if (context.mounted) Navigator.pop(context);
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Membership request submitted.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } catch (error) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(error.toString())),
+                                  );
+                                }
+                              }
                               },
                       ),
                     )
@@ -475,6 +556,35 @@ class _MembershipSection extends ConsumerWidget {
               ),
       ),
     );
+  }
+
+  Future<bool> _confirmMembershipChange(
+    BuildContext context,
+    String status,
+  ) async {
+    if (status == 'active') return true;
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('${status[0].toUpperCase()}${status.substring(1)} membership?'),
+            content: Text(
+              status == 'cancelled'
+                  ? 'This will cancel your current membership.'
+                  : 'Your membership benefits may be paused until it is active again.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Keep membership'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(status[0].toUpperCase() + status.substring(1)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 }
 

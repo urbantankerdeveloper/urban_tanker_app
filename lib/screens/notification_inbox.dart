@@ -7,11 +7,13 @@ class NotificationInbox extends StatefulWidget {
   const NotificationInbox({
     required this.controller,
     required this.role,
+    this.onNotificationSelected,
     super.key,
   });
 
   final AppController controller;
   final String role;
+  final ValueChanged<NotificationItem>? onNotificationSelected;
 
   @override
   State<NotificationInbox> createState() => _NotificationInboxState();
@@ -88,15 +90,21 @@ class _NotificationInboxState extends State<NotificationInbox> {
                           : Theme.of(context).colorScheme.primary,
                     ),
                     title: Text(item.title),
-                    subtitle: Text(item.message),
+                    subtitle: Text(_subtitle(item)),
                     isThreeLine: item.message.isNotEmpty,
-                    onTap: item.read
-                        ? null
-                        : () async {
-                            await widget.controller.api
-                                .markNotificationRead(widget.role, item.id);
-                            if (mounted) _reload();
-                          },
+                    onTap: () async {
+                      if (!item.read) {
+                        await widget.controller.api
+                            .markNotificationRead(widget.role, item.id);
+                      }
+                      if (item.bookingId != null ||
+                          item.invoiceId != null ||
+                          item.supportRequestId != null) {
+                        widget.onNotificationSelected?.call(item);
+                      } else if (mounted) {
+                        _reload();
+                      }
+                    },
                   ),
                 );
               },
@@ -105,6 +113,17 @@ class _NotificationInboxState extends State<NotificationInbox> {
         },
       ),
     );
+  }
+
+  String _subtitle(NotificationItem item) {
+    final target = item.bookingId != null
+        ? 'Open booking'
+        : item.invoiceId != null
+            ? 'Open invoice'
+            : item.supportRequestId != null
+                ? 'Open support request'
+                : '';
+    return [item.message, target].where((value) => value.isNotEmpty).join('\n');
   }
 }
 
