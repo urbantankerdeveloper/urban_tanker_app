@@ -11,7 +11,7 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [
-        appControllerProvider.overrideWith(() => controller),
+        appControllerProvider.overrideWith((ref) => controller),
       ],
       child: const UrbanTankerApp(),
     ),

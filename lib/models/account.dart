@@ -40,6 +40,23 @@ class AccountRecord {
           '')
       .toString();
   String get status => (data['status'] ?? '').toString();
+
+  String get offerDetail {
+    final discountType = (data['discount_type'] ?? '').toString();
+    final discountValue = data['discount_value'];
+    final discount = discountType == 'percentage'
+        ? '${discountValue ?? 0}% off'
+        : discountValue == null
+            ? ''
+            : '₹$discountValue off';
+    final expiry = DateTime.tryParse(
+      (data['valid_until'] ?? '').toString(),
+    );
+    final expiryText = expiry == null
+        ? ''
+        : 'Valid until ${expiry.toLocal().toString().split(' ').first}';
+    return [discount, expiryText].where((value) => value.isNotEmpty).join(' • ');
+  }
 }
 
 class CustomerUsage {

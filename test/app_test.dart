@@ -78,6 +78,20 @@ void main() {
     expect(record.detail, '12 Main Street');
   });
 
+  test('offer records expose discount and expiry details', () {
+    final offer = AccountRecord({
+      'code': 'SAVE10',
+      'title': 'New customer offer',
+      'discount_type': 'percentage',
+      'discount_value': 10,
+      'valid_until': '2026-12-31T00:00:00Z',
+    });
+
+    expect(offer.title, 'New customer offer');
+    expect(offer.offerDetail, contains('10% off'));
+    expect(offer.offerDetail, contains('Valid until'));
+  });
+
   test('usage response maps customer summary values', () {
     final usage = CustomerUsage.fromJson({
       'deliveries': 3,

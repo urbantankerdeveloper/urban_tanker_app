@@ -7,6 +7,8 @@ class Booking {
     required this.capacity,
     required this.deliveryDate,
     required this.createdAt,
+    this.quotedAmount,
+    this.paymentStatus,
   });
 
   final String id;

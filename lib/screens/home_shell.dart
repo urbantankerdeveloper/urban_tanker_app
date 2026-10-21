@@ -5,6 +5,7 @@ import '../app/theme.dart';
 import '../models/service.dart';
 import '../models/session.dart';
 import '../models/account.dart';
+import '../models/notification.dart';
 import 'notification_inbox.dart';
 import 'bookings_screen.dart';
 import 'customer_account_screen.dart';
@@ -23,12 +24,16 @@ class _HomeShellState extends State<HomeShell> {
   List<TankerService> _services = const [];
   bool _loadingServices = false;
   String? _serviceError;
+  late Future<List<NotificationItem>>? _notifications;
 
   WorkspaceRole get role => widget.controller.user!.role;
 
   @override
   void initState() {
     super.initState();
+    _notifications = role == WorkspaceRole.customer
+        ? widget.controller.api.notifications(role.name)
+        : null;
     if (role == WorkspaceRole.customer) _loadServices();
   }
 
@@ -57,11 +62,15 @@ class _HomeShellState extends State<HomeShell> {
     final locationController = TextEditingController();
     final dateController = TextEditingController();
     final capacityController = TextEditingController(text: '5000');
+    final couponController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     var selectedService = _services.first.id;
     var selectedAddress = addresses.isEmpty ? null : addresses.first.detail;
+    Map<String, dynamic>? validatedCoupon;
+    String? couponMessage;
+    var validatingCoupon = false;
     if (selectedAddress != null) locationController.text = selectedAddress;
-    final result = await showModalBottomSheet<bool>(
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
@@ -137,18 +146,88 @@ class _HomeShellState extends State<HomeShell> {
                 controller: capacityController,
                 decoration: const InputDecoration(labelText: 'Capacity (litres)'),
               ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: couponController,
+                textCapitalization: TextCapitalization.characters,
+                decoration: InputDecoration(
+                  labelText: 'Coupon code (optional)',
+                  suffixIcon: TextButton(
+                    onPressed: validatingCoupon
+                        ? null
+                        : () async {
+                            final code = couponController.text.trim();
+                            if (code.isEmpty) {
+                              setSheetState(() {
+                                validatedCoupon = null;
+                                couponMessage = 'Enter a coupon code first.';
+                              });
+                              return;
+                            }
+                            setSheetState(() {
+                              validatingCoupon = true;
+                              couponMessage = null;
+                            });
+                            try {
+                              final coupon = await widget.controller.api
+                                  .validateCoupon(
+                                    code: code,
+                                    serviceCode: selectedService,
+                                    amount: 0,
+                                  );
+                              setSheetState(() {
+                                validatedCoupon = coupon;
+                                couponMessage =
+                                    '${coupon['title'] ?? coupon['code'] ?? code} is valid.';
+                              });
+                            } catch (error) {
+                              setSheetState(() {
+                                validatedCoupon = null;
+                                couponMessage = error.toString();
+                              });
+                            } finally {
+                              if (context.mounted) {
+                                setSheetState(() => validatingCoupon = false);
+                              }
+                            }
+                          },
+                    child: validatingCoupon
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Apply'),
+                  ),
+                ),
+              ),
+              if (couponMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    couponMessage!,
+                    style: TextStyle(
+                      color: validatedCoupon == null
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 18),
               FilledButton(
                 onPressed: () async {
                   if (!formKey.currentState!.validate()) return;
                   try {
-                    await widget.controller.api.createBooking(
+                    final booking = await widget.controller.api.createBooking(
                       serviceId: selectedService,
                       capacity: capacityController.text,
                       location: locationController.text.trim(),
                       deliveryDate: dateController.text.trim(),
+                      couponCode: validatedCoupon == null
+                          ? null
+                          : couponController.text.trim(),
                     );
-                    if (context.mounted) Navigator.pop(context, true);
+                    if (context.mounted) Navigator.pop(context, booking);
                   } catch (error) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -168,9 +247,21 @@ class _HomeShellState extends State<HomeShell> {
     locationController.dispose();
     dateController.dispose();
     capacityController.dispose();
-    if (result == true && mounted) {
+    couponController.dispose();
+    if (result != null && mounted) {
+      final quote = result['quote'];
+      final totalPaise = quote is Map<String, dynamic>
+          ? quote['totalPaise']
+          : result['quoted_amount_paise'];
+      final total = totalPaise is num ? totalPaise / 100 : null;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Booking submitted successfully.')),
+        SnackBar(
+          content: Text(
+            total == null
+                ? 'Booking submitted successfully.'
+                : 'Booking submitted. Total: ₹${total.toStringAsFixed(2)}',
+          ),
+        ),
       );
     }
   }
@@ -183,17 +274,38 @@ class _HomeShellState extends State<HomeShell> {
       appBar: AppBar(
         title: Text(_titleForRole(role)),
         actions: [
-          IconButton(
-            tooltip: 'Notifications',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => NotificationInbox(
-                  controller: widget.controller,
-                  role: role.name,
+          FutureBuilder<List<NotificationItem>>(
+            future: _notifications,
+            builder: (context, snapshot) {
+              final unread = snapshot.data
+                      ?.where((notification) => !notification.read)
+                      .length ??
+                  0;
+              return IconButton(
+                tooltip: 'Notifications',
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => NotificationInbox(
+                        controller: widget.controller,
+                        role: role.name,
+                      ),
+                    ),
+                  );
+                  if (mounted && role == WorkspaceRole.customer) {
+                    setState(() {
+                      _notifications =
+                          widget.controller.api.notifications(role.name);
+                    });
+                  }
+                },
+                icon: Badge(
+                  isLabelVisible: unread > 0,
+                  label: Text(unread > 99 ? '99+' : '$unread'),
+                  child: const Icon(Icons.notifications_none_outlined),
                 ),
-              ),
-            ),
-            icon: const Icon(Icons.notifications_none_outlined),
+              );
+            },
           ),
           IconButton(
             tooltip: 'Theme',

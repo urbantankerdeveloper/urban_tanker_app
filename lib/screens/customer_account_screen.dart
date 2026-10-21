@@ -153,10 +153,18 @@ class CustomerAccountScreen extends ConsumerWidget {
       title: 'Edit profile',
       fields: [('Name', name), ('Email', email), ('10-digit mobile', phone)],
       submit: () async {
+        final emailValue = email.text.trim();
+        final phoneValue = phone.text.trim();
+        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(emailValue)) {
+          throw const FormatException('Enter a valid email address.');
+        }
+        if (!RegExp(r'^\d{10}$').hasMatch(phoneValue)) {
+          throw const FormatException('Enter a valid 10-digit mobile number.');
+        }
         await ref.read(appControllerProvider).api.updateProfile(
               name: name.text.trim(),
-              email: email.text.trim(),
-              phone: phone.text.trim(),
+              email: emailValue,
+              phone: phoneValue,
             );
         ref.invalidate(customerProfileProvider);
       },
@@ -308,14 +316,20 @@ class CustomerAccountScreen extends ConsumerWidget {
     required List<(String, TextEditingController)> fields,
     required Future<void> Function() submit,
   }) {
-    return showDialog<void>(
+    return showDialog<bool>(
       context: context,
       builder: (_) => _FormDialog(
         title: title,
         fields: fields,
         submit: submit,
       ),
-    );
+    ).then((saved) {
+      if (saved == true && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$title completed successfully.')),
+        );
+      }
+    });
   }
 }
 
@@ -516,7 +530,11 @@ class _AccountSection extends ConsumerWidget {
                         .map(
                           (item) => ListTile(
                             title: Text(item.title),
-                            subtitle: Text(item.detail),
+                            subtitle: Text(
+                              title == 'Offers' && item.offerDetail.isNotEmpty
+                                  ? item.offerDetail
+                                  : item.detail,
+                            ),
                             trailing: item.status.isEmpty
                                 ? null
                                 : Text(item.status),

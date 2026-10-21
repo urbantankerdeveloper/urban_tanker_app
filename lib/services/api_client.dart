@@ -113,10 +113,11 @@ class ApiClient {
     required String deliveryDate,
     String? notes,
     String paymentMethod = 'cod',
+    String? couponCode,
   }) async {
     final response = await request(
       'POST',
-      '/customer/orders',
+      '/customer/orders/quote',
       body: {
         'serviceId': serviceId,
         'capacity': capacity,
@@ -124,6 +125,8 @@ class ApiClient {
         'deliveryDate': deliveryDate,
         'notes': notes,
         'paymentMethod': paymentMethod,
+        if (couponCode != null && couponCode.trim().isNotEmpty)
+          'couponCode': couponCode.trim().toUpperCase(),
       },
     );
     final decoded = jsonDecode(response.body);
@@ -268,7 +271,7 @@ class ApiClient {
   Future<List<AccountRecord>> offers() =>
       _records('/customer/offers', 'offers');
 
-  Future<AccountRecord> validateCoupon({
+  Future<Map<String, dynamic>> validateCoupon({
     required String code,
     required String serviceCode,
     required double amount,
@@ -282,7 +285,11 @@ class ApiClient {
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The coupon response was invalid.');
     }
-    return AccountRecord(decoded);
+    final coupon = decoded['coupon'];
+    if (coupon is! Map<String, dynamic>) {
+      throw const FormatException('The coupon details were invalid.');
+    }
+    return coupon;
   }
 
   Future<List<AccountRecord>> membershipPlans() =>
