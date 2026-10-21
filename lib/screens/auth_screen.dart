@@ -1,0 +1,168 @@
+import 'package:flutter/material.dart';
+
+import '../app/app_controller.dart';
+import '../app/theme.dart';
+
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({required this.controller, super.key});
+
+  final AppController controller;
+
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _credential = TextEditingController();
+  final _password = TextEditingController();
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
+  bool _signup = false;
+  bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _credential.dispose();
+    _password.dispose();
+    _name.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_signup) {
+      await widget.controller.signUp(
+        email: _credential.text,
+        password: _password.text,
+        name: _name.text,
+        phone: _phone.text,
+      );
+    } else {
+      await widget.controller.signIn(_credential.text, _password.text);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('URBAN TANKER',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: aqua,
+                              letterSpacing: 2,
+                              fontWeight: FontWeight.w800,
+                            )),
+                    const SizedBox(height: 18),
+                    Text(
+                      _signup ? 'Start with reliable water.' : 'Water, organised.',
+                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(_signup
+                        ? 'Create a customer account to book and track deliveries.'
+                        : 'Sign in to your role workspace and keep every delivery moving.'),
+                    const SizedBox(height: 28),
+                    if (_signup) ...[
+                      TextFormField(
+                        controller: _name,
+                        decoration: const InputDecoration(labelText: 'Full name'),
+                        validator: (value) =>
+                            value == null || value.trim().length < 2
+                                ? 'Enter your name.'
+                                : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _phone,
+                        keyboardType: TextInputType.phone,
+                        decoration:
+                            const InputDecoration(labelText: '10-digit mobile'),
+                        validator: (value) =>
+                            value == null || !RegExp(r'^\d{10}$').hasMatch(value)
+                                ? 'Enter a valid 10-digit mobile number.'
+                                : null,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    TextFormField(
+                      controller: _credential,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration:
+                          const InputDecoration(labelText: 'Email or username'),
+                      validator: (value) => value == null || value.trim().isEmpty
+                          ? 'Enter your email or username.'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _password,
+                      obscureText: _obscurePassword,
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        suffixIcon: IconButton(
+                          onPressed: () => setState(
+                              () => _obscurePassword = !_obscurePassword),
+                          icon: Icon(_obscurePassword
+                              ? Icons.visibility
+                              : Icons.visibility_off),
+                        ),
+                      ),
+                      validator: (value) => value == null || value.length < 8
+                          ? 'Use at least 8 characters.'
+                          : null,
+                    ),
+                    if (controller.errorMessage != null) ...[
+                      const SizedBox(height: 12),
+                      Text(controller.errorMessage!,
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.error)),
+                    ],
+                    const SizedBox(height: 22),
+                    FilledButton(
+                      onPressed: controller.busy ? null : _submit,
+                      child: controller.busy
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(_signup ? 'Create account' : 'Sign in'),
+                    ),
+                    TextButton(
+                      onPressed: controller.busy
+                          ? null
+                          : () => setState(() {
+                                _signup = !_signup;
+                                controller.clearError();
+                              }),
+                      child: Text(_signup
+                          ? 'Already have an account? Sign in'
+                          : 'New here? Create a customer account'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

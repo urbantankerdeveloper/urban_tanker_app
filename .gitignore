@@ -1,0 +1,30 @@
+# Flutter/Dart
+.dart_tool/
+.packages
+.pub/
+/build/
+
+# Generated Flutter plugin files
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE/editor files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Native build/user files
+android/.gradle/
+android/local.properties
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
