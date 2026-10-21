@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
 import '../models/account.dart';
+import '../models/dispatcher.dart';
 
 class DispatcherDispatchScreen extends ConsumerStatefulWidget {
   const DispatcherDispatchScreen({super.key});
@@ -15,12 +16,28 @@ class DispatcherDispatchScreen extends ConsumerStatefulWidget {
 class _DispatcherDispatchScreenState
     extends ConsumerState<DispatcherDispatchScreen> {
   String? status;
+  String? service;
+  String? vendorId;
+  String? from;
+  String? to;
+  bool? assigned;
+  int page = 1;
 
   @override
   Widget build(BuildContext context) {
-    final orders = ref.watch(dispatcherOrdersProvider);
+    final filter = DispatcherOrderFilter(
+      page: page,
+      status: status,
+      service: service,
+      vendorId: vendorId,
+      from: from,
+      to: to,
+      assigned: assigned,
+    );
+    final orders = ref.watch(dispatcherOrdersProvider(filter));
+    final vendors = ref.watch(dispatcherVendorsProvider);
     return RefreshIndicator(
-      onRefresh: () async => ref.invalidate(dispatcherOrdersProvider),
+      onRefresh: () async => ref.invalidate(dispatcherOrdersProvider(filter)),
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -38,35 +55,167 @@ class _DispatcherDispatchScreenState
               DropdownMenuItem(value: 'arrived', child: Text('Arrived')),
               DropdownMenuItem(value: 'delivered', child: Text('Delivered')),
             ],
-            onChanged: (value) => setState(() => status = value),
+            onChanged: (value) => setState(() {
+              status = value;
+              page = 1;
+            }),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            decoration: const InputDecoration(
+              labelText: 'Service code',
+              prefixIcon: Icon(Icons.water_drop_outlined),
+            ),
+            onChanged: (value) => setState(() {
+              service = value.trim().isEmpty ? null : value.trim();
+              page = 1;
+            }),
+          ),
+          const SizedBox(height: 12),
+          vendors.when(
+            loading: () => const LinearProgressIndicator(),
+            error: (error, _) => Text('Vendor filter unavailable: $error'),
+            data: (items) => DropdownButtonFormField<String?>(
+              initialValue: vendorId,
+              decoration: const InputDecoration(labelText: 'Vendor'),
+              items: [
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('All vendors'),
+                ),
+                ...items.map(
+                  (vendor) => DropdownMenuItem<String?>(
+                    value: vendor.id,
+                    child: Text(vendor.title),
+                  ),
+                ),
+              ],
+              onChanged: (value) => setState(() {
+                vendorId = value;
+                page = 1;
+              }),
+            ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<bool?>(
+            initialValue: assigned,
+            decoration: const InputDecoration(labelText: 'Assignment'),
+            items: const [
+              DropdownMenuItem<bool?>(
+                value: null,
+                child: Text('Assigned and unassigned'),
+              ),
+              DropdownMenuItem<bool?>(
+                value: true,
+                child: Text('Assigned only'),
+              ),
+              DropdownMenuItem<bool?>(
+                value: false,
+                child: Text('Unassigned only'),
+              ),
+            ],
+            onChanged: (value) => setState(() {
+              assigned = value;
+              page = 1;
+            }),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _chooseDate(
+                  (value) => setState(() {
+                    from = value;
+                    page = 1;
+                  }),
+                ),
+                icon: const Icon(Icons.calendar_today_outlined),
+                label: Text(from == null ? 'From date' : 'From $from'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _chooseDate(
+                  (value) => setState(() {
+                    to = value;
+                    page = 1;
+                  }),
+                ),
+                icon: const Icon(Icons.event_outlined),
+                label: Text(to == null ? 'To date' : 'To $to'),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           orders.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, _) => _DispatcherError(
               message: error.toString(),
-              retry: () => ref.invalidate(dispatcherOrdersProvider),
+              retry: () => ref.invalidate(dispatcherOrdersProvider(filter)),
             ),
-            data: (page) {
-              final rows = (page['rows'] as List?)
+            data: (pageData) {
+              final rows = (pageData['rows'] as List?)
                       ?.whereType<Map<String, dynamic>>()
-                      .where(
-                        (row) => status == null || row['status'] == status,
-                      )
                       .toList() ??
                   const [];
               if (rows.isEmpty) {
                 return const _DispatcherEmpty(message: 'No dispatch orders.');
               }
+              final currentPage =
+                  (pageData['page'] as num?)?.toInt() ?? page;
+              final total =
+                  (pageData['total'] as num?)?.toInt() ?? rows.length;
+              final pageSize =
+                  (pageData['pageSize'] as num?)?.toInt() ?? 25;
               return Column(
-                children: rows
-                    .map((row) => _DispatchOrderCard(order: row))
-                    .toList(),
+                children: [
+                  ...rows.map((row) => _DispatchOrderCard(order: row)),
+                  if (total > pageSize)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Page $currentPage of ${(total / pageSize).ceil()}'),
+                        Row(
+                          children: [
+                            IconButton(
+                              tooltip: 'Previous page',
+                              onPressed: currentPage > 1
+                                  ? () => setState(() => page = currentPage - 1)
+                                  : null,
+                              icon: const Icon(Icons.chevron_left),
+                            ),
+                            IconButton(
+                              tooltip: 'Next page',
+                              onPressed: currentPage * pageSize < total
+                                  ? () => setState(() => page = currentPage + 1)
+                                  : null,
+                              icon: const Icon(Icons.chevron_right),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                ],
               );
             },
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _chooseDate(ValueChanged<String> onSelected) async {
+    final selected = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      initialDate: DateTime.now(),
+    );
+    if (selected == null || !mounted) return;
+    onSelected(
+      '${selected.year.toString().padLeft(4, '0')}-'
+      '${selected.month.toString().padLeft(2, '0')}-'
+      '${selected.day.toString().padLeft(2, '0')}',
     );
   }
 }
@@ -104,6 +253,11 @@ class _DispatchOrderCard extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: const Text('View order details'),
+              onTap: () => Navigator.pop(context, 'details'),
+            ),
+            ListTile(
               leading: const Icon(Icons.assignment_ind_outlined),
               title: const Text('Assign vendor / fleet'),
               onTap: () => Navigator.pop(context, 'assign'),
@@ -123,13 +277,50 @@ class _DispatchOrderCard extends ConsumerWidget {
       ),
     );
     if (!context.mounted) return;
-    if (action == 'assign') {
+    if (action == 'details') {
+      _details(context);
+    } else if (action == 'assign') {
       await _assign(context, ref);
     } else if (action == 'status') {
       await _status(context, ref);
     } else if (action == 'cancel') {
       await _cancel(context, ref);
     }
+
+  }
+
+  void _details(BuildContext context) {
+    final details = <String, dynamic>{
+      'Reference': order['reference'] ?? order['id'],
+      'Status': order['status'] ?? '—',
+      'Service': order['service_code'] ?? '—',
+      'Address': order['address_text'] ?? '—',
+      'Amount':
+          '₹${((order['quoted_amount_paise'] as num?)?.toDouble() ?? 0) / 100}',
+      'Schedule': order['scheduled_for'] ?? '—',
+      'Vendor': order['vendor_id'] ?? 'Unassigned',
+      'Vehicle': order['vehicle_id'] ?? 'Unassigned',
+      'Driver': order['driver_id'] ?? 'Unassigned',
+    };
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Dispatch order details'),
+        content: SingleChildScrollView(
+          child: Text(
+            details.entries
+                .map((entry) => '${entry.key}: ${entry.value}')
+                .join('\n'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _assign(BuildContext context, WidgetRef ref) async {
@@ -190,12 +381,17 @@ class _DispatchOrderCard extends ConsumerWidget {
   }
 
   Future<void> _status(BuildContext context, WidgetRef ref) async {
+    final allowed = DispatcherOrder.fromJson(order).allowedNextStatuses;
+    if (allowed.isEmpty) {
+      _message(context, 'No status transitions are available for this order.');
+      return;
+    }
     final value = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: ['pending_vendor', 'vendor_assigned', 'accepted', 'en_route', 'arrived', 'delivered']
+          children: allowed
               .map(
                 (value) => ListTile(
                   title: Text(value.replaceAll('_', ' ')),
@@ -271,7 +467,9 @@ class DispatcherLiveScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final orders = ref.watch(dispatcherOrdersProvider);
+    final orders = ref.watch(
+      dispatcherOrdersProvider(const DispatcherOrderFilter()),
+    );
     return orders.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => _DispatcherError(

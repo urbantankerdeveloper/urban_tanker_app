@@ -124,9 +124,17 @@ final adminHealthProvider =
   return ref.watch(appControllerProvider).api.adminHealth();
 });
 
-final dispatcherOrdersProvider =
-    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
-  return ref.watch(appControllerProvider).api.adminOrders();
+final dispatcherOrdersProvider = FutureProvider.autoDispose
+    .family<Map<String, dynamic>, DispatcherOrderFilter>((ref, filter) {
+  return ref.watch(appControllerProvider).api.adminOrders(
+        page: filter.page,
+        status: filter.status,
+        service: filter.service,
+        vendorId: filter.vendorId,
+        from: filter.from,
+        to: filter.to,
+        assigned: filter.assigned,
+      );
 });
 
 final dispatcherVendorsProvider =
@@ -138,3 +146,37 @@ final dispatcherAlertsProvider =
     FutureProvider.autoDispose<List<AccountRecord>>((ref) {
   return ref.watch(appControllerProvider).api.adminAlerts();
 });
+
+class DispatcherOrderFilter {
+  const DispatcherOrderFilter({
+    this.page = 1,
+    this.status,
+    this.service,
+    this.vendorId,
+    this.from,
+    this.to,
+    this.assigned,
+  });
+
+  final int page;
+  final String? status;
+  final String? service;
+  final String? vendorId;
+  final String? from;
+  final String? to;
+  final bool? assigned;
+
+  @override
+  bool operator ==(Object other) =>
+  other is DispatcherOrderFilter &&
+  page == other.page &&
+  status == other.status &&
+  service == other.service &&
+  vendorId == other.vendorId &&
+  from == other.from &&
+  to == other.to &&
+  assigned == other.assigned;
+
+  @override
+  int get hashCode => Object.hash(page, status, service, vendorId, from, to, assigned);
+}

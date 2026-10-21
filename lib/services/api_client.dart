@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../models/notification.dart';
 import '../models/booking.dart';
 import '../models/account.dart';
+import '../models/dispatcher.dart';
 import '../models/service.dart';
 import '../models/session.dart';
 import '../models/vendor.dart';
@@ -994,17 +995,63 @@ class ApiClient {
   Future<Map<String, dynamic>> adminOrders({
     int page = 1,
     String? status,
+    String? service,
+    String? vendorId,
+    String? from,
+    String? to,
+    bool? assigned,
+    int pageSize = 25,
   }) async {
     final response = await request(
       'GET',
-      _adminPath(
-          '/orders', {'page': '$page', if (status != null) 'status': status}),
+      _adminPath('/orders', {
+        'page': '$page',
+        'pageSize': '$pageSize',
+        if (status != null && status.isNotEmpty) 'status': status,
+        if (service != null && service.isNotEmpty) 'service': service,
+        if (vendorId != null && vendorId.isNotEmpty) 'vendorId': vendorId,
+        if (from != null && from.isNotEmpty) 'from': from,
+        if (to != null && to.isNotEmpty) 'to': to,
+        if (assigned != null) 'assigned': '$assigned',
+      }),
     );
     return _mapResponse(response, 'admin orders');
   }
 
+  Future<List<DispatcherOrder>> dispatcherOrderRows({
+    int page = 1,
+    String? status,
+    String? service,
+    String? vendorId,
+    String? from,
+    String? to,
+    bool? assigned,
+  }) async {
+    final pageData = await adminOrders(
+      page: page,
+      status: status,
+      service: service,
+      vendorId: vendorId,
+      from: from,
+      to: to,
+      assigned: assigned,
+    );
+    return (pageData['rows'] as List?)
+            ?.whereType<Map>()
+            .map((row) => DispatcherOrder.fromJson(
+                  Map<String, dynamic>.from(row),
+                ))
+            .toList() ??
+        const [];
+  }
+
   Future<List<AccountRecord>> adminAlerts() =>
       _records('/admin/alerts', 'admin alerts');
+
+  Future<List<DispatcherAlert>> dispatcherAlertRows() async {
+    final items = await adminAlerts();
+    return items.map((item) => DispatcherAlert.fromJson(item.data)).toList();
+  }
 
   Future<List<AccountRecord>> dispatcherVendors() => adminVendors();
 

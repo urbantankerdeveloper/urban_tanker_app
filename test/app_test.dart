@@ -5,6 +5,7 @@ import 'package:urban_tanker_app/models/booking.dart';
 import 'package:urban_tanker_app/models/account.dart';
 import 'package:urban_tanker_app/models/vendor.dart';
 import 'package:urban_tanker_app/models/notification.dart';
+import 'package:urban_tanker_app/models/dispatcher.dart';
 
 void main() {
   test('unknown server roles fail closed to customer', () {
@@ -233,5 +234,32 @@ void main() {
 
     expect(mutation.entityId, 'booking-1');
     expect(mutation.status, 'queued');
+  });
+
+  test('dispatcher models map assignment and alert fields', () {
+    final order = DispatcherOrder.fromJson({
+      'id': 'order-1',
+      'reference': 'UT-3001',
+      'status': 'vendor_assigned',
+      'service_code': 'water_delivery',
+      'address_text': 'Main Street',
+      'quoted_amount_paise': 180000,
+      'vendor_id': 'vendor-1',
+      'latitude': 12.97,
+      'longitude': 77.59,
+    });
+    final alert = DispatcherAlert.fromJson({
+      'id': 'order-1',
+      'reference': 'UT-3001',
+      'status': 'pending_vendor',
+      'alertType': 'unassigned',
+    });
+
+    expect(order.isAssigned, isTrue);
+    expect(order.amountRupees, 1800);
+    expect(order.latitude, 12.97);
+    expect(order.allowedNextStatuses, contains('accepted'));
+    expect(order.allowedNextStatuses, isNot(contains('delivered')));
+    expect(alert.reference, 'UT-3001');
   });
 }
