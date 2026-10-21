@@ -9,6 +9,7 @@ import '../models/notification.dart';
 import 'notification_inbox.dart';
 import 'bookings_screen.dart';
 import 'customer_account_screen.dart';
+import 'vendor_workspace.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({required this.controller, super.key});
@@ -31,7 +32,9 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
-    _notifications = role == WorkspaceRole.customer
+    _notifications = role == WorkspaceRole.customer ||
+            role == WorkspaceRole.vendor ||
+            role == WorkspaceRole.admin
         ? widget.controller.api.notifications(role.name)
         : null;
     if (role == WorkspaceRole.customer) _loadServices();
@@ -82,173 +85,178 @@ class _HomeShellState extends State<HomeShell> {
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          MediaQuery.viewInsetsOf(context).bottom + 20,
-        ),
-        child: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Book a delivery',
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: selectedService,
-                decoration: const InputDecoration(labelText: 'Service'),
-                items: _services
-                    .map((service) => DropdownMenuItem(
-                          value: service.id,
-                          child: Text(service.name),
-                        ))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setSheetState(() => selectedService = value);
-                },
-              ),
-              const SizedBox(height: 12),
-              if (addresses.isNotEmpty)
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.viewInsetsOf(context).bottom + 20,
+          ),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Book a delivery',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  initialValue: selectedAddress,
-                  decoration: const InputDecoration(labelText: 'Saved address'),
-                  items: addresses
-                      .map((address) => DropdownMenuItem(
-                            value: address.detail,
-                            child: Text(address.title),
+                  initialValue: selectedService,
+                  decoration: const InputDecoration(labelText: 'Service'),
+                  items: _services
+                      .map((service) => DropdownMenuItem(
+                            value: service.id,
+                            child: Text(service.name),
                           ))
                       .toList(),
                   onChanged: (value) {
-                    setSheetState(() {
-                      selectedAddress = value;
-                      locationController.text = value ?? '';
-                    });
+                    if (value != null) {
+                      setSheetState(() => selectedService = value);
+                    }
                   },
                 ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: locationController,
-                decoration: const InputDecoration(
-                  labelText: 'Delivery location',
-                  helperText: 'Choose a saved address or enter one manually.',
-                ),
-                validator: (value) => value == null || value.trim().length < 3
-                    ? 'Enter a delivery location.'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: dateController,
-                decoration: const InputDecoration(
-                    labelText: 'Delivery date (YYYY-MM-DD)'),
-                validator: (value) => value == null || value.trim().length < 10
-                    ? 'Enter a delivery date.'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: capacityController,
-                decoration: const InputDecoration(labelText: 'Capacity (litres)'),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: couponController,
-                textCapitalization: TextCapitalization.characters,
-                decoration: InputDecoration(
-                  labelText: 'Coupon code (optional)',
-                  suffixIcon: TextButton(
-                    onPressed: validatingCoupon
-                        ? null
-                        : () async {
-                            final code = couponController.text.trim();
-                            if (code.isEmpty) {
-                              setSheetState(() {
-                                validatedCoupon = null;
-                                couponMessage = 'Enter a coupon code first.';
-                              });
-                              return;
-                            }
-                            setSheetState(() {
-                              validatingCoupon = true;
-                              couponMessage = null;
-                            });
-                            try {
-                              final coupon = await widget.controller.api
-                                  .validateCoupon(
-                                    code: code,
-                                    serviceCode: selectedService,
-                                    amount: 0,
-                                  );
-                              setSheetState(() {
-                                validatedCoupon = coupon;
-                                couponMessage =
-                                    '${coupon['title'] ?? coupon['code'] ?? code} is valid.';
-                              });
-                            } catch (error) {
-                              setSheetState(() {
-                                validatedCoupon = null;
-                                couponMessage = error.toString();
-                              });
-                            } finally {
-                              if (context.mounted) {
-                                setSheetState(() => validatingCoupon = false);
-                              }
-                            }
-                          },
-                    child: validatingCoupon
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Apply'),
+                const SizedBox(height: 12),
+                if (addresses.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedAddress,
+                    decoration:
+                        const InputDecoration(labelText: 'Saved address'),
+                    items: addresses
+                        .map((address) => DropdownMenuItem(
+                              value: address.detail,
+                              child: Text(address.title),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      setSheetState(() {
+                        selectedAddress = value;
+                        locationController.text = value ?? '';
+                      });
+                    },
                   ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: locationController,
+                  decoration: const InputDecoration(
+                    labelText: 'Delivery location',
+                    helperText: 'Choose a saved address or enter one manually.',
+                  ),
+                  validator: (value) => value == null || value.trim().length < 3
+                      ? 'Enter a delivery location.'
+                      : null,
                 ),
-              ),
-              if (couponMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    couponMessage!,
-                    style: TextStyle(
-                      color: validatedCoupon == null
-                          ? Theme.of(context).colorScheme.error
-                          : Theme.of(context).colorScheme.primary,
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: dateController,
+                  decoration: const InputDecoration(
+                      labelText: 'Delivery date (YYYY-MM-DD)'),
+                  validator: (value) =>
+                      value == null || value.trim().length < 10
+                          ? 'Enter a delivery date.'
+                          : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: capacityController,
+                  decoration:
+                      const InputDecoration(labelText: 'Capacity (litres)'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: couponController,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: InputDecoration(
+                    labelText: 'Coupon code (optional)',
+                    suffixIcon: TextButton(
+                      onPressed: validatingCoupon
+                          ? null
+                          : () async {
+                              final code = couponController.text.trim();
+                              if (code.isEmpty) {
+                                setSheetState(() {
+                                  validatedCoupon = null;
+                                  couponMessage = 'Enter a coupon code first.';
+                                });
+                                return;
+                              }
+                              setSheetState(() {
+                                validatingCoupon = true;
+                                couponMessage = null;
+                              });
+                              try {
+                                final coupon =
+                                    await widget.controller.api.validateCoupon(
+                                  code: code,
+                                  serviceCode: selectedService,
+                                  amount: 0,
+                                );
+                                setSheetState(() {
+                                  validatedCoupon = coupon;
+                                  couponMessage =
+                                      '${coupon['title'] ?? coupon['code'] ?? code} is valid.';
+                                });
+                              } catch (error) {
+                                setSheetState(() {
+                                  validatedCoupon = null;
+                                  couponMessage = error.toString();
+                                });
+                              } finally {
+                                if (context.mounted) {
+                                  setSheetState(() => validatingCoupon = false);
+                                }
+                              }
+                            },
+                      child: validatingCoupon
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Apply'),
                     ),
                   ),
                 ),
-              const SizedBox(height: 18),
-              FilledButton(
-                onPressed: () async {
-                  if (!formKey.currentState!.validate()) return;
-                  try {
-                    final booking = await widget.controller.api.createBooking(
-                      serviceId: selectedService,
-                      capacity: capacityController.text,
-                      location: locationController.text.trim(),
-                      deliveryDate: dateController.text.trim(),
-                      couponCode: validatedCoupon == null
-                          ? null
-                          : couponController.text.trim(),
-                    );
-                    if (context.mounted) Navigator.pop(context, booking);
-                  } catch (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error.toString())),
+                if (couponMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      couponMessage!,
+                      style: TextStyle(
+                        color: validatedCoupon == null
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 18),
+                FilledButton(
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate()) return;
+                    try {
+                      final booking = await widget.controller.api.createBooking(
+                        serviceId: selectedService,
+                        capacity: capacityController.text,
+                        location: locationController.text.trim(),
+                        deliveryDate: dateController.text.trim(),
+                        couponCode: validatedCoupon == null
+                            ? null
+                            : couponController.text.trim(),
                       );
+                      if (context.mounted) Navigator.pop(context, booking);
+                    } catch (error) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(error.toString())),
+                        );
+                      }
                     }
-                  }
-                },
-                child: const Text('Submit booking'),
-              ),
-            ],
+                  },
+                  child: const Text('Submit booking'),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
     locationController.dispose();
@@ -257,20 +265,45 @@ class _HomeShellState extends State<HomeShell> {
     couponController.dispose();
     if (result != null && mounted) {
       final quote = result['quote'];
-      final totalPaise = quote is Map<String, dynamic>
-          ? quote['totalPaise']
-          : result['quoted_amount_paise'];
-      final total = totalPaise is num ? totalPaise / 100 : null;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            total == null
-                ? 'Booking submitted successfully.'
-                : 'Booking submitted. Total: ₹${total.toStringAsFixed(2)}',
-          ),
-        ),
+      await _showBookingConfirmation(
+        result,
+        quote is Map<String, dynamic> ? quote : null,
       );
     }
+  }
+
+  Future<void> _showBookingConfirmation(
+    Map<String, dynamic> booking,
+    Map<String, dynamic>? quote,
+  ) async {
+    String? money(Object? value) {
+      if (value is! num) return null;
+      return '₹${(value / 100).toStringAsFixed(2)}';
+    }
+
+    final lines = [
+      if (booking['reference'] != null) 'Reference: ${booking['reference']}',
+      if (quote?['subtotalPaise'] != null)
+        'Subtotal: ${money(quote!['subtotalPaise'])}',
+      if (quote?['gstPaise'] != null) 'GST: ${money(quote!['gstPaise'])}',
+      if (quote?['discountPaise'] != null)
+        'Discount: ${money(quote!['discountPaise'])}',
+      if (quote?['totalPaise'] != null) 'Total: ${money(quote!['totalPaise'])}',
+      'Payment: Cash on delivery',
+    ];
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Booking submitted'),
+        content: Text(lines.join('\n')),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -298,11 +331,19 @@ class _HomeShellState extends State<HomeShell> {
                         role: role.name,
                         onNotificationSelected: (item) {
                           final target = item.bookingId != null
-                              ? 'Bookings'
+                              ? role == WorkspaceRole.vendor
+                                  ? 'Operations'
+                                  : 'Bookings'
                               : item.invoiceId != null
-                                  ? 'Account > Invoices'
+                                  ? role == WorkspaceRole.vendor
+                                      ? 'Earnings'
+                                      : 'Account > Invoices'
                                   : 'Account > Support requests';
-                          setState(() => _index = item.bookingId != null ? 1 : 2);
+                          setState(() {
+                            _index = role == WorkspaceRole.vendor
+                                ? (item.bookingId != null ? 0 : 2)
+                                : (item.bookingId != null ? 1 : 2);
+                          });
                           Navigator.of(context).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -313,7 +354,10 @@ class _HomeShellState extends State<HomeShell> {
                       ),
                     ),
                   );
-                  if (mounted && role == WorkspaceRole.customer) {
+                  if (mounted &&
+                      (role == WorkspaceRole.customer ||
+                          role == WorkspaceRole.vendor ||
+                          role == WorkspaceRole.admin)) {
                     setState(() {
                       _notifications =
                           widget.controller.api.notifications(role.name);
@@ -346,9 +390,8 @@ class _HomeShellState extends State<HomeShell> {
       ),
       floatingActionButton: role == WorkspaceRole.customer && _index == 0
           ? FloatingActionButton.extended(
-              onPressed: _loadingServices || _services.isEmpty
-                  ? null
-                  : _createBooking,
+              onPressed:
+                  _loadingServices || _services.isEmpty ? null : _createBooking,
               icon: const Icon(Icons.local_shipping_outlined),
               label: const Text('Book water'),
             )
@@ -401,6 +444,15 @@ class _HomeShellState extends State<HomeShell> {
     if (role == WorkspaceRole.customer && tab.label == 'Account') {
       return const CustomerAccountScreen();
     }
+    if (role == WorkspaceRole.vendor && tab.label == 'Operations') {
+      return const VendorOperationsScreen();
+    }
+    if (role == WorkspaceRole.vendor && tab.label == 'Fleet') {
+      return const VendorFleetScreen();
+    }
+    if (role == WorkspaceRole.vendor && tab.label == 'Earnings') {
+      return const VendorEarningsScreen();
+    }
     return _workspacePage(tab, user);
   }
 
@@ -437,8 +489,7 @@ class _HomeShellState extends State<HomeShell> {
                     onPressed: _services.isEmpty ? null : _createBooking,
                     icon: const Icon(Icons.arrow_forward),
                     label: const Text('Start a booking'),
-                    style: TextButton.styleFrom(
-                        foregroundColor: Colors.white),
+                    style: TextButton.styleFrom(foregroundColor: Colors.white),
                   ),
                 ],
               ),
@@ -463,7 +514,8 @@ class _HomeShellState extends State<HomeShell> {
 
   Widget _workspacePage(_Tab tab, SessionUser user) {
     final copy = switch (role) {
-      WorkspaceRole.vendor => 'Manage assigned work, fleet, drivers, and payouts.',
+      WorkspaceRole.vendor =>
+        'Manage assigned work, fleet, drivers, and payouts.',
       WorkspaceRole.dispatcher =>
         'Coordinate active deliveries and resolve operational exceptions.',
       WorkspaceRole.admin =>
@@ -597,8 +649,8 @@ class _ErrorCard extends StatelessWidget {
               color: Theme.of(context).colorScheme.error),
           title: const Text('Could not load services'),
           subtitle: Text(message),
-          trailing: IconButton(
-              onPressed: onRetry, icon: const Icon(Icons.refresh)),
+          trailing:
+              IconButton(onPressed: onRetry, icon: const Icon(Icons.refresh)),
         ),
       );
 }

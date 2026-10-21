@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:urban_tanker_app/models/session.dart';
 import 'package:urban_tanker_app/models/booking.dart';
 import 'package:urban_tanker_app/models/account.dart';
+import 'package:urban_tanker_app/models/vendor.dart';
 
 void main() {
   test('unknown server roles fail closed to customer', () {
@@ -40,6 +41,20 @@ void main() {
     expect(booking.capacity, '5000');
     expect(booking.deliveryDate?.year, 2026);
     expect(booking.status, 'in_transit');
+  });
+
+  test('booking payment fields expose customer checkout details', () {
+    final booking = Booking.fromJson({
+      'id': 'booking-2',
+      'reference': 'UT-1002',
+      'status': 'pending',
+      'address_text': '12 Main Street',
+      'quoted_amount_paise': 125000,
+      'payment_status': 'pending',
+    });
+
+    expect(booking.quotedAmountRupees, 1250);
+    expect(booking.paymentStatus, 'pending');
   });
 
   test('customer profile supports backend profile field names', () {
@@ -114,5 +129,43 @@ void main() {
 
     expect(booking.id, 'booking-1');
     expect(booking.status, 'cancelled');
+  });
+
+  test('vendor records enforce approved active assignment rules', () {
+    final vehicle = VendorVehicle.fromJson({
+      'id': 'vehicle-1',
+      'registration_number': 'KA01AB1234',
+      'capacity_litres': 10000,
+      'is_active': true,
+      'verification': 'approved',
+    });
+    final driver = VendorDriver.fromJson({
+      'id': 'driver-1',
+      'name': 'Driver One',
+      'mobile_e164': '+919876543210',
+      'is_active': true,
+      'verification': 'pending',
+    });
+
+    expect(vehicle.assignable, isTrue);
+    expect(driver.assignable, isFalse);
+  });
+
+  test('vendor dashboard maps orders, fleet, and drivers', () {
+    final dashboard = VendorDashboard.fromJson({
+      'orders': [
+        {
+          'id': 'order-1',
+          'reference': 'UT-2001',
+          'address_text': 'Main Street',
+          'quoted_amount_paise': 250000,
+        },
+      ],
+      'vehicles': [],
+      'drivers': [],
+    });
+
+    expect(dashboard.orders.single.reference, 'UT-2001');
+    expect(dashboard.orders.single.amountRupees, 2500);
   });
 }

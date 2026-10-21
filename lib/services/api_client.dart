@@ -9,6 +9,7 @@ import '../models/booking.dart';
 import '../models/account.dart';
 import '../models/service.dart';
 import '../models/session.dart';
+import '../models/vendor.dart';
 
 class ApiException implements Exception {
   const ApiException(this.message, this.statusCode);
@@ -188,8 +189,7 @@ class ApiClient {
       '/customer/orders/$bookingId/delivery-otp',
     );
     final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic> ||
-        decoded['expiresAt'] is! String) {
+    if (decoded is! Map<String, dynamic> || decoded['expiresAt'] is! String) {
       throw const FormatException('The delivery OTP response was invalid.');
     }
     final expiresAt = DateTime.tryParse(decoded['expiresAt'] as String);
@@ -248,7 +248,8 @@ class ApiClient {
   Future<List<AccountRecord>> addresses() =>
       _records('/customer/addresses', 'addresses');
 
-  Future<List<AccountRecord>> wallet() => _records('/customer/wallet', 'wallet');
+  Future<List<AccountRecord>> wallet() =>
+      _records('/customer/wallet', 'wallet');
 
   Future<List<AccountRecord>> invoices() =>
       _records('/customer/invoices', 'invoices');
@@ -522,10 +523,122 @@ class ApiClient {
     if (decoded is! List) {
       throw const FormatException('The notifications response was invalid.');
     }
+
     return decoded
         .whereType<Map<String, dynamic>>()
         .map(NotificationItem.fromJson)
         .toList();
+  }
+
+  Future<VendorDashboard> vendorDashboard() async {
+    final response = await request('GET', '/vendor/dashboard');
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The vendor dashboard response was invalid.');
+    }
+    return VendorDashboard.fromJson(decoded);
+  }
+
+  Future<List<VendorOrder>> vendorOrders() async {
+    final response = await request('GET', '/vendor/orders');
+    return _vendorList(response, VendorOrder.fromJson, 'vendor orders');
+  }
+
+  Future<List<VendorVehicle>> vendorVehicles() async {
+    final response = await request('GET', '/vendor/vehicles');
+    return _vendorList(response, VendorVehicle.fromJson, 'vendor vehicles');
+  }
+
+  Future<List<VendorDriver>> vendorDrivers() async {
+    final response = await request('GET', '/vendor/drivers');
+    return _vendorList(response, VendorDriver.fromJson, 'vendor drivers');
+  }
+
+  Future<List<VendorPayout>> vendorPayouts() async {
+    final response = await request('GET', '/vendor/payouts');
+    return _vendorList(response, VendorPayout.fromJson, 'vendor payouts');
+  }
+
+  Future<VendorOrder> transitionVendorOrder(
+    String orderId, {
+    required String action,
+    String? status,
+    String? reason,
+    String? vehicleId,
+    String? driverId,
+  }) async {
+    final response = await request(
+      'PATCH',
+      '/vendor/orders/$orderId/transition',
+      body: {
+        'action': action,
+        if (status != null) 'status': status,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+        if (vehicleId != null) 'vehicleId': vehicleId,
+        if (driverId != null) 'driverId': driverId,
+      },
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The vendor order update was invalid.');
+    }
+    return VendorOrder.fromJson(decoded);
+  }
+
+  Future<List<VendorOfflineMutation>> vendorOfflineMutations() async {
+    final response = await request('GET', '/vendor/offline-mutations');
+    return _vendorList(
+      response,
+      VendorOfflineMutation.fromJson,
+      'offline mutations',
+    );
+  }
+
+  Future<VendorOfflineMutation> queueVendorMutation({
+    required String mutationType,
+    required String entityType,
+    String? entityId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final response = await request('POST', '/vendor/offline-mutations', body: {
+      'mutationType': mutationType,
+      'entityType': entityType,
+      if (entityId != null) 'entityId': entityId,
+      'payload': payload,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The offline mutation response was invalid.');
+    }
+    return VendorOfflineMutation.fromJson(decoded);
+  }
+
+  Future<VendorOfflineMutation> retryVendorMutation(String id) async {
+    final response = await request(
+      'POST',
+      '/vendor/offline-mutations/$id/retry',
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The mutation retry response was invalid.');
+    }
+    return VendorOfflineMutation.fromJson(decoded);
+  }
+
+  Future<void> discardVendorMutation(String id) async {
+    await request('DELETE', '/vendor/offline-mutations/$id');
+  }
+
+  Future<List<T>> _vendorList<T>(
+    http.Response response,
+    T Function(Map<String, dynamic>) parse,
+    String label,
+  ) async {
+    final decoded = jsonDecode(response.body);
+    if (decoded is! List) {
+      throw FormatException('The $label response was invalid.');
+    }
+    return decoded.whereType<Map<String, dynamic>>().map(parse).toList();
   }
 
   Future<void> markNotificationRead(String role, String id) async {
