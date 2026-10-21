@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
 import '../models/vendor.dart';
+import '../services/api_client.dart';
 
 class VendorOperationsScreen extends ConsumerWidget {
   const VendorOperationsScreen({super.key});
@@ -237,7 +238,11 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
             if (!['delivered', 'cancelled'].contains(widget.order.status)) ...[
               _statusButton(context, ref, 'en_route', 'Mark en route'),
               _statusButton(context, ref, 'arrived', 'Mark arrived'),
-              _statusButton(context, ref, 'delivered', 'Mark delivered'),
+              if (widget.order.status == 'arrived')
+                OutlinedButton(
+                  onPressed: () => _verifyDelivery(context, ref),
+                  child: const Text('Verify delivery OTP'),
+                ),
               OutlinedButton(
                 onPressed: () => _reject(context, ref),
                 child: const Text('Reject order'),
@@ -349,6 +354,67 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
     }
   }
 
+  Future<void> _verifyDelivery(BuildContext context, WidgetRef ref) async {
+    final otpController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Verify delivery'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: otpController,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            decoration: const InputDecoration(
+              labelText: 'Six-digit delivery OTP',
+            ),
+            validator: (value) => RegExp(r'^\d{6}$').hasMatch(value ?? '')
+                ? null
+                : 'Enter the six-digit OTP.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, true);
+              }
+            },
+            child: const Text('Verify'),
+          ),
+        ],
+      ),
+    );
+    final otp = otpController.text.trim();
+    otpController.dispose();
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await ref.read(appControllerProvider).api.verifyVendorDelivery(
+            orderId: widget.order.id,
+            otp: otp,
+          );
+      ref.invalidate(vendorOrdersProvider);
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Delivery verified successfully.')),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delivery verification failed: $error')),
+        );
+      }
+    }
+  }
+
   void _showAssignmentRequired(BuildContext context) {
     showDialog<void>(
       context: context,
@@ -395,7 +461,10 @@ class VendorFleetScreen extends ConsumerWidget {
                     '${vehicle.capacityLitres} litres • ${vehicle.verification}'),
                 trailing: TextButton(
                   onPressed: () async {
-                    await ref.read(appControllerProvider).api.updateVendorVehicle(
+                    await ref
+                        .read(appControllerProvider)
+                        .api
+                        .updateVendorVehicle(
                           vehicle.id,
                           isActive: !vehicle.active,
                         );
@@ -420,17 +489,57 @@ class VendorFleetScreen extends ConsumerWidget {
                 leading: const Icon(Icons.person_outline),
                 title: Text(driver.name),
                 subtitle: Text('${driver.mobile} • ${driver.verification}'),
-                trailing: TextButton(
-                  onPressed: () async {
-                    await ref.read(appControllerProvider).api.updateVendorDriver(
-                          driver.id,
-                          isActive: !driver.active,
+                trailing: PopupMenuButton<String>(
+                  onSelected: (status) async {
+                    try {
+                      await ref
+                          .read(appControllerProvider)
+                          .api
+                          .updateVendorAttendance(
+                            driverId: driver.id,
+                            status: status,
+                          );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '${driver.name}: ${status.replaceAll('_', ' ')}',
+                            ),
+                          ),
                         );
-                    ref.invalidate(vendorDashboardProvider);
+                      }
+                    } catch (error) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Attendance failed: $error')),
+                        );
+                      }
+                    }
                   },
-                  child: Text(driver.active ? 'Deactivate' : 'Activate'),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                        value: 'present', child: Text('Mark present')),
+                    PopupMenuItem(value: 'absent', child: Text('Mark absent')),
+                    PopupMenuItem(
+                      value: 'on_leave',
+                      child: Text('Mark on leave'),
+                    ),
+                  ],
+                ),
               ),
             ),
+            const SizedBox(height: 16),
+            _VendorRecordsCard(
+              title: 'Complaints',
+              icon: Icons.report_problem_outlined,
+              loader: (api) => api.vendorComplaints(),
+              emptyMessage: 'No complaints recorded.',
+            ),
+            _VendorRecordsCard(
+              title: 'Documents',
+              icon: Icons.description_outlined,
+              loader: (api) => api.vendorDocuments(),
+              emptyMessage: 'No documents submitted.',
             ),
           ],
         ),
@@ -444,7 +553,10 @@ class VendorFleetScreen extends ConsumerWidget {
     final saved = await _showRecordForm(
       context,
       title: 'Add vehicle',
-      fields: [('Registration number', registration), ('Capacity litres', capacity)],
+      fields: [
+        ('Registration number', registration),
+        ('Capacity litres', capacity)
+      ],
       submit: () async {
         final litres = int.tryParse(capacity.text.trim());
         if (litres == null || litres <= 0) {
@@ -542,6 +654,74 @@ class VendorFleetScreen extends ConsumerWidget {
   }
 }
 
+class _VendorRecordsCard extends ConsumerWidget {
+  const _VendorRecordsCard({
+    required this.title,
+    required this.icon,
+    required this.loader,
+    required this.emptyMessage,
+  });
+
+  final String title;
+  final IconData icon;
+  final Future<List<Map<String, dynamic>>> Function(ApiClient api) loader;
+  final String emptyMessage;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Card(
+      child: ExpansionTile(
+        leading: Icon(icon),
+        title: Text(title),
+        children: [
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: loader(ref.read(appControllerProvider).api),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                );
+              }
+              if (snapshot.hasError) {
+                return ListTile(
+                  title: Text('Could not load $title'),
+                  subtitle: Text(snapshot.error.toString()),
+                );
+              }
+              final records = snapshot.data ?? const [];
+              if (records.isEmpty) return ListTile(title: Text(emptyMessage));
+              return Column(
+                children: records
+                    .map(
+                      (record) => ListTile(
+                        title: Text(
+                          (record['subject'] ??
+                                  record['document_type'] ??
+                                  record['documentType'] ??
+                                  'Record')
+                              .toString(),
+                        ),
+                        subtitle: Text(
+                          (record['status'] ??
+                                  record['verification'] ??
+                                  record['object_key'] ??
+                                  record['objectKey'] ??
+                                  '')
+                              .toString(),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class VendorEarningsScreen extends ConsumerWidget {
   const VendorEarningsScreen({super.key});
 
@@ -556,28 +736,98 @@ class VendorEarningsScreen extends ConsumerWidget {
       ),
       data: (items) => RefreshIndicator(
         onRefresh: () async => ref.invalidate(vendorPayoutsProvider),
-        child: items.isEmpty
-            ? ListView(
-                children: const [_VendorEmpty(message: 'No payouts yet.')])
-            : ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (_, index) {
-                  final payout = items[index];
-                  return Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.payments_outlined),
-                      title: Text('₹${payout.amountRupees.toStringAsFixed(2)}'),
-                      subtitle: Text(
-                          '${payout.reference}\n${_formatDate(payout.createdAt)}'),
-                      trailing: Text(payout.status),
-                    ),
-                  );
-                },
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: () => _requestPayout(context, ref),
+                icon: const Icon(Icons.payments_outlined),
+                label: const Text('Request payout'),
               ),
+            ),
+            const SizedBox(height: 8),
+            if (items.isEmpty)
+              const _VendorEmpty(message: 'No payouts yet.')
+            else
+              ...items.map(
+                (payout) => Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.payments_outlined),
+                    title: Text('₹${payout.amountRupees.toStringAsFixed(2)}'),
+                    subtitle: Text(
+                        '${payout.reference}\n${_formatDate(payout.createdAt)}'),
+                    trailing: Text(payout.status),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _requestPayout(BuildContext context, WidgetRef ref) async {
+    final amountController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Request payout'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: amountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Amount in rupees',
+              prefixText: '₹ ',
+            ),
+            validator: (value) {
+              final amount = double.tryParse(value ?? '');
+              return amount == null || amount <= 0
+                  ? 'Enter a valid amount.'
+                  : null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, true);
+              }
+            },
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+    final amount = double.tryParse(amountController.text.trim());
+    amountController.dispose();
+    if (submitted != true || amount == null || !context.mounted) return;
+    try {
+      await ref.read(appControllerProvider).api.requestVendorPayout(
+            amount: amount,
+          );
+      ref.invalidate(vendorPayoutsProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payout request submitted.')),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Payout request failed: $error')),
+        );
+      }
+    }
   }
 }
 

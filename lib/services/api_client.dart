@@ -248,6 +248,28 @@ class ApiClient {
   Future<List<AccountRecord>> addresses() =>
       _records('/customer/addresses', 'addresses');
 
+  Future<List<AccountRecord>> adminVendors() =>
+      _records('/admin/vendors', 'admin vendors');
+
+  Future<List<AccountRecord>> adminCustomers() =>
+      _records('/admin/customers', 'admin customers');
+
+  Future<List<AccountRecord>> adminCoupons() =>
+      _records('/admin/coupons', 'admin coupons');
+
+  Future<Map<String, dynamic>> adminHealth() async {
+    final response = await request('GET', '/admin/system/health');
+    return _mapResponse(response, 'admin health');
+  }
+
+  Future<void> updateVendorVerification(String id, String status) async {
+    await request(
+      'PATCH',
+      '/admin/vendors/$id/status',
+      body: {'status': status},
+    );
+  }
+
   Future<List<AccountRecord>> wallet() =>
       _records('/customer/wallet', 'wallet');
 
@@ -669,9 +691,93 @@ class ApiClient {
     return VendorPayout.fromJson(decoded);
   }
 
+  Future<VendorOrder> verifyVendorDelivery({
+    required String orderId,
+    required String otp,
+    String? proofPath,
+  }) async {
+    final response = await request(
+      'POST',
+      '/vendor/orders/$orderId/delivery/verify',
+      body: {
+        'otp': otp,
+        if (proofPath != null && proofPath.trim().isNotEmpty)
+          'proofPath': proofPath.trim(),
+      },
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException(
+          'The delivery verification response was invalid.');
+    }
+    return VendorOrder.fromJson(decoded);
+  }
+
   Future<List<VendorPayout>> vendorPayouts() async {
     final response = await request('GET', '/vendor/payouts');
     return _vendorList(response, VendorPayout.fromJson, 'vendor payouts');
+  }
+
+  Future<List<Map<String, dynamic>>> vendorComplaints() async {
+    final response = await request('GET', '/vendor/complaints');
+    return _mapList(response, 'vendor complaints');
+  }
+
+  Future<Map<String, dynamic>> createVendorComplaint({
+    required String bookingId,
+    required String subject,
+    required String message,
+  }) async {
+    final response = await request('POST', '/vendor/complaints', body: {
+      'bookingId': bookingId,
+      'subject': subject,
+      'message': message,
+    });
+    return _mapResponse(response, 'vendor complaint');
+  }
+
+  Future<List<Map<String, dynamic>>> vendorDocuments() async {
+    final response = await request('GET', '/vendor/documents');
+    return _mapList(response, 'vendor documents');
+  }
+
+  Future<Map<String, dynamic>> createVendorDocument({
+    required String documentType,
+    required String objectKey,
+    String? expiresOn,
+  }) async {
+    final response = await request('POST', '/vendor/documents', body: {
+      'documentType': documentType,
+      'objectKey': objectKey,
+      if (expiresOn != null && expiresOn.isNotEmpty) 'expiresOn': expiresOn,
+    });
+    return _mapResponse(response, 'vendor document');
+  }
+
+  Future<Map<String, dynamic>> updateVendorAttendance({
+    required String driverId,
+    required String status,
+    DateTime? date,
+  }) async {
+    final attendanceDate = date ?? DateTime.now();
+    final response = await request('POST', '/vendor/attendance', body: {
+      'driverId': driverId,
+      'status': status,
+      'date': attendanceDate.toIso8601String().split('T').first,
+    });
+    return _mapResponse(response, 'driver attendance');
+  }
+
+  Future<Map<String, dynamic>> updateVendorServiceAvailability({
+    required String serviceCode,
+    required bool enabled,
+  }) async {
+    final response = await request(
+      'PATCH',
+      '/vendor/services/$serviceCode/availability',
+      body: {'enabled': enabled},
+    );
+    return _mapResponse(response, 'service availability');
   }
 
   Future<VendorOrder> transitionVendorOrder(
@@ -753,7 +859,30 @@ class ApiClient {
     if (decoded is! List) {
       throw FormatException('The $label response was invalid.');
     }
+
     return decoded.whereType<Map<String, dynamic>>().map(parse).toList();
+  }
+
+  Future<Map<String, dynamic>> _mapResponse(
+    http.Response response,
+    String label,
+  ) async {
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw FormatException('The $label response was invalid.');
+    }
+    return decoded;
+  }
+
+  Future<List<Map<String, dynamic>>> _mapList(
+    http.Response response,
+    String label,
+  ) async {
+    final decoded = jsonDecode(response.body);
+    if (decoded is! List) {
+      throw FormatException('The $label response was invalid.');
+    }
+    return decoded.whereType<Map<String, dynamic>>().toList();
   }
 
   Future<void> markNotificationRead(String role, String id) async {

@@ -10,6 +10,7 @@ import 'notification_inbox.dart';
 import 'bookings_screen.dart';
 import 'customer_account_screen.dart';
 import 'vendor_workspace.dart';
+import 'admin_workspace.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({required this.controller, super.key});
@@ -452,6 +453,15 @@ class _HomeShellState extends State<HomeShell> {
     }
     if (role == WorkspaceRole.vendor && tab.label == 'Earnings') {
       return const VendorEarningsScreen();
+    }
+    if (role == WorkspaceRole.admin && tab.label == 'Pulse') {
+      return const AdminPulseScreen();
+    }
+    if (role == WorkspaceRole.admin && tab.label == 'Operations') {
+      return const AdminOperationsScreen();
+    }
+    if (role == WorkspaceRole.admin && tab.label == 'Reports') {
+      return const AdminReportsScreen();
     }
     return _workspacePage(tab, user);
   }

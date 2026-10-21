@@ -80,31 +80,36 @@ final customerContractsProvider =
 });
 
 final vendorDashboardProvider =
-FutureProvider.autoDispose<VendorDashboard>((ref) {
+    FutureProvider.autoDispose<VendorDashboard>((ref) {
   return ref.watch(appControllerProvider).api.vendorDashboard();
 });
 
 final vendorOrdersProvider =
-FutureProvider.autoDispose<List<VendorOrder>>((ref) {
+    FutureProvider.autoDispose<List<VendorOrder>>((ref) {
   return ref.watch(appControllerProvider).api.vendorOrders();
 });
 
 final vendorVehiclesProvider =
-FutureProvider.autoDispose<List<VendorVehicle>>((ref) {
+    FutureProvider.autoDispose<List<VendorVehicle>>((ref) {
   return ref.watch(appControllerProvider).api.vendorVehicles();
 });
 
 final vendorDriversProvider =
-FutureProvider.autoDispose<List<VendorDriver>>((ref) {
+    FutureProvider.autoDispose<List<VendorDriver>>((ref) {
   return ref.watch(appControllerProvider).api.vendorDrivers();
 });
 
 final vendorPayoutsProvider =
-FutureProvider.autoDispose<List<VendorPayout>>((ref) {
+    FutureProvider.autoDispose<List<VendorPayout>>((ref) {
   return ref.watch(appControllerProvider).api.vendorPayouts();
 });
 
 final vendorOfflineMutationsProvider =
-FutureProvider.autoDispose<List<VendorOfflineMutation>>((ref) {
+    FutureProvider.autoDispose<List<VendorOfflineMutation>>((ref) {
   return ref.watch(appControllerProvider).api.vendorOfflineMutations();
+});
+
+final adminHealthProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
+  return ref.watch(appControllerProvider).api.adminHealth();
 });
