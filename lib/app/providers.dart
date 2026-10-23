@@ -142,9 +142,9 @@ final dispatcherVendorsProvider =
   return ref.watch(appControllerProvider).api.adminVendors();
 });
 
-final dispatcherAlertsProvider =
-    FutureProvider.autoDispose<List<AccountRecord>>((ref) {
-  return ref.watch(appControllerProvider).api.adminAlerts();
+final dispatcherAlertsProvider = FutureProvider.autoDispose
+    .family<List<AccountRecord>, String?>((ref, status) {
+  return ref.watch(appControllerProvider).api.adminAlerts(status: status);
 });
 
 class DispatcherOrderFilter {

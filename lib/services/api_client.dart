@@ -1045,8 +1045,23 @@ class ApiClient {
         const [];
   }
 
-  Future<List<AccountRecord>> adminAlerts() =>
-      _records('/admin/alerts', 'admin alerts');
+  Future<List<AccountRecord>> adminAlerts({String? status}) =>
+      _records(
+        _adminPath('/alerts', {if (status != null) 'status': status}),
+        'admin alerts',
+      );
+
+  Future<AccountRecord> updateDispatcherAlert(
+    String id,
+    String status,
+  ) async {
+    final response = await request(
+      'PATCH',
+      '/admin/alerts/$id',
+      body: {'status': status},
+    );
+    return AccountRecord(await _mapResponse(response, 'dispatcher alert'));
+  }
 
   Future<List<DispatcherAlert>> dispatcherAlertRows() async {
     final items = await adminAlerts();

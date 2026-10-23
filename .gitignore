@@ -3,6 +3,8 @@
 .packages
 .pub/
 /build/
+/build/*
+/android/build/
 
 # Generated Flutter plugin files
 .flutter-plugins

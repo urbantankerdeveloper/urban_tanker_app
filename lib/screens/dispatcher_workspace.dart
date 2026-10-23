@@ -509,52 +509,133 @@ class DispatcherLiveScreen extends ConsumerWidget {
   }
 }
 
-class DispatcherAlertsScreen extends ConsumerWidget {
+class DispatcherAlertsScreen extends ConsumerStatefulWidget {
   const DispatcherAlertsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final alerts = ref.watch(dispatcherAlertsProvider);
+  ConsumerState<DispatcherAlertsScreen> createState() =>
+      _DispatcherAlertsScreenState();
+}
+
+class _DispatcherAlertsScreenState
+    extends ConsumerState<DispatcherAlertsScreen> {
+  String? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final alerts = ref.watch(dispatcherAlertsProvider(status));
     return alerts.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => _DispatcherError(
         message: error.toString(),
-        retry: () => ref.invalidate(dispatcherAlertsProvider),
+        retry: () => ref.invalidate(dispatcherAlertsProvider(status)),
       ),
       data: (items) => RefreshIndicator(
-        onRefresh: () async => ref.invalidate(dispatcherAlertsProvider),
-        child: items.isEmpty
-            ? const _DispatcherEmpty(message: 'No dispatch alerts.')
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: items
-                    .map(
-                      (item) => Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.warning_amber_outlined),
-                          title: Text(item.title),
-                          subtitle: Text(item.detail),
-                          onTap: () => _showAlert(context, item),
-                        ),
-                      ),
-                    )
-                    .toList(),
+        onRefresh: () async => ref.invalidate(dispatcherAlertsProvider(status)),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            DropdownButtonFormField<String?>(
+              initialValue: status,
+              decoration: const InputDecoration(labelText: 'Alert status'),
+              items: const [
+                DropdownMenuItem(value: null, child: Text('Open alerts')),
+                DropdownMenuItem(value: 'resolved', child: Text('Resolved')),
+                DropdownMenuItem(value: 'dismissed', child: Text('Dismissed')),
+              ],
+              onChanged: (value) => setState(() => status = value),
+            ),
+            const SizedBox(height: 12),
+            if (items.isEmpty)
+              const _DispatcherEmpty(message: 'No dispatch alerts.')
+            else
+              ...items.map(
+                (item) => Card(
+                  child: ListTile(
+                    leading: Icon(
+                      item.status == 'open'
+                          ? Icons.warning_amber_outlined
+                          : Icons.check_circle_outline,
+                    ),
+                    title: Text(item.title),
+                    subtitle: Text('${item.detail}\nStatus: ${item.status}'),
+                    isThreeLine: true,
+                    onTap: () => _showAlert(context, item),
+                  ),
+                ),
               ),
+          ],
+        ),
       ),
     );
   }
 
-  void _showAlert(BuildContext context, AccountRecord item) {
-    showDialog<void>(
+  Future<void> _showAlert(BuildContext context, AccountRecord item) async {
+    final action = await showModalBottomSheet<String>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(item.title),
-        content: Text(item.data.entries.map((entry) => '${entry.key}: ${entry.value}').join('\n')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Dismiss')),
-        ],
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.open_in_new),
+              title: const Text('View alert details'),
+              onTap: () => Navigator.pop(context, 'details'),
+            ),
+            if (item.status == 'open') ...[
+              ListTile(
+                leading: const Icon(Icons.check),
+                title: const Text('Resolve alert'),
+                onTap: () => Navigator.pop(context, 'resolved'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.close),
+                title: const Text('Dismiss alert'),
+                onTap: () => Navigator.pop(context, 'dismissed'),
+              ),
+            ],
+          ],
+        ),
       ),
     );
+    if (!context.mounted) return;
+    if (action == 'details') {
+      showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(item.title),
+          content: SingleChildScrollView(
+            child: Text(item.data.entries
+                .map((entry) => '${entry.key}: ${entry.value}')
+                .join('\n')),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (action == null) return;
+    try {
+      await ref.read(appControllerProvider).api.updateDispatcherAlert(
+            item.id,
+            action,
+          );
+      ref.invalidate(dispatcherAlertsProvider(status));
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Alert ${action == 'resolved' ? 'resolved' : 'dismissed'}.')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Alert update failed: $error')),
+      );
+    }
   }
 }
 
