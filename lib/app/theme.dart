@@ -32,7 +32,7 @@ ThemeData _theme(Brightness brightness) {
       .toTheme;
   final scheme = theme.colorScheme;
   return theme.copyWith(
-    textTheme: theme.textTheme.apply(fontFamily: 'Manrope'),
+    textTheme: theme.textTheme.apply(fontFamily: 'Poppins'),
     appBarTheme: AppBarTheme(
       backgroundColor: dark ? const Color(0xFF0B1B1E) : paper,
       foregroundColor: scheme.onSurface,
