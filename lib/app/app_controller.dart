@@ -10,7 +10,10 @@ import '../services/realtime_service.dart';
 import '../services/push_notification_service.dart';
 
 class AppController extends ChangeNotifier {
-  AppController._(this.api, this._preferences);
+  AppController({
+    required this.api,
+    required SharedPreferences preferences,
+  }) : _preferences = preferences;
 
   final ApiClient api;
   final SharedPreferences _preferences;
@@ -19,6 +22,7 @@ class AppController extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   bool busy = false;
   String? errorMessage;
+  String? successMessage;
   late final PushNotificationService pushNotifications =
       PushNotificationService(
     api: api,
@@ -29,7 +33,10 @@ class AppController extends ChangeNotifier {
 
   static Future<AppController> create() async {
     final preferences = await SharedPreferences.getInstance();
-    final controller = AppController._(ApiClient(), preferences);
+    final controller = AppController(
+      api: ApiClient(),
+      preferences: preferences,
+    );
     await controller.pushNotifications.initialize();
     controller.themeMode = switch (preferences.getString('theme_mode')) {
       'light' => ThemeMode.light,
@@ -79,7 +86,20 @@ class AppController extends ChangeNotifier {
         name: name.trim(),
         phone: phone.trim(),
       );
+      if (result == null) {
+        successMessage =
+            'Account created. Check your email for the confirmation link, then sign in.';
+        return;
+      }
       _setSession(result);
+    });
+  }
+
+  Future<void> requestPasswordReset(String email) async {
+    await _run(() async {
+      await api.requestPasswordReset(email);
+      successMessage =
+          'If an account exists for that email, password reset instructions have been sent.';
     });
   }
 
@@ -101,6 +121,7 @@ class AppController extends ChangeNotifier {
 
   void clearError() {
     errorMessage = null;
+    successMessage = null;
     notifyListeners();
   }
 
@@ -121,6 +142,7 @@ class AppController extends ChangeNotifier {
       }),
     );
     final socketUrl = const String.fromEnvironment('SOCKET_URL');
+    realtime?.dispose();
     realtime = RealtimeService(
       socketUrl: socketUrl.isNotEmpty
           ? socketUrl
@@ -129,12 +151,14 @@ class AppController extends ChangeNotifier {
     );
     realtime!.connect((_, __) {});
     errorMessage = null;
+    successMessage = null;
     notifyListeners();
   }
 
   Future<void> _run(Future<void> Function() operation) async {
     busy = true;
     errorMessage = null;
+    successMessage = null;
     notifyListeners();
     try {
       await operation();

@@ -8,10 +8,13 @@ class VendorOrder {
     required this.address,
     required this.status,
     required this.amountPaise,
+    this.serviceDetails = const [],
     required this.createdAt,
     required this.scheduledFor,
     this.vehicleId,
     this.driverId,
+    this.vehicle,
+    this.driver,
   });
 
   final String id;
@@ -20,23 +23,33 @@ class VendorOrder {
   final String address;
   final String status;
   final int amountPaise;
+  final List<VendorOrderServiceDetail> serviceDetails;
   final DateTime? createdAt;
   final DateTime? scheduledFor;
   final String? vehicleId;
   final String? driverId;
+  final String? vehicle;
+  final String? driver;
 
   factory VendorOrder.fromJson(Map<String, dynamic> json) => VendorOrder(
         id: (json['id'] ?? '').toString(),
         reference: (json['reference'] ?? json['id'] ?? '').toString(),
-        serviceCode: (json['service_code'] ?? '').toString(),
+        serviceCode: (json['service_code'] ?? json['service'] ?? '').toString(),
         address: (json['address_text'] ?? json['location'] ?? '').toString(),
-        status: (json['status'] ?? 'pending_vendor').toString(),
-        amountPaise: (json['quoted_amount_paise'] as num?)?.toInt() ?? 0,
-        createdAt: DateTime.tryParse((json['created_at'] ?? '').toString()),
-        scheduledFor:
-            DateTime.tryParse((json['scheduled_for'] ?? '').toString()),
+        status: _normalizeVendorOrderStatus(json['status']),
+        amountPaise: _vendorAmountPaise(json),
+        serviceDetails: _records(
+          json['serviceDetails'] ?? json['service_details'],
+          VendorOrderServiceDetail.fromJson,
+        ),
+        createdAt: DateTime.tryParse(
+            (json['created_at'] ?? json['createdAt'] ?? '').toString()),
+        scheduledFor: DateTime.tryParse(
+            (json['scheduled_for'] ?? json['scheduledFor'] ?? '').toString()),
         vehicleId: json['vehicle_id']?.toString(),
         driverId: json['driver_id']?.toString(),
+        vehicle: json['vehicle']?.toString(),
+        driver: json['driver']?.toString(),
       );
 
   double get amountRupees => amountPaise / 100;
@@ -51,6 +64,48 @@ class VendorOrder {
         createdAt: createdAt,
         quotedAmount: amountPaise.toString(),
       );
+}
+
+class VendorOrderServiceDetail {
+  const VendorOrderServiceDetail({
+    required this.service,
+    required this.capacity,
+    required this.details,
+  });
+
+  final String service;
+  final String capacity;
+  final String details;
+
+  factory VendorOrderServiceDetail.fromJson(Map<String, dynamic> json) =>
+      VendorOrderServiceDetail(
+        service: (json['service'] ?? json['serviceId'] ?? '').toString(),
+        capacity: (json['capacity'] ?? '').toString(),
+        details: (json['details'] ?? '').toString(),
+      );
+}
+
+String _normalizeVendorOrderStatus(Object? value) {
+  final status = (value ?? 'pending_vendor').toString().trim().toLowerCase();
+  return switch (status) {
+    'available' => 'pending_vendor',
+    'assigned' => 'vendor_assigned',
+    'en route' => 'en_route',
+    'rejected' => 'cancelled',
+    _ => status.replaceAll(' ', '_'),
+  };
+}
+
+int _vendorAmountPaise(Map<String, dynamic> json) {
+  final paise = json['quoted_amount_paise'];
+  if (paise is num) return paise.toInt();
+  final amount = json['amount'];
+  if (amount is num) return (amount * 100).round();
+  if (amount is String) {
+    final parsed = double.tryParse(amount.replaceAll(RegExp(r'[^\d.]'), ''));
+    if (parsed != null) return (parsed * 100).round();
+  }
+  return 0;
 }
 
 class VendorVehicle {

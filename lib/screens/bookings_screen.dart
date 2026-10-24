@@ -1,11 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
 import '../models/booking.dart';
+import '../models/booking_service_form.dart';
+import '../services/realtime_service.dart';
 
 class BookingsScreen extends ConsumerWidget {
-  const BookingsScreen({super.key});
+  const BookingsScreen({this.onBookAgain, super.key});
+
+  final Future<void> Function(Booking booking)? onBookAgain;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,8 +36,10 @@ class BookingsScreen extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             itemCount: items.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) =>
-                _BookingTile(booking: items[index]),
+            itemBuilder: (context, index) => _BookingTile(
+              booking: items[index],
+              onBookAgain: onBookAgain,
+            ),
           ),
         );
       },
@@ -40,9 +48,10 @@ class BookingsScreen extends ConsumerWidget {
 }
 
 class _BookingTile extends StatelessWidget {
-  const _BookingTile({required this.booking});
+  const _BookingTile({required this.booking, this.onBookAgain});
 
   final Booking booking;
+  final Future<void> Function(Booking booking)? onBookAgain;
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +65,19 @@ class _BookingTile extends StatelessWidget {
           '${booking.status.replaceAll('_', ' ')}\n${booking.location}',
         ),
         isThreeLine: true,
-        trailing: const Icon(Icons.chevron_right),
+        trailing: onBookAgain == null
+            ? const Icon(Icons.chevron_right)
+            : Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  IconButton(
+                    tooltip: 'Book these services again',
+                    icon: const Icon(Icons.replay_outlined),
+                    onPressed: () => onBookAgain!(booking),
+                  ),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => BookingDetailsScreen(booking: booking),
@@ -67,21 +88,142 @@ class _BookingTile extends StatelessWidget {
   }
 }
 
-class BookingDetailsScreen extends ConsumerWidget {
+class BookingDetailsScreen extends ConsumerStatefulWidget {
   const BookingDetailsScreen({required this.booking, super.key});
 
   final Booking booking;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BookingDetailsScreen> createState() =>
+      _BookingDetailsScreenState();
+}
+
+class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
+    with WidgetsBindingObserver {
+  Booking get booking => widget.booking;
+
+  RealtimeService? _realtime;
+  StreamSubscription<RealtimeEvent>? _realtimeSubscription;
+  Timer? _refreshTimer;
+  bool _liveUpdatesConnected = false;
+  String? _liveUpdatesError;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startRefreshTimer();
+    _connectRealtime();
+  }
+
+  void _startRefreshTimer() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _refreshTracking(),
+    );
+  }
+
+  void _connectRealtime() {
+    try {
+      final controller = ref.read(appControllerProvider);
+      final realtime = controller.realtime;
+      if (realtime == null) {
+        setState(() => _liveUpdatesError = 'Realtime connection unavailable.');
+        return;
+      }
+      _realtime = realtime;
+      _liveUpdatesConnected = realtime.isConnected;
+      _realtimeSubscription = realtime.events.listen(
+        (event) => _onRealtimeEvent(event.name, event.payload),
+      );
+      realtime.joinBooking(widget.booking.id);
+    } catch (error) {
+      if (mounted) setState(() => _liveUpdatesError = error.toString());
+    }
+  }
+
+  void _onRealtimeEvent(String event, dynamic payload) {
+    if (event == 'disconnect' || event == 'connect_error') {
+      if (mounted) {
+        setState(() {
+          _liveUpdatesConnected = false;
+          _liveUpdatesError = payload.toString();
+        });
+      }
+      return;
+    }
+    if (event == 'connected') {
+      _realtime?.joinBooking(widget.booking.id);
+      if (mounted) {
+        setState(() {
+          _liveUpdatesConnected = true;
+          _liveUpdatesError = null;
+        });
+      }
+      return;
+    }
+    if (payload is! Map ||
+        payload['bookingId']?.toString() != widget.booking.id) {
+      return;
+    }
+    if (event == 'booking.location.updated' ||
+        event == 'booking.updated' ||
+        event == 'notification.created') {
+      _refreshTracking();
+      if (event != 'booking.location.updated') {
+        ref.invalidate(bookingsProvider);
+      }
+    }
+  }
+
+  void _refreshTracking() {
+    if (!mounted) return;
+    ref.invalidate(bookingTrackingProvider(widget.booking.id));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshTracking();
+      _startRefreshTimer();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    _realtimeSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final booking = widget.booking;
     final tracking = ref.watch(bookingTrackingProvider(booking.id));
+    final currentStatus = tracking.valueOrNull?.status ?? booking.status;
     return Scaffold(
-      appBar: AppBar(title: Text(booking.reference)),
+      appBar: AppBar(
+        title: Text(booking.reference),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh tracking',
+            onPressed: _refreshTracking,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            booking.status.replaceAll('_', ' ').toUpperCase(),
+            currentStatus.replaceAll('_', ' ').toUpperCase(),
             style: Theme.of(context).textTheme.labelLarge,
           ),
           const SizedBox(height: 8),
@@ -91,6 +233,24 @@ class BookingDetailsScreen extends ConsumerWidget {
           Card(
             child: Column(
               children: [
+                if (booking.services.isNotEmpty) ...[
+                  for (final service in booking.services)
+                    ListTile(
+                      leading: const Icon(Icons.local_shipping_outlined),
+                      title: Text(
+                        BookingServiceForm.forService(service.serviceId)
+                            .serviceName,
+                      ),
+                      subtitle: Text([
+                        if (service.quantity.trim().isNotEmpty)
+                          'Quantity/capacity: ${service.quantity}',
+                        if (service.details.trim().isNotEmpty)
+                          'Details: ${service.details}',
+                      ].join('\n')),
+                      isThreeLine: true,
+                    ),
+                  const Divider(height: 1),
+                ],
                 ListTile(
                   leading: const Icon(Icons.water_drop_outlined),
                   title: const Text('Capacity'),
@@ -125,7 +285,23 @@ class BookingDetailsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
-          Text('Live tracking', style: Theme.of(context).textTheme.titleLarge),
+          Row(
+            children: [
+              Expanded(
+                child: Text('Live tracking',
+                    style: Theme.of(context).textTheme.titleLarge),
+              ),
+              Text(
+                _liveUpdatesConnected ? 'Live' : 'Auto-refresh',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ],
+          ),
+          if (_liveUpdatesError != null)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text('Live updates unavailable; checking periodically.'),
+            ),
           const SizedBox(height: 8),
           tracking.when(
             loading: () => const Card(
@@ -156,6 +332,11 @@ class BookingDetailsScreen extends ConsumerWidget {
                 subtitle: Text([
                   if (snapshot.driver != null) 'Driver: ${snapshot.driver}',
                   if (snapshot.vehicle != null) 'Vehicle: ${snapshot.vehicle}',
+                  if (snapshot.latitude != null && snapshot.longitude != null)
+                    'Location: ${snapshot.latitude!.toStringAsFixed(5)}, '
+                        '${snapshot.longitude!.toStringAsFixed(5)}',
+                  if (snapshot.accuracy != null)
+                    'Accuracy: ${snapshot.accuracy!.round()} m',
                   if (snapshot.recordedAt != null)
                     'Updated: ${_formatDate(snapshot.recordedAt)}',
                 ].join('\n')),
@@ -163,7 +344,7 @@ class BookingDetailsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
-          if (!['delivered', 'cancelled'].contains(booking.status))
+          if (!['delivered', 'cancelled'].contains(currentStatus))
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -180,13 +361,13 @@ class BookingDetailsScreen extends ConsumerWidget {
                 ),
               ],
             ),
-          if (booking.status == 'arrived')
+          if (currentStatus == 'arrived')
             FilledButton.icon(
               icon: const Icon(Icons.password_outlined),
               label: const Text('Request delivery OTP'),
               onPressed: () => _requestOtp(context, ref),
             ),
-          if (booking.status == 'delivered')
+          if (currentStatus == 'delivered')
             FilledButton.icon(
               icon: const Icon(Icons.star_outline),
               label: const Text('Rate delivery'),

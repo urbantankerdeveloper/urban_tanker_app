@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:urban_tanker_app/models/session.dart';
 import 'package:urban_tanker_app/models/booking.dart';
@@ -6,6 +9,28 @@ import 'package:urban_tanker_app/models/account.dart';
 import 'package:urban_tanker_app/models/vendor.dart';
 import 'package:urban_tanker_app/models/notification.dart';
 import 'package:urban_tanker_app/models/dispatcher.dart';
+import 'package:urban_tanker_app/models/booking_service_details.dart';
+import 'package:urban_tanker_app/models/booking_service_form.dart';
+import 'package:urban_tanker_app/services/api_client.dart';
+
+class _RecordingApiClient extends ApiClient {
+  _RecordingApiClient() : super(baseUrl: 'https://example.test/api');
+
+  Map<String, dynamic>? requestBody;
+  String? requestPath;
+
+  @override
+  Future<http.Response> request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    bool retry = true,
+  }) async {
+    requestPath = path;
+    requestBody = body;
+    return http.Response(jsonEncode({'id': 'booking-1'}), 200);
+  }
+}
 
 void main() {
   test('unknown server roles fail closed to customer', () {
@@ -34,6 +59,7 @@ void main() {
       'reference': 'UT-1001',
       'status': 'in_transit',
       'location': '12 Main Street',
+      'service_code': 'water_tanker',
       'capacity_litres': 5000,
       'scheduled_for': '2026-10-22T09:00:00Z',
       'created_at': '2026-10-21T09:00:00Z',
@@ -41,8 +67,26 @@ void main() {
 
     expect(booking.reference, 'UT-1001');
     expect(booking.capacity, '5000');
+    expect(booking.serviceId, 'water_tanker');
     expect(booking.deliveryDate?.year, 2026);
     expect(booking.status, 'in_transit');
+  });
+
+  test('tracking responses map vendor location and accuracy', () {
+    final tracking = TrackingSnapshot.fromJson({
+      'orderId': 'booking-1',
+      'status': 'en_route',
+      'trackingAvailable': true,
+      'latitude': 12.9716,
+      'longitude': 77.5946,
+      'accuracy': 8.5,
+      'recorded_at': '2026-10-24T08:00:00Z',
+    });
+
+    expect(tracking.trackingAvailable, isTrue);
+    expect(tracking.latitude, 12.9716);
+    expect(tracking.longitude, 77.5946);
+    expect(tracking.accuracy, 8.5);
   });
 
   test('booking payment fields expose customer checkout details', () {
@@ -71,6 +115,155 @@ void main() {
           .normalizedPaymentStatus,
       'paid',
     );
+  });
+
+  test('booking service details keep each quantity and answer isolated', () {
+    const water = BookingServiceDetails(
+      serviceId: 'water_tanker',
+      quantity: '5000 litres',
+      details: 'Potable water for the overhead tank',
+    );
+    const cleaning = BookingServiceDetails(
+      serviceId: 'tank_cleaning',
+      quantity: '2 tanks',
+      details: 'Clean both rooftop tanks',
+    );
+
+    expect(water.toJson(), {
+      'serviceId': 'water_tanker',
+      'capacity': '5000 litres',
+      'details': 'Potable water for the overhead tank',
+    });
+    expect(cleaning.toJson(), {
+      'serviceId': 'tank_cleaning',
+      'capacity': '2 tanks',
+      'details': 'Clean both rooftop tanks',
+    });
+    expect(
+      BookingServiceForm.forService('water_tanker').detailsLabel,
+      isNot(BookingServiceForm.forService('tank_cleaning').detailsLabel),
+    );
+    expect(
+      BookingServiceForm.forService('tank_cleaning').serviceName,
+      'Tank cleaning',
+    );
+  });
+
+  test('combined booking request submits all per-service details', () {
+    final body = buildBookingRequestBody(
+      serviceId: 'water_tanker',
+      capacity: '5000 litres',
+      location: '12 Main Street',
+      deliveryDate: '2026-10-25',
+      services: const [
+        BookingServiceDetails(
+          serviceId: 'water_tanker',
+          quantity: '5000 litres',
+          details: 'Potable water',
+        ),
+        BookingServiceDetails(
+          serviceId: 'tank_cleaning',
+          quantity: '2 tanks',
+          details: 'Rooftop tanks',
+        ),
+      ],
+      couponCode: 'save10',
+    );
+
+    expect(body['serviceId'], 'water_tanker');
+    expect(body['capacity'], '5000 litres');
+    expect(body['couponCode'], 'SAVE10');
+    expect(body['services'], [
+      {
+        'serviceId': 'water_tanker',
+        'capacity': '5000 litres',
+        'details': 'Potable water',
+      },
+      {
+        'serviceId': 'tank_cleaning',
+        'capacity': '2 tanks',
+        'details': 'Rooftop tanks',
+      },
+    ]);
+  });
+
+  test('booking submission sends combined services to the quote endpoint',
+      () async {
+    final api = _RecordingApiClient();
+
+    await api.createBooking(
+      serviceId: 'water_tanker',
+      capacity: '5000',
+      location: '12 Main Street',
+      deliveryDate: '2026-10-25',
+      services: const [
+        BookingServiceDetails(
+          serviceId: 'water_tanker',
+          quantity: '5000',
+          details: 'Potable water',
+        ),
+        BookingServiceDetails(
+          serviceId: 'tank_cleaning',
+          quantity: '2 tanks',
+          details: 'Rooftop tanks',
+        ),
+      ],
+    );
+
+    expect(api.requestPath, '/customer/orders/quote');
+    expect(api.requestBody?['services'], hasLength(2));
+    expect(
+      (api.requestBody?['services'] as List<Map<String, String>>)
+          .last['details'],
+      'Rooftop tanks',
+    );
+  });
+
+  test('single-service booking retains legacy fields and structured detail',
+      () {
+    final body = buildBookingRequestBody(
+      serviceId: 'water_tanker',
+      capacity: '5000',
+      location: '12 Main Street',
+      deliveryDate: '2026-10-25',
+      services: const [
+        BookingServiceDetails(
+          serviceId: 'water_tanker',
+          quantity: '5000',
+          details: 'Potable water',
+        ),
+      ],
+    );
+
+    expect(body['serviceId'], 'water_tanker');
+    expect(body['services'], hasLength(1));
+    expect(
+      (body['services'] as List<Map<String, String>>).single['details'],
+      'Potable water',
+    );
+  });
+
+  test('booking response retains structured per-service details', () {
+    final booking = Booking.fromJson({
+      'id': 'booking-3',
+      'reference': 'UT-1003',
+      'service_details': [
+        {
+          'serviceId': 'water_tanker',
+          'capacity': '5000 litres',
+          'details': 'Potable water',
+        },
+        {
+          'serviceId': 'tank_cleaning',
+          'capacity': '2 tanks',
+          'details': 'Rooftop tanks',
+        },
+      ],
+    });
+
+    expect(booking.services, hasLength(2));
+    expect(booking.services.last.quantity, '2 tanks');
+    expect(booking.services.last.details, 'Rooftop tanks');
   });
 
   test('customer profile supports backend profile field names', () {
@@ -208,6 +401,58 @@ void main() {
 
     expect(dashboard.orders.single.reference, 'UT-2001');
     expect(dashboard.orders.single.amountRupees, 2500);
+  });
+
+  test('vendor orders map normalized API fields and service details', () {
+    final order = VendorOrder.fromJson({
+      'id': 'order-2',
+      'reference': 'UT-2002',
+      'service': 'Water tanker, Tank cleaning',
+      'serviceDetails': [
+        {
+          'service': 'Water tanker',
+          'capacity': '5000 litres',
+          'details': 'Potable water',
+        },
+        {
+          'service': 'Tank cleaning',
+          'capacity': '2 tanks',
+          'details': 'Rooftop tanks',
+        },
+      ],
+      'location': 'Main Street',
+      'amount': '₹2,500',
+      'status': 'Available',
+      'vehicle': 'KA01AB1234',
+      'driver': 'Driver One',
+      'createdAt': '2026-10-24T08:00:00Z',
+      'scheduledFor': '2026-10-25T09:00:00Z',
+    });
+
+    expect(order.status, 'pending_vendor');
+    expect(order.serviceCode, 'Water tanker, Tank cleaning');
+    expect(order.amountPaise, 250000);
+    expect(order.address, 'Main Street');
+    expect(order.vehicle, 'KA01AB1234');
+    expect(order.driver, 'Driver One');
+    expect(order.serviceDetails, hasLength(2));
+    expect(order.serviceDetails.last.details, 'Rooftop tanks');
+    expect(order.scheduledFor?.day, 25);
+  });
+
+  test('vendor order statuses normalize before workflow checks', () {
+    expect(
+      VendorOrder.fromJson({'status': 'Assigned'}).status,
+      'vendor_assigned',
+    );
+    expect(
+      VendorOrder.fromJson({'status': 'En route'}).status,
+      'en_route',
+    );
+    expect(
+      VendorOrder.fromJson({'status': 'Rejected'}).status,
+      'cancelled',
+    );
   });
 
   test('vendor services map current availability state', () {

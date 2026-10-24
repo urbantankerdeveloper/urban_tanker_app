@@ -1,3 +1,5 @@
+import 'booking_service_details.dart';
+
 class Booking {
   const Booking({
     required this.id,
@@ -7,8 +9,10 @@ class Booking {
     required this.capacity,
     required this.deliveryDate,
     required this.createdAt,
+    this.serviceId,
     this.quotedAmount,
     this.paymentStatus,
+    this.services = const [],
   });
 
   final String id;
@@ -18,8 +22,10 @@ class Booking {
   final String capacity;
   final DateTime? deliveryDate;
   final DateTime? createdAt;
+  final String? serviceId;
   final String? quotedAmount;
   final String? paymentStatus;
+  final List<BookingServiceDetails> services;
 
   double? get quotedAmountRupees {
     final paise = int.tryParse(quotedAmount ?? '');
@@ -52,8 +58,13 @@ class Booking {
       createdAt: DateTime.tryParse(
         (json['created_at'] ?? '').toString(),
       ),
+      serviceId: (json['service_code'] ?? json['service_id'] ?? '').toString(),
       quotedAmount: json['quoted_amount_paise']?.toString(),
       paymentStatus: json['payment_status']?.toString(),
+      services: (json['service_details'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(BookingServiceDetails.fromJson)
+          .toList(),
     );
   }
 }
@@ -65,6 +76,7 @@ class TrackingSnapshot {
     required this.trackingAvailable,
     this.latitude,
     this.longitude,
+    this.accuracy,
     this.vehicle,
     this.driver,
     this.recordedAt,
@@ -75,6 +87,7 @@ class TrackingSnapshot {
   final bool trackingAvailable;
   final double? latitude;
   final double? longitude;
+  final double? accuracy;
   final String? vehicle;
   final String? driver;
   final DateTime? recordedAt;
@@ -86,6 +99,7 @@ class TrackingSnapshot {
       trackingAvailable: json['trackingAvailable'] == true,
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
+      accuracy: (json['accuracy'] as num?)?.toDouble(),
       vehicle: json['vehicle']?.toString(),
       driver: json['driver']?.toString(),
       recordedAt: DateTime.tryParse(

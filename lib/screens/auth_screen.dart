@@ -19,10 +19,31 @@ class _AuthScreenState extends State<AuthScreen> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   bool _signup = false;
+  bool _resetPassword = false;
   bool _obscurePassword = true;
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onControllerChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant AuthScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+    }
+  }
+
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
     _credential.dispose();
     _password.dispose();
     _name.dispose();
@@ -32,7 +53,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_signup) {
+    if (_resetPassword) {
+      await widget.controller.requestPasswordReset(_credential.text.trim());
+    } else if (_signup) {
       await widget.controller.signUp(
         email: _credential.text,
         password: _password.text,
@@ -70,7 +93,9 @@ class _AuthScreenState extends State<AuthScreen> {
                     Text(
                       _signup
                           ? 'Start with reliable water.'
-                          : 'Water, organised.',
+                          : _resetPassword
+                              ? 'Reset your password.'
+                              : 'Water, organised.',
                       style:
                           Theme.of(context).textTheme.headlineLarge?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurface,
@@ -80,7 +105,9 @@ class _AuthScreenState extends State<AuthScreen> {
                     const SizedBox(height: 8),
                     Text(_signup
                         ? 'Create a customer account to book and track deliveries.'
-                        : 'Sign in to your role workspace and keep every delivery moving.'),
+                        : _resetPassword
+                            ? 'We will email reset instructions if the account exists.'
+                            : 'Sign in to your role workspace and keep every delivery moving.'),
                     const SizedBox(height: 28),
                     if (_signup) ...[
                       TextFormField(
@@ -108,36 +135,61 @@ class _AuthScreenState extends State<AuthScreen> {
                     TextFormField(
                       controller: _credential,
                       keyboardType: TextInputType.emailAddress,
-                      decoration:
-                          const InputDecoration(labelText: 'Email or username'),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                              ? 'Enter your email or username.'
-                              : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _password,
-                      obscureText: _obscurePassword,
                       decoration: InputDecoration(
-                        labelText: 'Password',
-                        suffixIcon: IconButton(
-                          onPressed: () => setState(
-                              () => _obscurePassword = !_obscurePassword),
-                          icon: Icon(_obscurePassword
-                              ? Icons.visibility
-                              : Icons.visibility_off),
-                        ),
+                        labelText: _signup || _resetPassword
+                            ? 'Email'
+                            : 'Email or username',
                       ),
-                      validator: (value) => value == null || value.length < 8
-                          ? 'Use at least 8 characters.'
-                          : null,
+                      validator: (value) {
+                        final credential = value?.trim() ?? '';
+                        if (credential.isEmpty) {
+                          return _signup || _resetPassword
+                              ? 'Enter your email address.'
+                              : 'Enter your email or username.';
+                        }
+                        if (_resetPassword &&
+                            !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                                .hasMatch(credential)) {
+                          return 'Enter a valid email address.';
+                        }
+                        return null;
+                      },
                     ),
+                    if (!_resetPassword) ...[
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _password,
+                        obscureText: _obscurePassword,
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          suffixIcon: IconButton(
+                            onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword),
+                            icon: Icon(_obscurePassword
+                                ? Icons.visibility
+                                : Icons.visibility_off),
+                          ),
+                        ),
+                        validator: _signup
+                            ? (value) => value == null || value.length < 8
+                                ? 'Use at least 8 characters.'
+                                : null
+                            : null,
+                      ),
+                    ],
                     if (controller.errorMessage != null) ...[
                       const SizedBox(height: 12),
                       Text(controller.errorMessage!,
                           style: TextStyle(
                               color: Theme.of(context).colorScheme.error)),
+                    ],
+                    if (controller.successMessage != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        controller.successMessage!,
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary),
+                      ),
                     ],
                     const SizedBox(height: 22),
                     FilledButton(
@@ -148,19 +200,38 @@ class _AuthScreenState extends State<AuthScreen> {
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : Text(_signup ? 'Create account' : 'Sign in'),
+                          : Text(_signup
+                              ? 'Create account'
+                              : _resetPassword
+                                  ? 'Send reset instructions'
+                                  : 'Sign in'),
                     ),
                     TextButton(
                       onPressed: controller.busy
                           ? null
                           : () => setState(() {
-                                _signup = !_signup;
+                                if (_signup || _resetPassword) {
+                                  _signup = false;
+                                  _resetPassword = false;
+                                } else {
+                                  _signup = true;
+                                }
                                 controller.clearError();
                               }),
-                      child: Text(_signup
-                          ? 'Already have an account? Sign in'
+                      child: Text(_signup || _resetPassword
+                          ? 'Back to sign in'
                           : 'New here? Create a customer account'),
                     ),
+                    if (!_signup && !_resetPassword)
+                      TextButton(
+                        onPressed: controller.busy
+                            ? null
+                            : () => setState(() {
+                                  _resetPassword = true;
+                                  controller.clearError();
+                                }),
+                        child: const Text('Forgot password?'),
+                      ),
                   ],
                 ),
               ),

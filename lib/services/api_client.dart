@@ -11,6 +11,32 @@ import '../models/dispatcher.dart';
 import '../models/service.dart';
 import '../models/session.dart';
 import '../models/vendor.dart';
+import '../models/booking_service_details.dart';
+
+Map<String, dynamic> buildBookingRequestBody({
+  required String serviceId,
+  required String capacity,
+  required String location,
+  required String deliveryDate,
+  required List<BookingServiceDetails> services,
+  String? notes,
+  String paymentMethod = 'cod',
+  String? couponCode,
+}) {
+  final normalizedServices =
+      services.map((service) => service.toJson()).toList(growable: false);
+  return {
+    'serviceId': serviceId,
+    'capacity': capacity,
+    'services': normalizedServices,
+    'location': location,
+    'deliveryDate': deliveryDate,
+    if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+    'paymentMethod': paymentMethod,
+    if (couponCode != null && couponCode.trim().isNotEmpty)
+      'couponCode': couponCode.trim().toUpperCase(),
+  };
+}
 
 class ApiException implements Exception {
   const ApiException(this.message, this.statusCode);
@@ -69,7 +95,7 @@ class ApiClient {
     return _authRequest('/auth/login', body);
   }
 
-  Future<AuthResult> signup({
+  Future<AuthResult?> signup({
     required String email,
     required String password,
     required String name,
@@ -86,14 +112,30 @@ class ApiClient {
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The registration response was invalid.');
     }
-    if (decoded['accessToken'] == null &&
-        decoded['requiresEmailVerification'] == true) {
-      throw const ApiException(
-        'Account created. Check your email to verify the account, then sign in.',
-        202,
-      );
+    if (decoded['requiresEmailVerification'] == true) {
+      if (decoded['emailSent'] != true) {
+        throw const FormatException(
+          'The server did not confirm that the verification email was sent.',
+        );
+      }
+      return null;
     }
     return _saveAuthResult(decoded);
+  }
+
+  Future<void> requestPasswordReset(String email) async {
+    final response = await request(
+      'POST',
+      '/auth/password-reset',
+      body: {'email': email.trim()},
+      retry: false,
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic> || decoded['accepted'] != true) {
+      throw const FormatException(
+        'The password reset response was invalid.',
+      );
+    }
   }
 
   Future<List<TankerService>> services() async {
@@ -113,6 +155,7 @@ class ApiClient {
     required String capacity,
     required String location,
     required String deliveryDate,
+    List<BookingServiceDetails>? services,
     String? notes,
     String paymentMethod = 'cod',
     String? couponCode,
@@ -120,16 +163,23 @@ class ApiClient {
     final response = await request(
       'POST',
       '/customer/orders/quote',
-      body: {
-        'serviceId': serviceId,
-        'capacity': capacity,
-        'location': location,
-        'deliveryDate': deliveryDate,
-        'notes': notes,
-        'paymentMethod': paymentMethod,
-        if (couponCode != null && couponCode.trim().isNotEmpty)
-          'couponCode': couponCode.trim().toUpperCase(),
-      },
+      body: buildBookingRequestBody(
+        serviceId: serviceId,
+        capacity: capacity,
+        location: location,
+        deliveryDate: deliveryDate,
+        services: services ??
+            [
+              BookingServiceDetails(
+                serviceId: serviceId,
+                quantity: capacity,
+                details: notes ?? '',
+              ),
+            ],
+        notes: notes,
+        paymentMethod: paymentMethod,
+        couponCode: couponCode,
+      ),
     );
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
@@ -144,20 +194,30 @@ class ApiClient {
     required String capacity,
     required String location,
     required String deliveryDate,
+    List<BookingServiceDetails>? services,
     String? notes,
     String paymentMethod = 'cod',
     String? couponCode,
   }) async {
     final response =
         await request('POST', '/customer/orders/quote-preview', body: {
-      'serviceId': serviceId,
-      'capacity': capacity,
-      'location': location,
-      'deliveryDate': deliveryDate,
-      if (notes != null) 'notes': notes,
-      'paymentMethod': paymentMethod,
-      if (couponCode != null && couponCode.trim().isNotEmpty)
-        'couponCode': couponCode.trim().toUpperCase(),
+      ...buildBookingRequestBody(
+        serviceId: serviceId,
+        capacity: capacity,
+        location: location,
+        deliveryDate: deliveryDate,
+        services: services ??
+            [
+              BookingServiceDetails(
+                serviceId: serviceId,
+                quantity: capacity,
+                details: notes ?? '',
+              ),
+            ],
+        notes: notes,
+        paymentMethod: paymentMethod,
+        couponCode: couponCode,
+      ),
     });
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
@@ -544,8 +604,29 @@ class ApiClient {
       var message = 'Request failed (${response.statusCode}).';
       try {
         final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic> && decoded['error'] is String) {
-          message = decoded['error'] as String;
+        if (decoded is Map<String, dynamic>) {
+          if (decoded['error'] is String) {
+            message = decoded['error'] as String;
+          }
+          final details = decoded['details'];
+          if (details is Map<String, dynamic>) {
+            final fieldErrors = details['fieldErrors'];
+            if (fieldErrors is Map<String, dynamic>) {
+              final messages = <String>[];
+              for (final entry in fieldErrors.entries) {
+                if (entry.value is List) {
+                  messages.addAll(
+                    (entry.value as List)
+                        .whereType<String>()
+                        .map((detail) => '${entry.key}: $detail'),
+                  );
+                }
+              }
+              if (messages.isNotEmpty) {
+                message = '$message: ${messages.join('; ')}';
+              }
+            }
+          }
         }
       } on FormatException {
         // The status code remains the useful error when the body is not JSON.
@@ -1045,8 +1126,7 @@ class ApiClient {
         const [];
   }
 
-  Future<List<AccountRecord>> adminAlerts({String? status}) =>
-      _records(
+  Future<List<AccountRecord>> adminAlerts({String? status}) => _records(
         _adminPath('/alerts', {if (status != null) 'status': status}),
         'admin alerts',
       );

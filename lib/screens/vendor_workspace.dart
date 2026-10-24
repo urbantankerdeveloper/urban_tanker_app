@@ -1,15 +1,51 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
 import '../models/vendor.dart';
 import '../services/api_client.dart';
+import '../services/realtime_service.dart';
 
-class VendorOperationsScreen extends ConsumerWidget {
+class VendorOperationsScreen extends ConsumerStatefulWidget {
   const VendorOperationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<VendorOperationsScreen> createState() =>
+      _VendorOperationsScreenState();
+}
+
+class _VendorOperationsScreenState
+    extends ConsumerState<VendorOperationsScreen> {
+  final _searchController = TextEditingController();
+  StreamSubscription<RealtimeEvent>? _realtimeSubscription;
+  String _statusFilter = 'All';
+
+  @override
+  void initState() {
+    super.initState();
+    _realtimeSubscription =
+        ref.read(appControllerProvider).realtime?.events.listen((event) {
+      if (event.name != 'vendor.order.created' &&
+          event.name != 'booking.updated') {
+        return;
+      }
+      ref
+        ..invalidate(vendorOrdersProvider)
+        ..invalidate(vendorDashboardProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _realtimeSubscription?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final orders = ref.watch(vendorOrdersProvider);
     return orders.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -17,40 +53,149 @@ class VendorOperationsScreen extends ConsumerWidget {
         message: error.toString(),
         retry: () => ref.invalidate(vendorOrdersProvider),
       ),
-      data: (items) => RefreshIndicator(
-        onRefresh: () async => ref.invalidate(vendorOrdersProvider),
-        child: items.isEmpty
-            ? ListView(
-                children: const [
-                  _VendorEmpty(message: 'No assigned orders yet.'),
-                  _OfflineMutationsCard(),
-                ],
-              )
-            : ListView(
-                padding: const EdgeInsets.all(16),
+      data: (items) {
+        final filtered = items.where(_matchesOrder).toList();
+        return RefreshIndicator(
+          onRefresh: () async {
+            ref
+              ..invalidate(vendorOrdersProvider)
+              ..invalidate(vendorDashboardProvider);
+          },
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  labelText: 'Search orders',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Clear search',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {});
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
                 children: [
-                  ...items.map((item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _OrderCard(order: item),
-                      )),
-                  const _OfflineMutationsCard(),
+                  for (final status in [
+                    'All',
+                    'Needs action',
+                    'In progress',
+                    'Completed',
+                  ])
+                    ChoiceChip(
+                      label: Text(status),
+                      selected: _statusFilter == status,
+                      onSelected: (_) => setState(() => _statusFilter = status),
+                    ),
                 ],
               ),
-      ),
+              const SizedBox(height: 8),
+              Text('${filtered.length} of ${items.length} orders'),
+              const SizedBox(height: 8),
+              if (items.isEmpty)
+                const _VendorEmpty(message: 'No assigned orders yet.')
+              else if (filtered.isEmpty)
+                const _VendorEmpty(
+                  message: 'No orders match these filters.',
+                )
+              else
+                ...filtered.map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _OrderCard(order: item),
+                    )),
+              const _OfflineMutationsCard(),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  bool _matchesOrder(VendorOrder order) {
+    final statusMatches = switch (_statusFilter) {
+      'Needs action' =>
+        ['pending_vendor', 'vendor_assigned'].contains(order.status),
+      'In progress' =>
+        ['accepted', 'en_route', 'arrived'].contains(order.status),
+      'Completed' => ['delivered', 'cancelled'].contains(order.status),
+      _ => true,
+    };
+    if (!statusMatches) return false;
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    return [
+      order.reference,
+      order.serviceCode,
+      order.address,
+      ...order.serviceDetails.map((detail) => detail.service),
+      ...order.serviceDetails.map((detail) => detail.details),
+    ].any((value) => value.toLowerCase().contains(query));
   }
 }
 
-class _OfflineMutationsCard extends ConsumerWidget {
+class _OfflineMutationsCard extends ConsumerStatefulWidget {
   const _OfflineMutationsCard();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_OfflineMutationsCard> createState() =>
+      _OfflineMutationsCardState();
+}
+
+class _OfflineMutationsCardState extends ConsumerState<_OfflineMutationsCard> {
+  final Set<String> _processing = {};
+
+  Future<void> _runMutation(
+    VendorOfflineMutation mutation,
+  ) async {
+    setState(() => _processing.add(mutation.id));
+    try {
+      await ref
+          .read(appControllerProvider)
+          .api
+          .discardVendorMutation(mutation.id);
+      ref
+        ..invalidate(vendorOfflineMutationsProvider)
+        ..invalidate(vendorOrdersProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Update record discarded.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update queued item: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _processing.remove(mutation.id));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final mutations = ref.watch(vendorOfflineMutationsProvider);
     return Card(
       child: ExpansionTile(
         leading: const Icon(Icons.sync_problem_outlined),
-        title: const Text('Offline sync'),
+        title: const Text('Saved update records'),
+        subtitle: const Text(
+          'Server logs only; failed actions are not auto-replayed.',
+        ),
         children: [
           mutations.when(
             loading: () => const Padding(
@@ -66,37 +211,26 @@ class _OfflineMutationsCard extends ConsumerWidget {
               ),
             ),
             data: (items) => items.isEmpty
-                ? const ListTile(title: Text('No pending offline mutations.'))
+                ? const ListTile(title: Text('No saved update records.'))
                 : Column(
                     children: items
                         .map(
                           (item) => ListTile(
-                            title: Text(item.type),
-                            subtitle: Text(item.lastError ?? item.status),
+                            title: Text(
+                              '${item.type} • ${item.entityType}'
+                              '${item.entityId == null ? '' : ' ${item.entityId}'}',
+                            ),
+                            subtitle: Text(
+                              item.lastError ??
+                                  item.status.replaceAll('_', ' '),
+                            ),
                             trailing: Wrap(
                               children: [
                                 IconButton(
-                                  tooltip: 'Retry',
-                                  onPressed: () async {
-                                    await ref
-                                        .read(appControllerProvider)
-                                        .api
-                                        .retryVendorMutation(item.id);
-                                    ref.invalidate(
-                                        vendorOfflineMutationsProvider);
-                                  },
-                                  icon: const Icon(Icons.refresh),
-                                ),
-                                IconButton(
                                   tooltip: 'Discard',
-                                  onPressed: () async {
-                                    await ref
-                                        .read(appControllerProvider)
-                                        .api
-                                        .discardVendorMutation(item.id);
-                                    ref.invalidate(
-                                        vendorOfflineMutationsProvider);
-                                  },
+                                  onPressed: _processing.contains(item.id)
+                                      ? null
+                                      : () => _confirmDiscard(item),
                                   icon: const Icon(Icons.delete_outline),
                                 ),
                               ],
@@ -109,6 +243,29 @@ class _OfflineMutationsCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDiscard(VendorOfflineMutation mutation) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard update record?'),
+        content: const Text('This removes the saved update record.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _runMutation(mutation);
+    }
   }
 }
 
@@ -139,6 +296,21 @@ class _OrderCard extends ConsumerWidget {
                 ],
               ),
               Text(order.address),
+              if (order.serviceDetails.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                for (final detail in order.serviceDetails) ...[
+                  Text(
+                    detail.service,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  if (detail.capacity.isNotEmpty)
+                    Text('Capacity/quantity: ${detail.capacity}'),
+                  if (detail.details.isNotEmpty) Text(detail.details),
+                ],
+              ] else if (order.serviceCode.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(order.serviceCode.replaceAll('_', ' ')),
+              ],
               const SizedBox(height: 8),
               Text(
                 '₹${order.amountRupees.toStringAsFixed(2)} • '
@@ -171,6 +343,7 @@ class _OrderActions extends ConsumerStatefulWidget {
 class _OrderActionsState extends ConsumerState<_OrderActions> {
   String? selectedVehicle;
   String? selectedDriver;
+  bool _saving = false;
 
   @override
   Widget build(BuildContext context) {
@@ -183,72 +356,111 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
         assignableVehicles.isEmpty ? null : assignableVehicles.first.id;
     selectedDriver ??=
         assignableDrivers.isEmpty ? null : assignableDrivers.first.id;
+    final order = widget.order;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(widget.order.reference,
-                style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(widget.order.address),
-            const SizedBox(height: 16),
-            if (widget.order.status == 'pending_vendor') ...[
-              if (assignableVehicles.isNotEmpty)
-                DropdownButtonFormField<String>(
-                  initialValue: selectedVehicle,
-                  decoration:
-                      const InputDecoration(labelText: 'Approved vehicle'),
-                  items: assignableVehicles
-                      .map((item) => DropdownMenuItem(
-                            value: item.id,
-                            child: Text(item.registrationNumber),
-                          ))
-                      .toList(),
-                  onChanged: (value) => setState(() => selectedVehicle = value),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(order.reference,
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text(order.address),
+              const SizedBox(height: 8),
+              for (final detail in order.serviceDetails) ...[
+                Text(detail.service,
+                    style: Theme.of(context).textTheme.titleSmall),
+                if (detail.capacity.isNotEmpty)
+                  Text('Capacity/quantity: ${detail.capacity}'),
+                if (detail.details.isNotEmpty) Text(detail.details),
+                const SizedBox(height: 6),
+              ],
+              if (order.vehicle != null || order.driver != null) ...[
+                Text(
+                  [
+                    if (order.vehicle != null) 'Vehicle: ${order.vehicle}',
+                    if (order.driver != null) 'Driver: ${order.driver}',
+                  ].join('\n'),
                 ),
-              if (assignableDrivers.isNotEmpty)
-                DropdownButtonFormField<String>(
-                  initialValue: selectedDriver,
-                  decoration:
-                      const InputDecoration(labelText: 'Approved driver'),
-                  items: assignableDrivers
-                      .map((item) => DropdownMenuItem(
-                            value: item.id,
-                            child: Text(item.name),
-                          ))
-                      .toList(),
-                  onChanged: (value) => setState(() => selectedDriver = value),
-                ),
-              OutlinedButton(
-                onPressed: selectedVehicle == null || selectedDriver == null
-                    ? () => _showAssignmentRequired(context)
-                    : () => _transition(
-                          context,
-                          ref,
-                          action: 'accept',
-                          vehicleId: selectedVehicle,
-                          driverId: selectedDriver,
-                        ),
-                child: const Text('Accept with first approved assignment'),
-              ),
-            ],
-            if (!['delivered', 'cancelled'].contains(widget.order.status)) ...[
-              _statusButton(context, ref, 'en_route', 'Mark en route'),
-              _statusButton(context, ref, 'arrived', 'Mark arrived'),
-              if (widget.order.status == 'arrived')
+                const SizedBox(height: 8),
+              ],
+              const SizedBox(height: 16),
+              if (['pending_vendor', 'vendor_assigned']
+                  .contains(order.status)) ...[
+                if (assignableVehicles.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedVehicle,
+                    decoration:
+                        const InputDecoration(labelText: 'Approved vehicle'),
+                    items: assignableVehicles
+                        .map((item) => DropdownMenuItem(
+                              value: item.id,
+                              child: Text(item.registrationNumber),
+                            ))
+                        .toList(),
+                    onChanged: (value) =>
+                        setState(() => selectedVehicle = value),
+                  ),
+                if (assignableDrivers.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedDriver,
+                    decoration:
+                        const InputDecoration(labelText: 'Approved driver'),
+                    items: assignableDrivers
+                        .map((item) => DropdownMenuItem(
+                              value: item.id,
+                              child: Text(item.name),
+                            ))
+                        .toList(),
+                    onChanged: (value) =>
+                        setState(() => selectedDriver = value),
+                  ),
                 OutlinedButton(
-                  onPressed: () => _verifyDelivery(context, ref),
+                  onPressed: _saving
+                      ? null
+                      : selectedVehicle == null || selectedDriver == null
+                          ? () => _showAssignmentRequired(context)
+                          : () => _transition(
+                                context,
+                                ref,
+                                action: 'accept',
+                                vehicleId: selectedVehicle,
+                                driverId: selectedDriver,
+                              ),
+                  child: const Text('Accept order'),
+                ),
+              ],
+              if (order.status == 'accepted')
+                _statusButton(context, ref, 'en_route', 'Mark en route'),
+              if (order.status == 'en_route')
+                _statusButton(context, ref, 'arrived', 'Mark arrived'),
+              if (order.status == 'arrived')
+                OutlinedButton(
+                  onPressed:
+                      _saving ? null : () => _verifyDelivery(context, ref),
                   child: const Text('Verify delivery OTP'),
                 ),
-              OutlinedButton(
-                onPressed: () => _reject(context, ref),
-                child: const Text('Reject order'),
-              ),
+              if ([
+                'pending_vendor',
+                'vendor_assigned',
+                'accepted',
+              ].contains(order.status))
+                OutlinedButton(
+                  onPressed: _saving ? null : () => _reject(context, ref),
+                  child: const Text('Reject order'),
+                ),
+              if (_saving)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(12),
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -261,8 +473,9 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
     String label,
   ) {
     return FilledButton.tonal(
-      onPressed: () =>
-          _transition(context, ref, action: 'status', status: status),
+      onPressed: _saving
+          ? null
+          : () => _transition(context, ref, action: 'status', status: status),
       child: Text(label),
     );
   }
@@ -276,6 +489,8 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
     String? driverId,
     String? reason,
   }) async {
+    if (_saving) return;
+    setState(() => _saving = true);
     try {
       await ref.read(appControllerProvider).api.transitionVendorOrder(
             widget.order.id,
@@ -285,7 +500,9 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
             driverId: driverId,
             reason: reason,
           );
-      ref.invalidate(vendorOrdersProvider);
+      ref
+        ..invalidate(vendorOrdersProvider)
+        ..invalidate(vendorDashboardProvider);
       if (context.mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -294,34 +511,16 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
       }
     } catch (error) {
       if (context.mounted) {
-        try {
-          await ref.read(appControllerProvider).api.queueVendorMutation(
-            mutationType: action,
-            entityType: 'booking',
-            entityId: widget.order.id,
-            payload: {
-              'status': status,
-              'reason': reason,
-              'vehicleId': vehicleId,
-              'driverId': driverId,
-            },
-          );
-          ref.invalidate(vendorOfflineMutationsProvider);
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Update failed and was queued for retry.'),
-              ),
-            );
-          }
-        } catch (queueError) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('$error\nQueue failed: $queueError')),
-            );
-          }
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Order update failed and was not applied: $error',
+            ),
+          ),
+        );
       }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -349,9 +548,14 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
     );
     final reason = controller.text.trim();
     controller.dispose();
-    if (confirmed == true && reason.length >= 2 && context.mounted) {
-      await _transition(context, ref, action: 'reject', reason: reason);
+    if (confirmed != true || !context.mounted) return;
+    if (reason.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a rejection reason.')),
+      );
+      return;
     }
+    await _transition(context, ref, action: 'reject', reason: reason);
   }
 
   Future<void> _verifyDelivery(BuildContext context, WidgetRef ref) async {
@@ -394,12 +598,16 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
     final otp = otpController.text.trim();
     otpController.dispose();
     if (confirmed != true || !context.mounted) return;
+    if (_saving) return;
+    setState(() => _saving = true);
     try {
       await ref.read(appControllerProvider).api.verifyVendorDelivery(
             orderId: widget.order.id,
             otp: otp,
           );
-      ref.invalidate(vendorOrdersProvider);
+      ref
+        ..invalidate(vendorOrdersProvider)
+        ..invalidate(vendorDashboardProvider);
       if (context.mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -412,6 +620,8 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
           SnackBar(content: Text('Delivery verification failed: $error')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -461,16 +671,12 @@ class VendorFleetScreen extends ConsumerWidget {
                     '${vehicle.capacityLitres} litres • ${vehicle.verification}'),
                 onTap: () => _editVehicle(context, ref, vehicle),
                 trailing: TextButton(
-                  onPressed: () async {
-                    await ref
-                        .read(appControllerProvider)
-                        .api
-                        .updateVendorVehicle(
-                          vehicle.id,
-                          isActive: !vehicle.active,
-                        );
-                    ref.invalidate(vendorDashboardProvider);
-                  },
+                  onPressed: () => _setVehicleActive(
+                    context,
+                    ref,
+                    vehicle,
+                    !vehicle.active,
+                  ),
                   child: Text(vehicle.active ? 'Deactivate' : 'Activate'),
                 ),
               ),
@@ -541,6 +747,36 @@ class VendorFleetScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _setVehicleActive(
+    BuildContext context,
+    WidgetRef ref,
+    VendorVehicle vehicle,
+    bool active,
+  ) async {
+    try {
+      await ref.read(appControllerProvider).api.updateVendorVehicle(
+            vehicle.id,
+            isActive: active,
+          );
+      _invalidateVendorFleet(ref);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${vehicle.registrationNumber} ${active ? 'activated' : 'deactivated'}.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Vehicle update failed: $error')),
+        );
+      }
+    }
+  }
+
   Future<void> _addVehicle(BuildContext context, WidgetRef ref) async {
     final registration = TextEditingController();
     final capacity = TextEditingController();
@@ -564,7 +800,7 @@ class VendorFleetScreen extends ConsumerWidget {
     );
     registration.dispose();
     capacity.dispose();
-    if (saved && context.mounted) ref.invalidate(vendorDashboardProvider);
+    if (saved && context.mounted) _invalidateVendorFleet(ref);
   }
 
   Future<void> _addDriver(BuildContext context, WidgetRef ref) async {
@@ -594,7 +830,7 @@ class VendorFleetScreen extends ConsumerWidget {
     name.dispose();
     mobile.dispose();
     licence.dispose();
-    if (saved && context.mounted) ref.invalidate(vendorDashboardProvider);
+    if (saved && context.mounted) _invalidateVendorFleet(ref);
   }
 
   Future<void> _editVehicle(
@@ -626,7 +862,7 @@ class VendorFleetScreen extends ConsumerWidget {
     );
     registration.dispose();
     capacity.dispose();
-    if (saved && context.mounted) ref.invalidate(vendorDashboardProvider);
+    if (saved && context.mounted) _invalidateVendorFleet(ref);
   }
 
   Future<void> _editDriver(
@@ -661,7 +897,7 @@ class VendorFleetScreen extends ConsumerWidget {
     name.dispose();
     mobile.dispose();
     licence.dispose();
-    if (saved && context.mounted) ref.invalidate(vendorDashboardProvider);
+    if (saved && context.mounted) _invalidateVendorFleet(ref);
   }
 
   Future<bool> _showRecordForm(
@@ -1324,6 +1560,13 @@ class _VendorError extends StatelessWidget {
           ),
         ),
       );
+}
+
+void _invalidateVendorFleet(WidgetRef ref) {
+  ref
+    ..invalidate(vendorDashboardProvider)
+    ..invalidate(vendorVehiclesProvider)
+    ..invalidate(vendorDriversProvider);
 }
 
 String _formatDate(DateTime? value) => value == null
