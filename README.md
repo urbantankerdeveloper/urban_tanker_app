@@ -13,6 +13,14 @@ the REST and Socket.IO contracts.
 Android builds and Flutter tests can be run from a Flutter-enabled development
 machine. iOS builds, signing, and store validation require macOS and Xcode.
 
+## Android release signing
+
+Release builds require a production keystore and never fall back to the debug
+signing key. Copy `android/key.properties.example` to
+`android/key.properties`, replace its placeholder values, and keep both
+`key.properties` and the keystore outside source control. Production signing
+credentials should be injected securely in CI rather than written to logs.
+
 ## Run
 
 ```powershell
