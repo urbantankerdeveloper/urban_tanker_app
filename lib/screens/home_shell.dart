@@ -42,6 +42,7 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   List<TankerService> _services = const [];
   bool _loadingServices = false;
+  bool _bookingFormOpening = false;
   String? _serviceError;
   late Future<List<NotificationItem>>? _notifications;
 
@@ -73,6 +74,16 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _createBooking({Booking? previousBooking}) async {
+    if (_bookingFormOpening || _services.isEmpty) return;
+    setState(() => _bookingFormOpening = true);
+    try {
+      await _openBookingForm(previousBooking: previousBooking);
+    } finally {
+      if (mounted) setState(() => _bookingFormOpening = false);
+    }
+  }
+
+  Future<void> _openBookingForm({Booking? previousBooking}) async {
     if (_services.isEmpty) return;
     List<AccountRecord> addresses = const [];
     try {
@@ -803,9 +814,11 @@ class _HomeShellState extends State<HomeShell> {
       floatingActionButton: role == WorkspaceRole.customer && _index == 0
           ? FloatingActionButton.extended(
               onPressed:
-                  _loadingServices || _services.isEmpty ? null : _createBooking,
+                  _loadingServices || _services.isEmpty || _bookingFormOpening
+                      ? null
+                      : _createBooking,
               icon: const Icon(Icons.local_shipping_outlined),
-              label: const Text('Book water'),
+              label: const Text('Book service'),
             )
           : null,
       bottomNavigationBar: NavigationBar(
