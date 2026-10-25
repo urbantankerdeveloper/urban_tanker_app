@@ -24,6 +24,10 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Capture vendor documents and delivery proof photos when you choose to submit them.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Share your live location with the customer while you are completing an active delivery.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

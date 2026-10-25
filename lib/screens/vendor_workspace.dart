@@ -1,7 +1,10 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../app/providers.dart';
 import '../models/vendor.dart';
@@ -344,19 +347,43 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
   String? selectedVehicle;
   String? selectedDriver;
   bool _saving = false;
+  bool _sharingLocation = false;
+  bool _locationUpdatePending = false;
+  String? _locationStatus;
+  StreamSubscription<Position>? _locationSubscription;
+
+  @override
+  void dispose() {
+    _locationSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final order = widget.order;
     final vehicles = ref.watch(vendorVehiclesProvider).valueOrNull ?? const [];
     final drivers = ref.watch(vendorDriversProvider).valueOrNull ?? const [];
     final assignableVehicles =
         vehicles.where((item) => item.assignable).toList();
     final assignableDrivers = drivers.where((item) => item.assignable).toList();
-    selectedVehicle ??=
-        assignableVehicles.isEmpty ? null : assignableVehicles.first.id;
-    selectedDriver ??=
-        assignableDrivers.isEmpty ? null : assignableDrivers.first.id;
-    final order = widget.order;
+    final assignedVehicleId =
+        order.vehicleId ?? _vehicleIdForLabel(vehicles, order.vehicle);
+    final assignedDriverId =
+        order.driverId ?? _driverIdForLabel(drivers, order.driver);
+    final currentVehicleId = assignableVehicles.any(
+      (item) => item.id == assignedVehicleId,
+    )
+        ? assignedVehicleId
+        : null;
+    final currentDriverId = assignableDrivers.any(
+      (item) => item.id == assignedDriverId,
+    )
+        ? assignedDriverId
+        : null;
+    selectedVehicle ??= currentVehicleId ??
+        (assignableVehicles.isEmpty ? null : assignableVehicles.first.id);
+    selectedDriver ??= currentDriverId ??
+        (assignableDrivers.isEmpty ? null : assignableDrivers.first.id);
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -388,8 +415,7 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
                 const SizedBox(height: 8),
               ],
               const SizedBox(height: 16),
-              if (['pending_vendor', 'vendor_assigned']
-                  .contains(order.status)) ...[
+              if (order.status == 'pending_vendor') ...[
                 if (assignableVehicles.isNotEmpty)
                   DropdownButtonFormField<String>(
                     initialValue: selectedVehicle,
@@ -418,7 +444,7 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
                     onChanged: (value) =>
                         setState(() => selectedDriver = value),
                   ),
-                OutlinedButton(
+                FilledButton.icon(
                   onPressed: _saving
                       ? null
                       : selectedVehicle == null || selectedDriver == null
@@ -426,17 +452,52 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
                           : () => _transition(
                                 context,
                                 ref,
-                                action: 'accept',
+                                action: 'assign',
                                 vehicleId: selectedVehicle,
                                 driverId: selectedDriver,
                               ),
-                  child: const Text('Accept order'),
+                  icon: const Icon(Icons.assignment_turned_in_outlined),
+                  label: const Text('Assign vehicle and driver'),
                 ),
               ],
+              if (order.status == 'vendor_assigned')
+                FilledButton(
+                  onPressed: _saving
+                      ? null
+                      : assignedVehicleId == null || assignedDriverId == null
+                          ? () => _showAssignmentRequired(context)
+                          : () => _transition(context, ref, action: 'accept'),
+                  child: const Text('Accept order'),
+                ),
               if (order.status == 'accepted')
                 _statusButton(context, ref, 'en_route', 'Mark en route'),
               if (order.status == 'en_route')
                 _statusButton(context, ref, 'arrived', 'Mark arrived'),
+              if (['en_route', 'arrived'].contains(order.status)) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _saving
+                      ? null
+                      : _sharingLocation
+                          ? _stopLocationSharing
+                          : _startLocationSharing,
+                  icon: Icon(
+                    _sharingLocation
+                        ? Icons.location_off_outlined
+                        : Icons.my_location,
+                  ),
+                  label: Text(
+                    _sharingLocation
+                        ? 'Stop sharing location'
+                        : 'Share live location',
+                  ),
+                ),
+                Text(
+                  _locationStatus ??
+                      'Location is shared only while this screen is open.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
               if (order.status == 'arrived')
                 OutlinedButton(
                   onPressed:
@@ -478,6 +539,86 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
           : () => _transition(context, ref, action: 'status', status: status),
       child: Text(label),
     );
+  }
+
+  Future<void> _startLocationSharing() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _showLocationMessage('Turn on location services to share your location.');
+      return;
+    }
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      _showLocationMessage(
+        permission == LocationPermission.deniedForever
+            ? 'Allow location access in device settings to share your location.'
+            : 'Location permission is required to share your location.',
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _sharingLocation = true;
+      _locationStatus = 'Waiting for a location fix...';
+    });
+    _locationSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 20,
+      ),
+    ).listen(
+      _sharePosition,
+      onError: (Object error) {
+        _stopLocationSharing();
+        _showLocationMessage('Location sharing stopped: $error');
+      },
+    );
+  }
+
+  Future<void> _sharePosition(Position position) async {
+    if (_locationUpdatePending) return;
+    _locationUpdatePending = true;
+    try {
+      await ref.read(appControllerProvider).api.updateVendorLocation(
+            bookingId: widget.order.id,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            accuracy: position.accuracy,
+          );
+      if (mounted) {
+        setState(() {
+          _locationStatus =
+              'Location shared at ${TimeOfDay.fromDateTime(DateTime.now()).format(context)}';
+        });
+      }
+    } catch (error) {
+      _stopLocationSharing();
+      _showLocationMessage('Could not share location: $error');
+    } finally {
+      _locationUpdatePending = false;
+    }
+  }
+
+  void _stopLocationSharing() {
+    unawaited(_locationSubscription?.cancel());
+    _locationSubscription = null;
+    if (mounted) {
+      setState(() {
+        _sharingLocation = false;
+        _locationStatus = 'Live location sharing is stopped.';
+      });
+    }
+  }
+
+  void _showLocationMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _transition(
@@ -561,38 +702,80 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
   Future<void> _verifyDelivery(BuildContext context, WidgetRef ref) async {
     final otpController = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    XFile? proofPhoto;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Verify delivery'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: otpController,
-            keyboardType: TextInputType.number,
-            maxLength: 6,
-            decoration: const InputDecoration(
-              labelText: 'Six-digit delivery OTP',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Verify delivery'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: otpController,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'Six-digit delivery OTP',
+                  ),
+                  validator: (value) => RegExp(r'^\d{6}$').hasMatch(value ?? '')
+                      ? null
+                      : 'Enter the six-digit OTP.',
+                ),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    try {
+                      final image = await ImagePicker().pickImage(
+                        source: ImageSource.camera,
+                        imageQuality: 80,
+                      );
+                      if (image != null && context.mounted) {
+                        setDialogState(() => proofPhoto = image);
+                      }
+                    } catch (error) {
+                      if (context.mounted) {
+                        setDialogState(
+                          () => proofPhoto = null,
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Camera unavailable: $error')),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.camera_alt_outlined),
+                  label: Text(
+                    proofPhoto == null
+                        ? 'Capture delivery photo (optional)'
+                        : 'Retake delivery photo',
+                  ),
+                ),
+                if (proofPhoto != null)
+                  Text(
+                    proofPhoto!.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
             ),
-            validator: (value) => RegExp(r'^\d{6}$').hasMatch(value ?? '')
-                ? null
-                : 'Enter the six-digit OTP.',
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(context, true);
+                }
+              },
+              child: const Text('Verify'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(context, true);
-              }
-            },
-            child: const Text('Verify'),
-          ),
-        ],
       ),
     );
     final otp = otpController.text.trim();
@@ -601,9 +784,17 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
     if (_saving) return;
     setState(() => _saving = true);
     try {
+      final proofPath = proofPhoto == null
+          ? null
+          : await ref.read(appControllerProvider).api.uploadVendorFile(
+                fileName: proofPhoto!.name,
+                contentType: 'image/jpeg',
+                bytes: await proofPhoto!.readAsBytes(),
+              );
       await ref.read(appControllerProvider).api.verifyVendorDelivery(
             orderId: widget.order.id,
             otp: otp,
+            proofPath: proofPath,
           );
       ref
         ..invalidate(vendorOrdersProvider)
@@ -1167,38 +1358,228 @@ class _VendorDocumentCard extends ConsumerWidget {
     final expiry = TextEditingController(
       text: (record?['expires_on'] ?? record?['expiresOn'] ?? '').toString(),
     );
-    final saved = await _showVendorForm(
-      context,
-      title: record == null ? 'Submit document' : 'Resubmit document',
-      fields: [
-        ('Document type', type),
-        ('Object key / uploaded file path', objectKey),
-        ('Expiry date (YYYY-MM-DD)', expiry),
-      ],
-      submit: () async {
-        final id = record?['id']?.toString();
-        if (id == null || id.isEmpty) {
-          await ref.read(appControllerProvider).api.createVendorDocument(
-                documentType: type.text.trim(),
-                objectKey: objectKey.text.trim(),
-                expiresOn: expiry.text.trim(),
-              );
-        } else {
-          await ref.read(appControllerProvider).api.updateVendorDocument(
-                id: id,
-                documentType: type.text.trim(),
-                objectKey: objectKey.text.trim(),
-                expiresOn: expiry.text.trim(),
-              );
-        }
-      },
+    PlatformFile? selectedFile;
+    XFile? cameraPhoto;
+    String? error;
+    var saving = false;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(record == null ? 'Submit document' : 'Resubmit document'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: type,
+                  decoration: const InputDecoration(labelText: 'Document type'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          try {
+                            final result = await FilePicker.pickFiles(
+                              type: FileType.custom,
+                              allowedExtensions: const [
+                                'pdf',
+                                'jpg',
+                                'jpeg',
+                                'png',
+                                'webp',
+                                'doc',
+                                'docx',
+                              ],
+                              withData: true,
+                            );
+                            final file = result?.files.single;
+                            if (file != null && dialogContext.mounted) {
+                              setDialogState(() {
+                                selectedFile = file;
+                                cameraPhoto = null;
+                                objectKey.text = file.name;
+                                error = null;
+                              });
+                            }
+                          } catch (value) {
+                            if (dialogContext.mounted) {
+                              setDialogState(() => error = value.toString());
+                            }
+                          }
+                        },
+                  icon: const Icon(Icons.attach_file),
+                  label: const Text('Choose a document'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          try {
+                            final photo = await ImagePicker().pickImage(
+                              source: ImageSource.camera,
+                              imageQuality: 80,
+                            );
+                            if (photo != null && dialogContext.mounted) {
+                              setDialogState(() {
+                                cameraPhoto = photo;
+                                selectedFile = null;
+                                objectKey.text = photo.name;
+                                error = null;
+                              });
+                            }
+                          } catch (value) {
+                            if (dialogContext.mounted) {
+                              setDialogState(() => error = value.toString());
+                            }
+                          }
+                        },
+                  icon: const Icon(Icons.camera_alt_outlined),
+                  label: const Text('Scan with camera'),
+                ),
+                if (objectKey.text.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Selected: ${objectKey.text}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                TextField(
+                  controller: expiry,
+                  keyboardType: TextInputType.datetime,
+                  decoration: const InputDecoration(
+                    labelText: 'Expiry date (optional, YYYY-MM-DD)',
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      color: Theme.of(dialogContext).colorScheme.error,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed:
+                  saving ? null : () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final expiryText = expiry.text.trim();
+                      if (type.text.trim().isEmpty) {
+                        setDialogState(() => error = 'Enter a document type.');
+                        return;
+                      }
+                      if ((record == null ||
+                              selectedFile != null ||
+                              cameraPhoto != null) &&
+                          selectedFile == null &&
+                          cameraPhoto == null) {
+                        setDialogState(
+                          () => error = 'Choose a file or capture a photo.',
+                        );
+                        return;
+                      }
+                      if (expiryText.isNotEmpty &&
+                          (DateTime.tryParse(expiryText) == null ||
+                              !RegExp(r'^\d{4}-\d{2}-\d{2}$')
+                                  .hasMatch(expiryText))) {
+                        setDialogState(
+                          () => error = 'Enter expiry as YYYY-MM-DD.',
+                        );
+                        return;
+                      }
+                      setDialogState(() {
+                        saving = true;
+                        error = null;
+                      });
+                      try {
+                        var path = objectKey.text.trim();
+                        if (selectedFile != null) {
+                          final bytes = selectedFile!.bytes;
+                          if (bytes == null) {
+                            throw const FormatException(
+                              'Could not read the selected document.',
+                            );
+                          }
+                          path = await ref
+                              .read(appControllerProvider)
+                              .api
+                              .uploadVendorFile(
+                                fileName: selectedFile!.name,
+                                contentType: _vendorDocumentContentType(
+                                  selectedFile!.extension,
+                                ),
+                                bytes: bytes,
+                              );
+                        } else if (cameraPhoto != null) {
+                          path = await ref
+                              .read(appControllerProvider)
+                              .api
+                              .uploadVendorFile(
+                                fileName: cameraPhoto!.name,
+                                contentType: 'image/jpeg',
+                                bytes: await cameraPhoto!.readAsBytes(),
+                              );
+                        }
+                        final api = ref.read(appControllerProvider).api;
+                        final id = record?['id']?.toString();
+                        if (id == null || id.isEmpty) {
+                          await api.createVendorDocument(
+                            documentType: type.text.trim(),
+                            objectKey: path,
+                            expiresOn: expiryText.isEmpty ? null : expiryText,
+                          );
+                        } else {
+                          await api.updateVendorDocument(
+                            id: id,
+                            documentType: type.text.trim(),
+                            objectKey: path,
+                            expiresOn: expiryText.isEmpty ? null : expiryText,
+                          );
+                        }
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext, true);
+                        }
+                      } catch (value) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() {
+                            saving = false;
+                            error = value.toString();
+                          });
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Upload and submit'),
+            ),
+          ],
+        ),
+      ),
     );
     type.dispose();
     objectKey.dispose();
     expiry.dispose();
-    if (saved && context.mounted) {
+    if (saved == true && context.mounted) {
+      _invalidateVendorFleet(ref);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Document submitted.')),
+        const SnackBar(content: Text('Document uploaded and submitted.')),
       );
     }
   }
@@ -1435,78 +1816,149 @@ class VendorEarningsScreen extends ConsumerWidget {
         message: error.toString(),
         retry: () => ref.invalidate(vendorPayoutsProvider),
       ),
-      data: (items) => RefreshIndicator(
-        onRefresh: () async => ref.invalidate(vendorPayoutsProvider),
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed: () => _requestPayout(context, ref),
-                icon: const Icon(Icons.payments_outlined),
-                label: const Text('Request payout'),
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (items.isEmpty)
-              const _VendorEmpty(message: 'No payouts yet.')
-            else
-              ...items.map(
-                (payout) => Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.payments_outlined),
-                    title: Text('₹${payout.amountRupees.toStringAsFixed(2)}'),
-                    subtitle: Text(
-                        '${payout.reference}\n${_formatDate(payout.createdAt)}'),
-                    trailing: Text(payout.status),
+      data: (items) {
+        final paidPaise = items
+            .where((item) =>
+                ['paid', 'completed'].contains(item.status.toLowerCase()))
+            .fold<int>(0, (total, item) => total + item.amountPaise);
+        final pendingPaise = items
+            .where((item) =>
+                ['pending', 'processing'].contains(item.status.toLowerCase()))
+            .fold<int>(0, (total, item) => total + item.amountPaise);
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(vendorPayoutsProvider),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Payout summary',
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Paid: ₹${(paidPaise / 100).toStringAsFixed(2)}',
+                      ),
+                      Text(
+                        'Pending/processing: '
+                        '₹${(pendingPaise / 100).toStringAsFixed(2)}',
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Based on payout records; this is not an available-balance estimate.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                   ),
                 ),
               ),
-          ],
-        ),
-      ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: () => _requestPayout(context, ref),
+                  icon: const Icon(Icons.payments_outlined),
+                  label: const Text('Request payout'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (items.isEmpty)
+                const _VendorEmpty(message: 'No payouts yet.')
+              else
+                ...items.map(
+                  (payout) => Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.payments_outlined),
+                      title: Text('₹${payout.amountRupees.toStringAsFixed(2)}'),
+                      subtitle: Text([
+                        payout.reference,
+                        _formatDate(payout.createdAt),
+                        if (payout.periodStart != null ||
+                            payout.periodEnd != null)
+                          'Period: ${_formatDate(payout.periodStart)} – '
+                              '${_formatDate(payout.periodEnd)}',
+                      ].join('\n')),
+                      trailing: Text(payout.status),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Future<void> _requestPayout(BuildContext context, WidgetRef ref) async {
     final amountController = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    DateTimeRange? period;
     final submitted = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Request payout'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: amountController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Amount in rupees',
-              prefixText: '₹ ',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Request payout'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: amountController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Amount in rupees',
+                    prefixText: '₹ ',
+                  ),
+                  validator: (value) {
+                    final amount = double.tryParse(value ?? '');
+                    return amount == null || amount <= 0
+                        ? 'Enter a valid amount.'
+                        : null;
+                  },
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final selected = await showDateRangePicker(
+                      context: context,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                      initialDateRange: period,
+                    );
+                    if (selected != null) {
+                      setDialogState(() => period = selected);
+                    }
+                  },
+                  icon: const Icon(Icons.date_range_outlined),
+                  label: Text(
+                    period == null
+                        ? 'Add earning period (optional)'
+                        : '${_formatDate(period!.start)} – '
+                            '${_formatDate(period!.end)}',
+                  ),
+                ),
+              ],
             ),
-            validator: (value) {
-              final amount = double.tryParse(value ?? '');
-              return amount == null || amount <= 0
-                  ? 'Enter a valid amount.'
-                  : null;
-            },
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(context, true);
+                }
+              },
+              child: const Text('Submit'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(context, true);
-              }
-            },
-            child: const Text('Submit'),
-          ),
-        ],
       ),
     );
     final amount = double.tryParse(amountController.text.trim());
@@ -1515,6 +1967,8 @@ class VendorEarningsScreen extends ConsumerWidget {
     try {
       await ref.read(appControllerProvider).api.requestVendorPayout(
             amount: amount,
+            periodStart: period?.start,
+            periodEnd: period?.end,
           );
       ref.invalidate(vendorPayoutsProvider);
       if (context.mounted) {
@@ -1568,6 +2022,34 @@ void _invalidateVendorFleet(WidgetRef ref) {
     ..invalidate(vendorVehiclesProvider)
     ..invalidate(vendorDriversProvider);
 }
+
+String? _vehicleIdForLabel(List<VendorVehicle> vehicles, String? label) {
+  if (label == null || label.isEmpty) return null;
+  for (final vehicle in vehicles) {
+    if (vehicle.registrationNumber == label) return vehicle.id;
+  }
+  return null;
+}
+
+String? _driverIdForLabel(List<VendorDriver> drivers, String? label) {
+  if (label == null || label.isEmpty) return null;
+  for (final driver in drivers) {
+    if (driver.name == label) return driver.id;
+  }
+  return null;
+}
+
+String _vendorDocumentContentType(String? extension) =>
+    switch (extension?.toLowerCase()) {
+      'pdf' => 'application/pdf',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      'doc' => 'application/msword',
+      'docx' =>
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      _ => throw const FormatException('This file type is not supported.'),
+    };
 
 String _formatDate(DateTime? value) => value == null
     ? 'Date not set'

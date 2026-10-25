@@ -10,9 +10,8 @@ the REST and Socket.IO contracts.
 - Android SDK with API 30 installed for the Android target
 - macOS/Xcode for iOS builds (the iOS deployment target is 13.0)
 
-Flutter is not installed on the Windows development host used to prepare this
-project, so Android emulator and iOS compilation must be completed on a
-Flutter-enabled machine.
+Android builds and Flutter tests can be run from a Flutter-enabled development
+machine. iOS builds, signing, and store validation require macOS and Xcode.
 
 ## Run
 
@@ -74,10 +73,17 @@ in-app inbox alone: it requires a native FCM/APNs device-registration contract,
 provider credentials, notification permission handling, and server-side
 delivery. Do not add provider keys or service-account files to this project.
 
-The only permission currently used is Android `INTERNET`; iOS does not need a
-runtime permission for ordinary HTTPS requests. Location, camera, photo/file,
-and push permissions are intentionally not requested until their corresponding
-native feature and server contract are implemented.
+The vendor workspace can upload documents through the authenticated signed
+upload endpoint, capture an optional delivery-proof photo, and share foreground
+location while an order is en route or arrived. Location sharing stops when the
+order detail screen closes; background tracking is not enabled. Android asks
+for location only when sharing begins, and the platform file picker is used
+without broad storage access. iOS camera and in-use location usage descriptions
+are configured for these user-initiated actions. Live location requires the
+deployed backend's `/api/vendor/location` route and location-update storage.
+Automatic replay of saved offline mutation records is not supported by the
+backend; the vendor screen continues to identify those records as server logs,
+not queued actions.
 
 ## Native handoff
 

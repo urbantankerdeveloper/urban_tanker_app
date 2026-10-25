@@ -857,6 +857,20 @@ class ApiClient {
     return VendorOrder.fromJson(decoded);
   }
 
+  Future<void> updateVendorLocation({
+    required String bookingId,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  }) async {
+    await request('POST', '/vendor/location', body: {
+      'bookingId': bookingId,
+      'latitude': latitude,
+      'longitude': longitude,
+      if (accuracy != null) 'accuracy': accuracy,
+    });
+  }
+
   Future<List<VendorPayout>> vendorPayouts() async {
     final response = await request('GET', '/vendor/payouts');
     return _vendorList(response, VendorPayout.fromJson, 'vendor payouts');
@@ -909,6 +923,69 @@ class ApiClient {
       if (expiresOn != null && expiresOn.isNotEmpty) 'expiresOn': expiresOn,
     });
     return _mapResponse(response, 'vendor document');
+  }
+
+  Future<String> uploadVendorFile({
+    required String fileName,
+    required String contentType,
+    required List<int> bytes,
+  }) async {
+    if (bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
+      throw const FormatException('Choose a file no larger than 10 MB.');
+    }
+    const allowedTypes = {
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+    if (!allowedTypes.contains(contentType)) {
+      throw const FormatException('This file type is not supported.');
+    }
+    final safeName = fileName
+        .replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    if (safeName.isEmpty || safeName == '.' || safeName == '..') {
+      throw const FormatException('The selected file name is invalid.');
+    }
+
+    final signedResponse = await request(
+      'POST',
+      '/uploads/signed-url',
+      body: {
+        'path': 'vendor/${DateTime.now().millisecondsSinceEpoch}_$safeName',
+        'bucket': 'urban-tanker-documents',
+        'contentType': contentType,
+        'size': bytes.length,
+      },
+    );
+    final decoded = jsonDecode(signedResponse.body);
+    if (decoded is! Map<String, dynamic> ||
+        decoded['signedUrl'] is! String ||
+        decoded['path'] is! String) {
+      throw const FormatException('The document upload link was invalid.');
+    }
+    final signedUri = Uri.tryParse(decoded['signedUrl'] as String);
+    if (signedUri == null || signedUri.scheme != 'https') {
+      throw const FormatException('The document upload link was not secure.');
+    }
+
+    final upload = http.Request('PUT', signedUri)
+      ..headers['Content-Type'] = contentType
+      ..bodyBytes = bytes;
+    final uploadResponse = await _client
+        .send(upload)
+        .then(http.Response.fromStream)
+        .timeout(const Duration(seconds: 30));
+    if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
+      throw ApiException(
+        'File upload failed (${uploadResponse.statusCode}).',
+        uploadResponse.statusCode,
+      );
+    }
+    return decoded['path'] as String;
   }
 
   Future<Map<String, dynamic>> updateVendorDocument({

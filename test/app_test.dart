@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'package:urban_tanker_app/models/session.dart';
 import 'package:urban_tanker_app/models/booking.dart';
@@ -29,6 +30,31 @@ class _RecordingApiClient extends ApiClient {
     requestPath = path;
     requestBody = body;
     return http.Response(jsonEncode({'id': 'booking-1'}), 200);
+  }
+}
+
+class _VendorUploadApiClient extends ApiClient {
+  _VendorUploadApiClient({
+    required super.client,
+  }) : super(baseUrl: 'https://example.test/api');
+
+  @override
+  Future<http.Response> request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    bool retry = true,
+  }) async {
+    expect(method, 'POST');
+    expect(path, '/uploads/signed-url');
+    expect(body?['bucket'], 'urban-tanker-documents');
+    return http.Response(
+      jsonEncode({
+        'signedUrl': 'https://storage.example.test/signed-upload?token=test',
+        'path': 'owner/vendor/document.pdf',
+      }),
+      200,
+    );
   }
 }
 
@@ -453,6 +479,79 @@ void main() {
       VendorOrder.fromJson({'status': 'Rejected'}).status,
       'cancelled',
     );
+  });
+
+  test('vendor orders keep assigned vehicle and driver ids', () {
+    final order = VendorOrder.fromJson({
+      'id': 'order-3',
+      'reference': 'UT-2003',
+      'status': 'accepted',
+      'vehicleId': 'vehicle-1',
+      'driverId': 'driver-7',
+      'vehicle': 'KA01AB1234',
+      'driver': 'Driver One',
+    });
+
+    expect(order.vehicleId, 'vehicle-1');
+    expect(order.driverId, 'driver-7');
+    expect(order.vehicle, 'KA01AB1234');
+    expect(order.driver, 'Driver One');
+  });
+
+  test('vendor location updates use the backend booking contract', () async {
+    final api = _RecordingApiClient();
+
+    await api.updateVendorLocation(
+      bookingId: 'booking-1',
+      latitude: 12.9716,
+      longitude: 77.5946,
+      accuracy: 8.5,
+    );
+
+    expect(api.requestPath, '/vendor/location');
+    expect(api.requestBody, {
+      'bookingId': 'booking-1',
+      'latitude': 12.9716,
+      'longitude': 77.5946,
+      'accuracy': 8.5,
+    });
+  });
+
+  test('vendor document upload streams file bytes to the signed URL', () async {
+    http.Request? uploadRequest;
+    final client = MockClient((request) async {
+      uploadRequest = request;
+      return http.Response('', 200);
+    });
+    final api = _VendorUploadApiClient(client: client);
+    final path = await api.uploadVendorFile(
+      fileName: 'vendor-document.pdf',
+      contentType: 'application/pdf',
+      bytes: [1, 2, 3, 4],
+    );
+
+    expect(path, 'owner/vendor/document.pdf');
+    expect(uploadRequest?.method, 'PUT');
+    expect(uploadRequest?.url.queryParameters['token'], 'test');
+    expect(uploadRequest?.headers['Content-Type'], 'application/pdf');
+    expect(uploadRequest?.bodyBytes, [1, 2, 3, 4]);
+    client.close();
+  });
+
+  test('vendor payouts parse backend rupees and date periods', () {
+    final payout = VendorPayout.fromJson({
+      'id': 'payout-1',
+      'amount': 1250.50,
+      'status': 'pending',
+      'created_at': '2026-10-24T08:00:00Z',
+      'period_start': '2026-10-01',
+      'period_end': '2026-10-15',
+    });
+
+    expect(payout.amountPaise, 125050);
+    expect(payout.amountRupees, 1250.5);
+    expect(payout.periodStart?.day, 1);
+    expect(payout.periodEnd?.day, 15);
   });
 
   test('vendor services map current availability state', () {

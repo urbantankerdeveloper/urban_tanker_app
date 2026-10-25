@@ -46,10 +46,13 @@ class VendorOrder {
             (json['created_at'] ?? json['createdAt'] ?? '').toString()),
         scheduledFor: DateTime.tryParse(
             (json['scheduled_for'] ?? json['scheduledFor'] ?? '').toString()),
-        vehicleId: json['vehicle_id']?.toString(),
-        driverId: json['driver_id']?.toString(),
-        vehicle: json['vehicle']?.toString(),
-        driver: json['driver']?.toString(),
+        vehicleId: (json['vehicle_id'] ?? json['vehicleId'])?.toString(),
+        driverId: (json['driver_id'] ?? json['driverId'])?.toString(),
+        vehicle:
+            (json['vehicle'] ?? json['vehicleName'] ?? json['assignedVehicle'])
+                ?.toString(),
+        driver: (json['driver'] ?? json['driverName'] ?? json['assignedDriver'])
+            ?.toString(),
       );
 
   double get amountRupees => amountPaise / 100;
@@ -168,6 +171,8 @@ class VendorPayout {
     required this.reference,
     required this.createdAt,
     this.paidAt,
+    this.periodStart,
+    this.periodEnd,
   });
 
   final String id;
@@ -176,17 +181,28 @@ class VendorPayout {
   final String reference;
   final DateTime? createdAt;
   final DateTime? paidAt;
+  final DateTime? periodStart;
+  final DateTime? periodEnd;
 
-  factory VendorPayout.fromJson(Map<String, dynamic> json) => VendorPayout(
-        id: (json['id'] ?? '').toString(),
-        amountPaise:
-            ((json['amount_paise'] ?? json['amount']) as num?)?.toInt() ?? 0,
-        status: (json['status'] ?? 'pending').toString(),
-        reference:
-            (json['reference'] ?? json['booking_reference'] ?? '').toString(),
-        createdAt: DateTime.tryParse((json['created_at'] ?? '').toString()),
-        paidAt: DateTime.tryParse((json['paid_at'] ?? '').toString()),
-      );
+  factory VendorPayout.fromJson(Map<String, dynamic> json) {
+    final amountPaise = json['amount_paise'];
+    final amount = json['amount'];
+    return VendorPayout(
+      id: (json['id'] ?? '').toString(),
+      amountPaise: amountPaise is num
+          ? amountPaise.toInt()
+          : amount is num
+              ? (amount * 100).round()
+              : 0,
+      status: (json['status'] ?? 'pending').toString(),
+      reference:
+          (json['reference'] ?? json['booking_reference'] ?? '').toString(),
+      createdAt: DateTime.tryParse((json['created_at'] ?? '').toString()),
+      paidAt: DateTime.tryParse((json['paid_at'] ?? '').toString()),
+      periodStart: DateTime.tryParse((json['period_start'] ?? '').toString()),
+      periodEnd: DateTime.tryParse((json['period_end'] ?? '').toString()),
+    );
+  }
 
   double get amountRupees => amountPaise / 100;
 }
