@@ -22,6 +22,8 @@ Map<String, dynamic> buildBookingRequestBody({
   String? notes,
   String paymentMethod = 'cod',
   String? couponCode,
+  String? phone,
+  String? phoneVerificationChallengeId,
 }) {
   final normalizedServices =
       services.map((service) => service.toJson()).toList(growable: false);
@@ -31,6 +33,11 @@ Map<String, dynamic> buildBookingRequestBody({
     'services': normalizedServices,
     'location': location,
     'deliveryDate': deliveryDate,
+    if (phone != null && phone.trim().isNotEmpty)
+      'phone': normalizeIndianPhone(phone),
+    if (phoneVerificationChallengeId != null &&
+        phoneVerificationChallengeId.trim().isNotEmpty)
+      'phoneVerificationChallengeId': phoneVerificationChallengeId,
     if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
     'paymentMethod': paymentMethod,
     if (couponCode != null && couponCode.trim().isNotEmpty)
@@ -223,6 +230,8 @@ class ApiClient {
     String? notes,
     String paymentMethod = 'cod',
     String? couponCode,
+    String? phone,
+    String? phoneVerificationChallengeId,
   }) async {
     final response = await request(
       'POST',
@@ -243,6 +252,8 @@ class ApiClient {
         notes: notes,
         paymentMethod: paymentMethod,
         couponCode: couponCode,
+        phone: phone,
+        phoneVerificationChallengeId: phoneVerificationChallengeId,
       ),
     );
     final decoded = jsonDecode(response.body);
@@ -262,6 +273,8 @@ class ApiClient {
     String? notes,
     String paymentMethod = 'cod',
     String? couponCode,
+    String? phone,
+    String? phoneVerificationChallengeId,
   }) async {
     final response =
         await request('POST', '/customer/orders/quote-preview', body: {
@@ -281,6 +294,8 @@ class ApiClient {
         notes: notes,
         paymentMethod: paymentMethod,
         couponCode: couponCode,
+        phone: phone,
+        phoneVerificationChallengeId: phoneVerificationChallengeId,
       ),
     });
     final decoded = jsonDecode(response.body);

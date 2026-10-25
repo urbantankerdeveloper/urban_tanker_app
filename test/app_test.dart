@@ -213,6 +213,30 @@ void main() {
     ]);
   });
 
+  test('booking request keeps shared normalized phone at booking level', () {
+    final body = buildBookingRequestBody(
+      serviceId: 'water_tanker',
+      capacity: '5000',
+      location: 'Chennai',
+      deliveryDate: '2026-10-25',
+      phone: '+91 98765 43210',
+      phoneVerificationChallengeId: 'challenge-1',
+      services: const [
+        BookingServiceDetails(
+          serviceId: 'water_tanker',
+          quantity: '5000',
+          details: 'Potable water',
+          location: 'Chennai',
+          deliveryDate: '2026-10-25',
+        ),
+      ],
+    );
+
+    expect(body['phone'], '9876543210');
+    expect(body['phoneVerificationChallengeId'], 'challenge-1');
+    expect((body['services'] as List).single['phone'], isNull);
+  });
+
   test('booking submission sends combined services to the quote endpoint',
       () async {
     final api = _RecordingApiClient();
