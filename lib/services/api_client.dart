@@ -38,6 +38,11 @@ Map<String, dynamic> buildBookingRequestBody({
   };
 }
 
+String normalizeIndianPhone(String value) {
+  final digits = value.replaceAll(RegExp(r'\D'), '');
+  return digits.length > 10 ? digits.substring(digits.length - 10) : digits;
+}
+
 class ApiException implements Exception {
   const ApiException(this.message, this.statusCode);
 
@@ -46,6 +51,13 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class PhoneVerificationState {
+  const PhoneVerificationState({required this.phone, required this.verified});
+
+  final String phone;
+  final bool verified;
 }
 
 class ApiClient {
@@ -135,6 +147,58 @@ class ApiClient {
       throw const FormatException(
         'The password reset response was invalid.',
       );
+    }
+  }
+
+  Future<PhoneVerificationState> phoneVerification() async {
+    final response = await request('GET', '/customer/phone-verification');
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException(
+          'The phone verification response was invalid.');
+    }
+    return PhoneVerificationState(
+      phone: normalizeIndianPhone((decoded['phone'] ?? '').toString()),
+      verified: decoded['verified'] == true,
+    );
+  }
+
+  Future<String> requestPhoneOtp(String phone) async {
+    final normalized = normalizeIndianPhone(phone);
+    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
+      throw const FormatException('Enter a valid 10-digit mobile number.');
+    }
+    final response = await request(
+      'POST',
+      '/auth/guest/request-otp',
+      body: {'phone': normalized},
+      retry: false,
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic> || decoded['challengeId'] is! String) {
+      throw const FormatException('The phone OTP response was invalid.');
+    }
+    return decoded['challengeId'] as String;
+  }
+
+  Future<void> verifyPhoneOtp({
+    required String challengeId,
+    required String phone,
+    required String otp,
+  }) async {
+    final response = await request(
+      'POST',
+      '/auth/guest/verify-phone',
+      body: {
+        'challengeId': challengeId,
+        'phone': normalizeIndianPhone(phone),
+        'otp': otp.trim(),
+      },
+      retry: false,
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic> || decoded['verified'] != true) {
+      throw const FormatException('Phone verification was not confirmed.');
     }
   }
 
@@ -250,6 +314,17 @@ class ApiClient {
     return TrackingSnapshot.fromJson(decoded);
   }
 
+  Future<PublicTrackingSnapshot> publicTracking(String token) async {
+    final response = await request(
+        'GET', '/public/tracking/${Uri.encodeComponent(token)}',
+        retry: false);
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The public tracking response was invalid.');
+    }
+    return PublicTrackingSnapshot.fromJson(decoded);
+  }
+
   Future<Booking> cancelBooking(String bookingId) async {
     final response = await request(
       'PATCH',
@@ -319,12 +394,17 @@ class ApiClient {
   Future<CustomerProfile> updateProfile({
     required String name,
     required String email,
-    required String phone,
+    String? phone,
   }) async {
     final response = await request(
       'PATCH',
       '/customer/profile',
-      body: {'name': name, 'email': email, 'phone': phone},
+      body: {
+        'name': name,
+        'email': email,
+        if (phone != null && phone.trim().isNotEmpty)
+          'phone': normalizeIndianPhone(phone),
+      },
     );
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
 import '../models/account.dart';
+import '../services/api_client.dart';
 import 'invoice_detail_screen.dart';
 import 'support_request_detail_screen.dart';
 
@@ -190,26 +191,124 @@ class CustomerAccountScreen extends ConsumerWidget {
     final phone = TextEditingController(
       text: profile.phone.replaceFirst('+91', ''),
     );
-    await _showForm(
-      context,
-      title: 'Edit profile',
-      fields: [('Name', name), ('Email', email), ('10-digit mobile', phone)],
-      submit: () async {
-        final emailValue = email.text.trim();
-        final phoneValue = phone.text.trim();
-        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(emailValue)) {
-          throw const FormatException('Enter a valid email address.');
-        }
-        if (!RegExp(r'^\d{10}$').hasMatch(phoneValue)) {
-          throw const FormatException('Enter a valid 10-digit mobile number.');
-        }
-        await ref.read(appControllerProvider).api.updateProfile(
-              name: name.text.trim(),
-              email: emailValue,
-              phone: phoneValue,
-            );
-        ref.invalidate(customerProfileProvider);
-      },
+    final initialName = name.text;
+    final initialEmail = email.text;
+    final initialPhone = phone.text;
+    String? error;
+    var saving = false;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) {
+          final dirty = name.text != initialName ||
+              email.text != initialEmail ||
+              phone.text != initialPhone;
+          return AlertDialog(
+            title: const Text('Edit profile'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: name,
+                    enabled: !saving,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  TextField(
+                    controller: email,
+                    enabled: !saving,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  TextField(
+                    controller: phone,
+                    enabled: !saving,
+                    keyboardType: TextInputType.phone,
+                    decoration:
+                        const InputDecoration(labelText: '10-digit mobile'),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        error!,
+                        style: TextStyle(
+                          color: Theme.of(dialogContext).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving
+                    ? null
+                    : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: !dirty || saving
+                    ? null
+                    : () async {
+                        final emailValue = email.text.trim();
+                        final phoneValue =
+                            normalizeIndianPhone(phone.text.trim());
+                        if (name.text.trim().isEmpty ||
+                            !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                                .hasMatch(emailValue)) {
+                          setState(() =>
+                              error = 'Enter a name and valid email address.');
+                          return;
+                        }
+                        if (phoneValue.isNotEmpty &&
+                            !RegExp(r'^\d{10}$').hasMatch(phoneValue)) {
+                          setState(() =>
+                              error = 'Enter a valid 10-digit mobile number.');
+                          return;
+                        }
+                        setState(() {
+                          saving = true;
+                          error = null;
+                        });
+                        try {
+                          await ref.read(appControllerProvider).api.updateProfile(
+                                name: name.text.trim(),
+                                email: emailValue,
+                                phone: phoneValue.isEmpty ? null : phoneValue,
+                              );
+                          ref.invalidate(customerProfileProvider);
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Profile saved successfully.'),
+                              ),
+                            );
+                          }
+                        } catch (value) {
+                          if (dialogContext.mounted) {
+                            setState(() {
+                              saving = false;
+                              error = value.toString();
+                            });
+                          }
+                        }
+                      },
+                child: saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save profile'),
+              ),
+            ],
+          );
+        },
+      ),
     );
     name.dispose();
     email.dispose();

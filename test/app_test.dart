@@ -239,7 +239,7 @@ void main() {
     expect(api.requestPath, '/customer/orders/quote');
     expect(api.requestBody?['services'], hasLength(2));
     expect(
-      (api.requestBody?['services'] as List<Map<String, String>>)
+      (api.requestBody?['services'] as List<Map<String, dynamic>>)
           .last['details'],
       'Rooftop tanks',
     );
@@ -264,7 +264,7 @@ void main() {
     expect(body['serviceId'], 'water_tanker');
     expect(body['services'], hasLength(1));
     expect(
-      (body['services'] as List<Map<String, String>>).single['details'],
+      (body['services'] as List<Map<String, dynamic>>).single['details'],
       'Potable water',
     );
   });

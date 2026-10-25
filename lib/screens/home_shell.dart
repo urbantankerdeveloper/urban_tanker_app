@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../app/app_controller.dart';
 import '../app/theme.dart';
@@ -19,6 +20,7 @@ import 'customer_account_screen.dart';
 import 'vendor_workspace.dart';
 import 'admin_workspace.dart';
 import 'dispatcher_workspace.dart';
+import '../services/service_area.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({required this.controller, super.key});
@@ -77,12 +79,9 @@ class _HomeShellState extends State<HomeShell> {
     } catch (_) {
       // Saved addresses are optional; manual entry remains available.
     }
-    final locationController = TextEditingController();
-    final dateController = TextEditingController(
-      text: _dateOnly(DateTime.now().add(const Duration(days: 1))),
-    );
     final couponController = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    String? selectedAddress;
     final previousDetails = {
       for (final detail
           in previousBooking?.services ?? <BookingServiceDetails>[])
@@ -96,6 +95,13 @@ class _HomeShellState extends State<HomeShell> {
                   ? '5000'
                   : ''),
           details: previousDetails[service.id]?.details ?? '',
+          location: previousDetails[service.id]?.location ??
+              (previousBooking?.location ?? selectedAddress ?? ''),
+          deliveryDate: previousDetails[service.id]?.deliveryDate ??
+              _dateOnly(previousBooking?.deliveryDate ??
+                  DateTime.now().add(const Duration(days: 1))),
+          latitude: previousDetails[service.id]?.latitude,
+          longitude: previousDetails[service.id]?.longitude,
         ),
     };
     final previousServiceIds = previousDetails.keys
@@ -118,7 +124,6 @@ class _HomeShellState extends State<HomeShell> {
     final selectedServices = previousServiceIds.isNotEmpty
         ? previousServiceIds
         : <String>{_services.first.id};
-    String? selectedAddress;
     for (final address in addresses) {
       if (address.detail == previousBooking?.location) {
         selectedAddress = address.detail;
@@ -128,15 +133,16 @@ class _HomeShellState extends State<HomeShell> {
     selectedAddress ??= previousBooking == null && addresses.isNotEmpty
         ? addresses.first.detail
         : null;
+    for (final fields in serviceFields.values) {
+      if (fields.location.text.trim().isEmpty && selectedAddress != null) {
+        fields.location.text = selectedAddress;
+      }
+    }
     Map<String, dynamic>? validatedCoupon;
     String? couponMessage;
     String? bookingFormError;
     var validatingCoupon = false;
-    locationController.text =
-        previousBooking?.location ?? selectedAddress ?? '';
     if (!mounted) {
-      locationController.dispose();
-      dateController.dispose();
       couponController.dispose();
       for (final fields in serviceFields.values) {
         fields.dispose();
@@ -231,6 +237,17 @@ class _HomeShellState extends State<HomeShell> {
                                         ? 'Enter details for ${service.name}.'
                                         : null,
                               ),
+                              const SizedBox(height: 8),
+                              _DeliveryLocationField(
+                                fields: serviceFields[service.id]!,
+                                onChanged: () => setSheetState(() {}),
+                              ),
+                              const SizedBox(height: 8),
+                              _DeliveryDateField(
+                                controller:
+                                    serviceFields[service.id]!.deliveryDate,
+                                onChanged: () => setSheetState(() {}),
+                              ),
                             ],
                           ),
                         ),
@@ -246,75 +263,6 @@ class _HomeShellState extends State<HomeShell> {
                       ),
                     ),
                   const SizedBox(height: 12),
-                  if (addresses.isNotEmpty)
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedAddress,
-                      decoration:
-                          const InputDecoration(labelText: 'Saved address'),
-                      items: addresses
-                          .map((address) => DropdownMenuItem(
-                                value: address.detail,
-                                child: Text(address.title),
-                              ))
-                          .toList(),
-                      onChanged: (value) {
-                        setSheetState(() {
-                          selectedAddress = value;
-                          locationController.text = value ?? '';
-                        });
-                      },
-                    ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: locationController,
-                    decoration: const InputDecoration(
-                      labelText: 'Delivery location',
-                      helperText:
-                          'Choose a saved address or enter one manually.',
-                    ),
-                    validator: (value) =>
-                        value == null || value.trim().length < 3
-                            ? 'Enter a delivery location.'
-                            : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: dateController,
-                    readOnly: true,
-                    onTap: () async {
-                      final now = DateTime.now();
-                      final firstDate = DateTime(now.year, now.month, now.day)
-                          .add(const Duration(days: 1));
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate:
-                            DateTime.tryParse(dateController.text) ?? firstDate,
-                        firstDate: firstDate,
-                        lastDate: firstDate.add(const Duration(days: 365)),
-                      );
-                      if (picked != null && context.mounted) {
-                        setSheetState(() {
-                          dateController.text = _dateOnly(picked);
-                        });
-                      }
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'Delivery date',
-                      hintText: 'Select a date',
-                      suffixIcon: Icon(Icons.calendar_today_outlined),
-                    ),
-                    validator: (value) {
-                      final selected = DateTime.tryParse(value?.trim() ?? '');
-                      final today = DateTime.now();
-                      final firstDate =
-                          DateTime(today.year, today.month, today.day)
-                              .add(const Duration(days: 1));
-                      if (selected == null || selected.isBefore(firstDate)) {
-                        return 'Choose a future delivery date.';
-                      }
-                      return null;
-                    },
-                  ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: couponController,
@@ -403,6 +351,17 @@ class _HomeShellState extends State<HomeShell> {
                                       serviceFields[serviceId]!.quantity.text,
                                   details:
                                       serviceFields[serviceId]!.details.text,
+                                  deliveryDate: serviceFields[serviceId]!
+                                      .deliveryDate
+                                      .text
+                                      .trim(),
+                                  location: serviceFields[serviceId]!
+                                      .location
+                                      .text
+                                      .trim(),
+                                  latitude: serviceFields[serviceId]!.latitude,
+                                  longitude:
+                                      serviceFields[serviceId]!.longitude,
                                 ))
                             .toList(growable: false);
                         final quotePreview =
@@ -410,8 +369,8 @@ class _HomeShellState extends State<HomeShell> {
                           serviceId: services.first.serviceId,
                           capacity: services.first.quantity,
                           services: services,
-                          location: locationController.text.trim(),
-                          deliveryDate: dateController.text.trim(),
+                          location: services.first.location ?? '',
+                          deliveryDate: services.first.deliveryDate ?? '',
                           couponCode: validatedCoupon == null
                               ? null
                               : couponController.text.trim(),
@@ -471,8 +430,8 @@ class _HomeShellState extends State<HomeShell> {
                           serviceId: services.first.serviceId,
                           capacity: services.first.quantity,
                           services: services,
-                          location: locationController.text.trim(),
-                          deliveryDate: dateController.text.trim(),
+                          location: services.first.location ?? '',
+                          deliveryDate: services.first.deliveryDate ?? '',
                           couponCode: validatedCoupon == null
                               ? null
                               : couponController.text.trim(),
@@ -505,8 +464,6 @@ class _HomeShellState extends State<HomeShell> {
         ),
       ),
     );
-    locationController.dispose();
-    dateController.dispose();
     couponController.dispose();
     for (final fields in serviceFields.values) {
       fields.dispose();
@@ -928,17 +885,190 @@ class _Tab {
 }
 
 class _BookingServiceFields {
-  _BookingServiceFields({required String quantity, String details = ''})
-      : quantity = TextEditingController(text: quantity),
-        details = TextEditingController(text: details);
+  _BookingServiceFields({
+    required String quantity,
+    String details = '',
+    String location = '',
+    String deliveryDate = '',
+    this.latitude,
+    this.longitude,
+  })  : quantity = TextEditingController(text: quantity),
+        details = TextEditingController(text: details),
+        location = TextEditingController(text: location),
+        deliveryDate = TextEditingController(text: deliveryDate);
 
   final TextEditingController quantity;
   final TextEditingController details;
+  final TextEditingController location;
+  final TextEditingController deliveryDate;
+  double? latitude;
+  double? longitude;
 
   void dispose() {
     quantity.dispose();
     details.dispose();
+    location.dispose();
+    deliveryDate.dispose();
   }
+}
+
+class _DeliveryLocationField extends StatelessWidget {
+  const _DeliveryLocationField({
+    required this.fields,
+    required this.onChanged,
+  });
+
+  final _BookingServiceFields fields;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) => TextFormField(
+        controller: fields.location,
+        maxLength: 200,
+        decoration: InputDecoration(
+          labelText: 'Delivery location',
+          helperText: fields.latitude == null
+              ? 'Chennai addresses only'
+              : 'Chennai location selected',
+          prefixIcon: IconButton(
+            tooltip: 'Choose delivery location',
+            onPressed: () async {
+              final controller =
+                  TextEditingController(text: fields.location.text);
+              final value = await showDialog<String>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Choose delivery location'),
+                  content: TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      labelText: 'Chennai address',
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () =>
+                          Navigator.pop(context, controller.text.trim()),
+                      child: const Text('Use location'),
+                    ),
+                  ],
+                ),
+              );
+              controller.dispose();
+              if (value == null) return;
+              fields.location.text = value;
+              fields.latitude = null;
+              fields.longitude = null;
+              onChanged();
+            },
+            icon: const Icon(Icons.map_outlined),
+          ),
+          suffixIcon: IconButton(
+            tooltip: 'Use current location',
+            onPressed: () async {
+              try {
+                if (!await Geolocator.isLocationServiceEnabled()) {
+                  throw const FormatException(
+                    'Turn on location services first.',
+                  );
+                }
+                var permission = await Geolocator.checkPermission();
+                if (permission == LocationPermission.denied) {
+                  permission = await Geolocator.requestPermission();
+                }
+                if (permission == LocationPermission.denied ||
+                    permission == LocationPermission.deniedForever) {
+                  throw const FormatException(
+                    'Location permission is required.',
+                  );
+                }
+                final position = await Geolocator.getCurrentPosition();
+                if (!isChennaiLocation(
+                  latitude: position.latitude,
+                  longitude: position.longitude,
+                )) {
+                  throw const FormatException(
+                    'This location is undeliverable. Select a location inside Chennai.',
+                  );
+                }
+                fields.latitude = position.latitude;
+                fields.longitude = position.longitude;
+                fields.location.text = 'Current location, Chennai';
+                onChanged();
+              } catch (error) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(error.toString())),
+                  );
+                }
+              }
+            },
+            icon: const Icon(Icons.my_location_outlined),
+          ),
+          errorMaxLines: 2,
+        ),
+        validator: (value) {
+          final text = value?.trim() ?? '';
+          if (text.length < 3) return 'Enter a delivery location.';
+          if (!isChennaiLocation(
+            address: text,
+            latitude: fields.latitude,
+            longitude: fields.longitude,
+          )) {
+            return 'This location is undeliverable. Choose Chennai.';
+          }
+          return null;
+        },
+        onChanged: (_) => onChanged(),
+      );
+}
+
+class _DeliveryDateField extends StatelessWidget {
+  const _DeliveryDateField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) => TextFormField(
+        controller: controller,
+        readOnly: true,
+        onTap: () async {
+          final now = DateTime.now();
+          final firstDate = DateTime(now.year, now.month, now.day)
+              .add(const Duration(days: 1));
+          final picked = await showDatePicker(
+            context: context,
+            initialDate: DateTime.tryParse(controller.text) ?? firstDate,
+            firstDate: firstDate,
+            lastDate: firstDate.add(const Duration(days: 365)),
+          );
+          if (picked != null) {
+            controller.text = _dateOnly(picked);
+            onChanged();
+          }
+        },
+        decoration: const InputDecoration(
+          labelText: 'Delivery date',
+          suffixIcon: Icon(Icons.calendar_today_outlined),
+        ),
+        validator: (value) {
+          final selected = DateTime.tryParse(value?.trim() ?? '');
+          final today = DateTime.now();
+          final firstDate = DateTime(today.year, today.month, today.day)
+              .add(const Duration(days: 1));
+          return selected == null || selected.isBefore(firstDate)
+              ? 'Choose a future delivery date.'
+              : null;
+        },
+      );
 }
 
 String _titleForRole(WorkspaceRole role) => switch (role) {
