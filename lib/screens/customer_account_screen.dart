@@ -44,14 +44,16 @@ class CustomerAccountScreen extends ConsumerWidget {
         _AccountSection(
           title: 'Offers',
           icon: Icons.local_offer_outlined,
-          provider: customerOffersProvider,
+          provider: (ref) => ref.watch(customerOffersProvider),
+          retry: (ref) => ref.invalidate(customerOffersProvider),
           empty: 'No active offers.',
         ),
         _MembershipSection(),
         _AccountSection(
           title: 'Yearly contracts',
           icon: Icons.description_outlined,
-          provider: customerContractsProvider,
+          provider: (ref) => ref.watch(customerContractsProvider),
+          retry: (ref) => ref.invalidate(customerContractsProvider),
           empty: 'No contracts yet.',
           actionLabel: 'Request contract',
           onAction: () => _createContract(context, ref),
@@ -60,7 +62,8 @@ class CustomerAccountScreen extends ConsumerWidget {
         _AccountSection(
           title: 'Saved addresses',
           icon: Icons.location_on_outlined,
-          provider: customerAddressesProvider,
+          provider: (ref) => ref.watch(customerAddressesProvider),
+          retry: (ref) => ref.invalidate(customerAddressesProvider),
           empty: 'No saved addresses yet.',
           actionLabel: 'Add address',
           onAction: () => _addAddress(context, ref),
@@ -69,28 +72,32 @@ class CustomerAccountScreen extends ConsumerWidget {
         _AccountSection(
           title: 'Wallet',
           icon: Icons.account_balance_wallet_outlined,
-          provider: customerWalletProvider,
+          provider: (ref) => ref.watch(customerWalletProvider),
+          retry: (ref) => ref.invalidate(customerWalletProvider),
           empty: 'No wallet transactions yet.',
           onItemTap: (item) => _showRecord(context, item),
         ),
         _AccountSection(
           title: 'Invoices',
           icon: Icons.receipt_long_outlined,
-          provider: customerInvoicesProvider,
+          provider: (ref) => ref.watch(customerInvoicesProvider),
+          retry: (ref) => ref.invalidate(customerInvoicesProvider),
           empty: 'No invoices available.',
           onItemTap: (item) => _showInvoice(context, ref, item),
         ),
         _AccountSection(
           title: 'Subscriptions',
           icon: Icons.autorenew_outlined,
-          provider: customerSubscriptionsProvider,
+          provider: (ref) => ref.watch(customerSubscriptionsProvider),
+          retry: (ref) => ref.invalidate(customerSubscriptionsProvider),
           empty: 'No active subscriptions.',
           onItemTap: (item) => _changeSubscription(context, ref, item),
         ),
         _AccountSection(
           title: 'Support requests',
           icon: Icons.support_agent_outlined,
-          provider: customerSupportProvider,
+          provider: (ref) => ref.watch(customerSupportProvider),
+          retry: (ref) => ref.invalidate(customerSupportProvider),
           empty: 'No support requests yet.',
           actionLabel: 'New request',
           onAction: () => _createSupport(context, ref),
@@ -828,6 +835,7 @@ class _AccountSection extends ConsumerWidget {
     required this.title,
     required this.icon,
     required this.provider,
+    required this.retry,
     required this.empty,
     this.actionLabel,
     this.onAction,
@@ -836,7 +844,8 @@ class _AccountSection extends ConsumerWidget {
 
   final String title;
   final IconData icon;
-  final AutoDisposeFutureProvider<List<AccountRecord>> provider;
+  final AsyncValue<List<AccountRecord>> Function(WidgetRef ref) provider;
+  final void Function(WidgetRef ref) retry;
   final String empty;
   final String? actionLabel;
   final VoidCallback? onAction;
@@ -844,7 +853,7 @@ class _AccountSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final records = ref.watch(provider);
+    final records = provider(ref);
     return Card(
       child: ExpansionTile(
         leading: Icon(icon),
@@ -857,7 +866,7 @@ class _AccountSection extends ConsumerWidget {
             ),
             error: (error, _) => _AccountError(
               message: error.toString(),
-              retry: () => ref.invalidate(provider),
+              retry: () => retry(ref),
             ),
             data: (items) => items.isEmpty
                 ? ListTile(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -361,8 +362,8 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
   @override
   Widget build(BuildContext context) {
     final order = widget.order;
-    final vehicles = ref.watch(vendorVehiclesProvider).valueOrNull ?? const [];
-    final drivers = ref.watch(vendorDriversProvider).valueOrNull ?? const [];
+    final vehicles = ref.watch(vendorVehiclesProvider).value ?? const [];
+    final drivers = ref.watch(vendorDriversProvider).value ?? const [];
     final assignableVehicles =
         vehicles.where((item) => item.assignable).toList();
     final assignableDrivers = drivers.where((item) => item.assignable).toList();
@@ -1359,6 +1360,7 @@ class _VendorDocumentCard extends ConsumerWidget {
       text: (record?['expires_on'] ?? record?['expiresOn'] ?? '').toString(),
     );
     PlatformFile? selectedFile;
+    Uint8List? selectedFileBytes;
     XFile? cameraPhoto;
     String? error;
     var saving = false;
@@ -1381,7 +1383,7 @@ class _VendorDocumentCard extends ConsumerWidget {
                       ? null
                       : () async {
                           try {
-                            final result = await FilePicker.pickFiles(
+                            final files = await FilePicker.pickFiles(
                               type: FileType.custom,
                               allowedExtensions: const [
                                 'pdf',
@@ -1392,12 +1394,13 @@ class _VendorDocumentCard extends ConsumerWidget {
                                 'doc',
                                 'docx',
                               ],
-                              withData: true,
                             );
-                            final file = result?.files.single;
+                            final file = files.isEmpty ? null : files.single;
                             if (file != null && dialogContext.mounted) {
+                              final bytes = await file.readAsBytes();
                               setDialogState(() {
                                 selectedFile = file;
+                                selectedFileBytes = bytes;
                                 cameraPhoto = null;
                                 objectKey.text = file.name;
                                 error = null;
@@ -1425,6 +1428,7 @@ class _VendorDocumentCard extends ConsumerWidget {
                               setDialogState(() {
                                 cameraPhoto = photo;
                                 selectedFile = null;
+                                selectedFileBytes = null;
                                 objectKey.text = photo.name;
                                 error = null;
                               });
@@ -1507,7 +1511,7 @@ class _VendorDocumentCard extends ConsumerWidget {
                       try {
                         var path = objectKey.text.trim();
                         if (selectedFile != null) {
-                          final bytes = selectedFile!.bytes;
+                          final bytes = selectedFileBytes;
                           if (bytes == null) {
                             throw const FormatException(
                               'Could not read the selected document.',

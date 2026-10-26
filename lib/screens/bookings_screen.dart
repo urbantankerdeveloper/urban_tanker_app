@@ -207,7 +207,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
   Widget build(BuildContext context) {
     final booking = widget.booking;
     final tracking = ref.watch(bookingTrackingProvider(booking.id));
-    final currentStatus = tracking.valueOrNull?.status ?? booking.status;
+    final currentStatus = tracking.value?.status ?? booking.status;
     return Scaffold(
       appBar: AppBar(
         title: Text(booking.reference),
