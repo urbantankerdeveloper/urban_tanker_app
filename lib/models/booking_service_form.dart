@@ -19,9 +19,8 @@ class BookingServiceForm {
           serviceName: 'Water tanker',
           quantityLabel: 'Delivery capacity (litres)',
           quantityHint: 'For example, 5,000 litres',
-          detailsLabel: 'Water type and delivery requirements',
-          detailsHint:
-              'Tell us the water type, intended use, and delivery requirements.',
+          detailsLabel: 'Water delivery details',
+          detailsHint: 'Optional delivery details.',
         ),
       'sewage_tanker' => const BookingServiceForm(
           serviceName: 'Sewage tanker',

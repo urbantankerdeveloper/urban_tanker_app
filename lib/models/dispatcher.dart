@@ -71,10 +71,9 @@ class DispatcherAlert {
   final String status;
   final DateTime? createdAt;
   final DateTime? updatedAt;
-  String get alertType => (status == 'pending_vendor'
-          ? 'unassigned'
-          : 'delivery_exception')
-      .toString();
+  String get alertType =>
+      (status == 'pending_vendor' ? 'unassigned' : 'delivery_exception')
+          .toString();
 
   factory DispatcherAlert.fromJson(Map<String, dynamic> json) =>
       DispatcherAlert(

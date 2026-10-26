@@ -42,6 +42,8 @@ class AccountRecord {
       .toString();
   String get status => (data['status'] ?? '').toString();
   bool get isDefault => data['is_default'] == true || data['isDefault'] == true;
+  double? get latitude => (data['latitude'] as num?)?.toDouble();
+  double? get longitude => (data['longitude'] as num?)?.toDouble();
   String? get bookingId =>
       data['bookingId']?.toString() ?? data['booking_id']?.toString();
   String? get response => data['response']?.toString();

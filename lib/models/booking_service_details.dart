@@ -3,6 +3,8 @@ class BookingServiceDetails {
     required this.serviceId,
     required this.quantity,
     required this.details,
+    this.waterType,
+    this.tankerCount,
     this.deliveryDate,
     this.location,
     this.latitude,
@@ -14,6 +16,8 @@ class BookingServiceDetails {
   final String serviceId;
   final String quantity;
   final String details;
+  final String? waterType;
+  final String? tankerCount;
   final String? deliveryDate;
   final String? location;
   final double? latitude;
@@ -24,6 +28,10 @@ class BookingServiceDetails {
   Map<String, dynamic> toJson() => {
         'serviceId': serviceId,
         'capacity': quantity.trim(),
+        if (waterType != null && waterType!.trim().isNotEmpty)
+          'waterType': waterType!.trim(),
+        if (tankerCount != null && tankerCount!.trim().isNotEmpty)
+          'tankerCount': tankerCount!.trim(),
         'details': details.trim(),
         if (deliveryDate != null && deliveryDate!.trim().isNotEmpty)
           'deliveryDate': deliveryDate!.trim(),
@@ -41,6 +49,8 @@ class BookingServiceDetails {
       serviceId: (json['serviceId'] ?? '').toString(),
       quantity: (json['capacity'] ?? json['quantity'] ?? '').toString(),
       details: (json['details'] ?? '').toString(),
+      waterType: json['waterType']?.toString(),
+      tankerCount: json['tankerCount']?.toString(),
       deliveryDate: json['deliveryDate']?.toString(),
       location: json['location']?.toString(),
       latitude: (json['latitude'] as num?)?.toDouble(),

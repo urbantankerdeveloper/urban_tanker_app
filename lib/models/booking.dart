@@ -9,6 +9,9 @@ class Booking {
     required this.capacity,
     required this.deliveryDate,
     required this.createdAt,
+    this.latitude,
+    this.longitude,
+    this.notes,
     this.serviceId,
     this.quotedAmount,
     this.paymentStatus,
@@ -26,6 +29,9 @@ class Booking {
   final String? quotedAmount;
   final String? paymentStatus;
   final List<BookingServiceDetails> services;
+  final double? latitude;
+  final double? longitude;
+  final String? notes;
 
   double? get quotedAmountRupees {
     final paise = int.tryParse(quotedAmount ?? '');
@@ -52,6 +58,9 @@ class Booking {
               'Address unavailable')
           .toString(),
       capacity: (json['capacity_litres'] ?? json['capacity'] ?? '').toString(),
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      notes: (json['notes'] ?? json['access_notes'])?.toString(),
       deliveryDate: DateTime.tryParse(
         (json['scheduled_for'] ?? json['delivery_date'] ?? '').toString(),
       ),

@@ -251,9 +251,7 @@ class CustomerAccountScreen extends ConsumerWidget {
             ),
             actions: [
               TextButton(
-                onPressed: saving
-                    ? null
-                    : () => Navigator.pop(dialogContext),
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
                 child: const Text('Cancel'),
               ),
               FilledButton(
@@ -281,7 +279,10 @@ class CustomerAccountScreen extends ConsumerWidget {
                           error = null;
                         });
                         try {
-                          await ref.read(appControllerProvider).api.updateProfile(
+                          await ref
+                              .read(appControllerProvider)
+                              .api
+                              .updateProfile(
                                 name: name.text.trim(),
                                 email: emailValue,
                                 phone: phoneValue.isEmpty ? null : phoneValue,

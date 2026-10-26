@@ -229,6 +229,13 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
           const SizedBox(height: 8),
           Text(booking.location,
               style: Theme.of(context).textTheme.headlineSmall),
+          if (booking.latitude != null && booking.longitude != null)
+            Text(
+              'Delivery coordinates: ${booking.latitude!.toStringAsFixed(5)}, '
+              '${booking.longitude!.toStringAsFixed(5)}',
+            ),
+          if (booking.notes != null && booking.notes!.trim().isNotEmpty)
+            Text('Access notes: ${booking.notes}'),
           const SizedBox(height: 20),
           Card(
             child: Column(
@@ -244,6 +251,10 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                       subtitle: Text([
                         if (service.quantity.trim().isNotEmpty)
                           'Quantity/capacity: ${service.quantity}',
+                        if (service.waterType?.trim().isNotEmpty == true)
+                          'Water type: ${service.waterType}',
+                        if (service.tankerCount?.trim().isNotEmpty == true)
+                          'Tanker count: ${service.tankerCount}',
                         if (service.details.trim().isNotEmpty)
                           'Details: ${service.details}',
                       ].join('\n')),

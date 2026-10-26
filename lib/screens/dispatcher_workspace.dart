@@ -50,7 +50,8 @@ class _DispatcherDispatchScreenState
                 value: 'pending_vendor',
                 child: Text('Pending assignment'),
               ),
-              DropdownMenuItem(value: 'vendor_assigned', child: Text('Assigned')),
+              DropdownMenuItem(
+                  value: 'vendor_assigned', child: Text('Assigned')),
               DropdownMenuItem(value: 'en_route', child: Text('En route')),
               DropdownMenuItem(value: 'arrived', child: Text('Arrived')),
               DropdownMenuItem(value: 'delivered', child: Text('Delivered')),
@@ -161,12 +162,9 @@ class _DispatcherDispatchScreenState
               if (rows.isEmpty) {
                 return const _DispatcherEmpty(message: 'No dispatch orders.');
               }
-              final currentPage =
-                  (pageData['page'] as num?)?.toInt() ?? page;
-              final total =
-                  (pageData['total'] as num?)?.toInt() ?? rows.length;
-              final pageSize =
-                  (pageData['pageSize'] as num?)?.toInt() ?? 25;
+              final currentPage = (pageData['page'] as num?)?.toInt() ?? page;
+              final total = (pageData['total'] as num?)?.toInt() ?? rows.length;
+              final pageSize = (pageData['pageSize'] as num?)?.toInt() ?? 25;
               return Column(
                 children: [
                   ...rows.map((row) => _DispatchOrderCard(order: row)),
@@ -174,7 +172,8 @@ class _DispatcherDispatchScreenState
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Page $currentPage of ${(total / pageSize).ceil()}'),
+                        Text(
+                            'Page $currentPage of ${(total / pageSize).ceil()}'),
                         Row(
                           children: [
                             IconButton(
@@ -231,7 +230,9 @@ class _DispatchOrderCard extends ConsumerWidget {
     return Card(
       child: ListTile(
         leading: Icon(
-          assigned ? Icons.local_shipping_outlined : Icons.warning_amber_outlined,
+          assigned
+              ? Icons.local_shipping_outlined
+              : Icons.warning_amber_outlined,
         ),
         title: Text((order['reference'] ?? order['id']).toString()),
         subtitle: Text(
@@ -286,7 +287,6 @@ class _DispatchOrderCard extends ConsumerWidget {
     } else if (action == 'cancel') {
       await _cancel(context, ref);
     }
-
   }
 
   void _details(BuildContext context) {
@@ -327,7 +327,8 @@ class _DispatchOrderCard extends ConsumerWidget {
     final vendors = await ref.read(dispatcherVendorsProvider.future);
     final eligible = vendors
         .where((vendor) =>
-            vendor.status == 'approved' || vendor.data['verification'] == 'approved')
+            vendor.status == 'approved' ||
+            vendor.data['verification'] == 'approved')
         .toList();
     if (!context.mounted) return;
     if (eligible.isEmpty) {
@@ -434,7 +435,8 @@ class _DispatchOrderCard extends ConsumerWidget {
             child: const Text('Keep'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, reason.text.trim().isNotEmpty),
+            onPressed: () =>
+                Navigator.pop(context, reason.text.trim().isNotEmpty),
             child: const Text('Cancel order'),
           ),
         ],
@@ -458,7 +460,8 @@ class _DispatchOrderCard extends ConsumerWidget {
   }
 
   void _message(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
@@ -479,13 +482,15 @@ class DispatcherLiveScreen extends ConsumerWidget {
       data: (page) {
         final rows = (page['rows'] as List?)
                 ?.whereType<Map<String, dynamic>>()
-                .where((row) => !['delivered', 'cancelled'].contains(row['status']))
+                .where((row) =>
+                    !['delivered', 'cancelled'].contains(row['status']))
                 .toList() ??
             const [];
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text('Live operations', style: Theme.of(context).textTheme.headlineSmall),
+            Text('Live operations',
+                style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 12),
             if (rows.isEmpty)
               const _DispatcherEmpty(message: 'No active live operations.')
@@ -628,7 +633,9 @@ class _DispatcherAlertsScreenState
       ref.invalidate(dispatcherAlertsProvider(status));
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Alert ${action == 'resolved' ? 'resolved' : 'dismissed'}.')),
+        SnackBar(
+            content: Text(
+                'Alert ${action == 'resolved' ? 'resolved' : 'dismissed'}.')),
       );
     } catch (error) {
       if (!context.mounted) return;

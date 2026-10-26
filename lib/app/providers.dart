@@ -169,15 +169,16 @@ class DispatcherOrderFilter {
 
   @override
   bool operator ==(Object other) =>
-  other is DispatcherOrderFilter &&
-  page == other.page &&
-  status == other.status &&
-  service == other.service &&
-  vendorId == other.vendorId &&
-  from == other.from &&
-  to == other.to &&
-  assigned == other.assigned;
+      other is DispatcherOrderFilter &&
+      page == other.page &&
+      status == other.status &&
+      service == other.service &&
+      vendorId == other.vendorId &&
+      from == other.from &&
+      to == other.to &&
+      assigned == other.assigned;
 
   @override
-  int get hashCode => Object.hash(page, status, service, vendorId, from, to, assigned);
+  int get hashCode =>
+      Object.hash(page, status, service, vendorId, from, to, assigned);
 }

@@ -19,6 +19,8 @@ Map<String, dynamic> buildBookingRequestBody({
   required String location,
   required String deliveryDate,
   required List<BookingServiceDetails> services,
+  double? latitude,
+  double? longitude,
   String? notes,
   String paymentMethod = 'cod',
   String? couponCode,
@@ -33,6 +35,8 @@ Map<String, dynamic> buildBookingRequestBody({
     'services': normalizedServices,
     'location': location,
     'deliveryDate': deliveryDate,
+    if (latitude != null) 'latitude': latitude,
+    if (longitude != null) 'longitude': longitude,
     if (phone != null && phone.trim().isNotEmpty)
       'phone': normalizeIndianPhone(phone),
     if (phoneVerificationChallengeId != null &&
@@ -217,6 +221,7 @@ class ApiClient {
     }
     return decoded
         .whereType<Map<String, dynamic>>()
+        .where((service) => service['is_active'] != false)
         .map(TankerService.fromJson)
         .toList();
   }
@@ -232,6 +237,8 @@ class ApiClient {
     String? couponCode,
     String? phone,
     String? phoneVerificationChallengeId,
+    double? latitude,
+    double? longitude,
   }) async {
     final response = await request(
       'POST',
@@ -254,6 +261,8 @@ class ApiClient {
         couponCode: couponCode,
         phone: phone,
         phoneVerificationChallengeId: phoneVerificationChallengeId,
+        latitude: latitude,
+        longitude: longitude,
       ),
     );
     final decoded = jsonDecode(response.body);
@@ -275,6 +284,8 @@ class ApiClient {
     String? couponCode,
     String? phone,
     String? phoneVerificationChallengeId,
+    double? latitude,
+    double? longitude,
   }) async {
     final response =
         await request('POST', '/customer/orders/quote-preview', body: {
@@ -296,6 +307,8 @@ class ApiClient {
         couponCode: couponCode,
         phone: phone,
         phoneVerificationChallengeId: phoneVerificationChallengeId,
+        latitude: latitude,
+        longitude: longitude,
       ),
     });
     final decoded = jsonDecode(response.body);

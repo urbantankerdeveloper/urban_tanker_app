@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../app/app_controller.dart';
 import '../app/theme.dart';
@@ -92,6 +94,8 @@ class _HomeShellState extends State<HomeShell> {
       // Saved addresses are optional; manual entry remains available.
     }
     final couponController = TextEditingController();
+    final notesController =
+        TextEditingController(text: previousBooking?.notes ?? '');
     final phoneController = TextEditingController();
     final otpController = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -105,8 +109,8 @@ class _HomeShellState extends State<HomeShell> {
       for (final service in _services)
         service.id: _BookingServiceFields(
           quantity: previousDetails[service.id]?.quantity ??
-              (previousBooking == null && service.id == 'water_tanker'
-                  ? '5000'
+              (previousBooking == null && service.capacityOptions.isNotEmpty
+                  ? service.capacityOptions.first
                   : ''),
           details: previousDetails[service.id]?.details ?? '',
           location: previousDetails[service.id]?.location ??
@@ -116,6 +120,8 @@ class _HomeShellState extends State<HomeShell> {
                   DateTime.now().add(const Duration(days: 1))),
           latitude: previousDetails[service.id]?.latitude,
           longitude: previousDetails[service.id]?.longitude,
+          waterType: previousDetails[service.id]?.waterType ?? '',
+          tankerCount: previousDetails[service.id]?.tankerCount ?? '',
         ),
     };
     final previousServiceIds = previousDetails.keys
@@ -147,9 +153,20 @@ class _HomeShellState extends State<HomeShell> {
     selectedAddress ??= previousBooking == null && addresses.isNotEmpty
         ? addresses.first.detail
         : null;
+    AccountRecord? selectedAddressRecord;
+    for (final address in addresses) {
+      if (address.detail == selectedAddress) {
+        selectedAddressRecord = address;
+        break;
+      }
+    }
     for (final fields in serviceFields.values) {
       if (fields.location.text.trim().isEmpty && selectedAddress != null) {
         fields.location.text = selectedAddress;
+      }
+      if (fields.latitude == null && selectedAddressRecord != null) {
+        fields.latitude = selectedAddressRecord.latitude;
+        fields.longitude = selectedAddressRecord.longitude;
       }
     }
     Map<String, dynamic>? validatedCoupon;
@@ -160,6 +177,7 @@ class _HomeShellState extends State<HomeShell> {
     var phoneVerified = false;
     var loadingPhoneVerification = true;
     var validatingCoupon = false;
+    var paymentMethod = 'cod';
     try {
       final savedPhone = await widget.controller.api.phoneVerification();
       phoneController.text = savedPhone.phone;
@@ -172,6 +190,7 @@ class _HomeShellState extends State<HomeShell> {
     }
     if (!mounted) {
       couponController.dispose();
+      notesController.dispose();
       phoneController.dispose();
       otpController.dispose();
       for (final fields in serviceFields.values) {
@@ -348,42 +367,54 @@ class _HomeShellState extends State<HomeShell> {
                                     style:
                                         Theme.of(context).textTheme.titleSmall),
                                 const SizedBox(height: 8),
-                                TextFormField(
+                                _ServiceDropdownField(
                                   controller:
                                       serviceFields[service.id]!.quantity,
-                                  maxLength: 30,
-                                  decoration: InputDecoration(
-                                    labelText: BookingServiceForm.forService(
-                                            service.id)
-                                        .quantityLabel,
-                                    hintText: BookingServiceForm.forService(
-                                            service.id)
-                                        .quantityHint,
-                                  ),
+                                  label:
+                                      BookingServiceForm.forService(service.id)
+                                          .quantityLabel,
+                                  options: service.capacityOptions,
+                                  emptyMessage:
+                                      'No capacity options are configured.',
                                   onChanged: (_) => setSheetState(() {}),
                                 ),
+                                if (service.id == 'water_tanker') ...[
+                                  const SizedBox(height: 8),
+                                  _ServiceDropdownField(
+                                    controller:
+                                        serviceFields[service.id]!.waterType,
+                                    label: 'Water type',
+                                    options: service.waterTypeOptions,
+                                    emptyMessage:
+                                        'No water type options are configured.',
+                                    onChanged: (_) => setSheetState(() {}),
+                                  ),
+                                ],
+                                if (service.id == 'water_tanker') ...[
+                                  const SizedBox(height: 8),
+                                  _ServiceDropdownField(
+                                    controller:
+                                        serviceFields[service.id]!.tankerCount,
+                                    label: 'Tanker count',
+                                    options: service.tankerCountOptions,
+                                    emptyMessage:
+                                        'No tanker count options are configured.',
+                                    onChanged: (_) => setSheetState(() {}),
+                                  ),
+                                ],
                                 const SizedBox(height: 8),
-                                TextFormField(
-                                  controller:
-                                      serviceFields[service.id]!.details,
-                                  minLines: 2,
-                                  maxLines: 4,
-                                  maxLength: 1000,
-                                  decoration: InputDecoration(
-                                    labelText: BookingServiceForm.forService(
+                                if (service.id != 'water_tanker')
+                                  _ServiceDropdownField(
+                                    controller:
+                                        serviceFields[service.id]!.details,
+                                    label: BookingServiceForm.forService(
                                             service.id)
                                         .detailsLabel,
-                                    hintText: BookingServiceForm.forService(
-                                            service.id)
-                                        .detailsHint,
-                                    alignLabelWithHint: true,
+                                    options: service.detailOptions,
+                                    emptyMessage:
+                                        'No service detail options are configured.',
+                                    onChanged: (_) => setSheetState(() {}),
                                   ),
-                                  validator: (value) =>
-                                      value == null || value.trim().isEmpty
-                                          ? 'Enter details for ${service.name}.'
-                                          : null,
-                                  onChanged: (_) => setSheetState(() {}),
-                                ),
                                 const SizedBox(height: 8),
                                 _DeliveryLocationField(
                                   fields: serviceFields[service.id]!,
@@ -400,6 +431,41 @@ class _HomeShellState extends State<HomeShell> {
                           ),
                         ),
                     ],
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: notesController,
+                      maxLength: 500,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Delivery access notes (optional)',
+                        hintText:
+                            'Gate, parking, timing, or access instructions',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: paymentMethod,
+                      decoration:
+                          const InputDecoration(labelText: 'Payment method'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'wallet',
+                          child: Text('Wallet'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'gateway',
+                          child: Text('Online payment'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'cod',
+                          child: Text('Cash on delivery'),
+                        ),
+                      ],
+                      onChanged: (value) => setSheetState(
+                        () => paymentMethod = value ?? 'cod',
+                      ),
+                    ),
                     if (bookingFormError != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
@@ -486,32 +552,40 @@ class _HomeShellState extends State<HomeShell> {
                       onPressed: loadingPhoneVerification ||
                               selectedServices.isEmpty ||
                               !phoneVerified ||
-                              selectedServices.any((id) =>
-                                  serviceFields[id]!
-                                      .quantity
-                                      .text
-                                      .trim()
-                                      .isEmpty ||
-                                  serviceFields[id]!
-                                      .details
-                                      .text
-                                      .trim()
-                                      .isEmpty ||
-                                  serviceFields[id]!
-                                      .location
-                                      .text
-                                      .trim()
-                                      .isEmpty ||
-                                  !isChennaiLocation(
-                                    address: serviceFields[id]!.location.text,
-                                    latitude: serviceFields[id]!.latitude,
-                                    longitude: serviceFields[id]!.longitude,
-                                  ) ||
-                                  DateTime.tryParse(serviceFields[id]!
-                                          .deliveryDate
-                                          .text
-                                          .trim()) ==
-                                      null)
+                              selectedServices.any((id) {
+                                final fields = serviceFields[id]!;
+                                final service = _services.firstWhere(
+                                  (item) => item.id == id,
+                                );
+                                final serviceSpecificMissing = id ==
+                                        'water_tanker'
+                                    ? fields.waterType.text.trim().isEmpty ||
+                                        fields.tankerCount.text.trim().isEmpty
+                                    : fields.details.text.trim().isEmpty;
+                                return fields.quantity.text.trim().isEmpty ||
+                                    serviceSpecificMissing ||
+                                    fields.location.text.trim().isEmpty ||
+                                    !isChennaiLocation(
+                                      address: fields.location.text,
+                                      latitude: fields.latitude,
+                                      longitude: fields.longitude,
+                                    ) ||
+                                    DateTime.tryParse(
+                                          fields.deliveryDate.text.trim(),
+                                        ) ==
+                                        null ||
+                                    service.capacityOptions
+                                            .contains(fields.quantity.text) ==
+                                        false ||
+                                    (id == 'water_tanker' &&
+                                        (!service.waterTypeOptions.contains(
+                                              fields.waterType.text,
+                                            ) ||
+                                            !service.tankerCountOptions
+                                                .contains(
+                                              fields.tankerCount.text,
+                                            )));
+                              })
                           ? null
                           : () async {
                               if (selectedServices.isEmpty) {
@@ -526,6 +600,12 @@ class _HomeShellState extends State<HomeShell> {
                                           serviceId: serviceId,
                                           quantity: serviceFields[serviceId]!
                                               .quantity
+                                              .text,
+                                          waterType: serviceFields[serviceId]!
+                                              .waterType
+                                              .text,
+                                          tankerCount: serviceFields[serviceId]!
+                                              .tankerCount
                                               .text,
                                           details: serviceFields[serviceId]!
                                               .details
@@ -553,6 +633,10 @@ class _HomeShellState extends State<HomeShell> {
                                   location: services.first.location ?? '',
                                   deliveryDate:
                                       services.first.deliveryDate ?? '',
+                                  notes: notesController.text,
+                                  paymentMethod: paymentMethod,
+                                  latitude: services.first.latitude,
+                                  longitude: services.first.longitude,
                                   couponCode: validatedCoupon == null
                                       ? null
                                       : couponController.text.trim(),
@@ -593,6 +677,20 @@ class _HomeShellState extends State<HomeShell> {
                                                 .isNotEmpty)
                                               Text(
                                                   'Quantity/capacity: ${services[index].quantity.trim()}'),
+                                            if (services[index]
+                                                    .waterType
+                                                    ?.trim()
+                                                    .isNotEmpty ==
+                                                true)
+                                              Text(
+                                                  'Water type: ${services[index].waterType}'),
+                                            if (services[index]
+                                                    .tankerCount
+                                                    ?.trim()
+                                                    .isNotEmpty ==
+                                                true)
+                                              Text(
+                                                  'Tanker count: ${services[index].tankerCount}'),
                                             Text(
                                                 'Details: ${services[index].details.trim()}'),
                                             const SizedBox(height: 8),
@@ -626,6 +724,10 @@ class _HomeShellState extends State<HomeShell> {
                                   location: services.first.location ?? '',
                                   deliveryDate:
                                       services.first.deliveryDate ?? '',
+                                  notes: notesController.text,
+                                  paymentMethod: paymentMethod,
+                                  latitude: services.first.latitude,
+                                  longitude: services.first.longitude,
                                   couponCode: validatedCoupon == null
                                       ? null
                                       : couponController.text.trim(),
@@ -665,6 +767,7 @@ class _HomeShellState extends State<HomeShell> {
       ),
     );
     couponController.dispose();
+    notesController.dispose();
     phoneController.dispose();
     otpController.dispose();
     for (final fields in serviceFields.values) {
@@ -675,6 +778,7 @@ class _HomeShellState extends State<HomeShell> {
       await _showBookingConfirmation(
         result,
         quote is Map<String, dynamic> ? quote : null,
+        paymentMethod,
       );
     }
   }
@@ -694,6 +798,7 @@ class _HomeShellState extends State<HomeShell> {
   Future<void> _showBookingConfirmation(
     Map<String, dynamic> booking,
     Map<String, dynamic>? quote,
+    String paymentMethod,
   ) async {
     String? money(Object? value) {
       if (value is! num) return null;
@@ -732,11 +837,15 @@ class _HomeShellState extends State<HomeShell> {
                 ),
                 if (service.quantity.trim().isNotEmpty)
                   Text('Quantity/capacity: ${service.quantity}'),
+                if (service.waterType?.trim().isNotEmpty == true)
+                  Text('Water type: ${service.waterType}'),
+                if (service.tankerCount?.trim().isNotEmpty == true)
+                  Text('Tanker count: ${service.tankerCount}'),
                 Text('Details: ${service.details}'),
                 const SizedBox(height: 8),
               ],
               for (final line in lines) Text(line),
-              const Text('Payment: Cash on delivery'),
+              Text('Payment: ${_paymentMethodLabel(paymentMethod)}'),
             ],
           ),
         ),
@@ -1081,6 +1190,12 @@ class _HomeShellState extends State<HomeShell> {
   }
 }
 
+String _paymentMethodLabel(String method) => switch (method) {
+      'wallet' => 'Wallet',
+      'gateway' => 'Online payment',
+      _ => 'Cash on delivery',
+    };
+
 class _Tab {
   const _Tab(this.label, this.icon);
 
@@ -1094,14 +1209,20 @@ class _BookingServiceFields {
     String details = '',
     String location = '',
     String deliveryDate = '',
+    String waterType = '',
+    String tankerCount = '',
     this.latitude,
     this.longitude,
   })  : quantity = TextEditingController(text: quantity),
+        waterType = TextEditingController(text: waterType),
+        tankerCount = TextEditingController(text: tankerCount),
         details = TextEditingController(text: details),
         location = TextEditingController(text: location),
         deliveryDate = TextEditingController(text: deliveryDate);
 
   final TextEditingController quantity;
+  final TextEditingController waterType;
+  final TextEditingController tankerCount;
   final TextEditingController details;
   final TextEditingController location;
   final TextEditingController deliveryDate;
@@ -1110,9 +1231,57 @@ class _BookingServiceFields {
 
   void dispose() {
     quantity.dispose();
+    waterType.dispose();
+    tankerCount.dispose();
     details.dispose();
     location.dispose();
     deliveryDate.dispose();
+  }
+}
+
+class _ServiceDropdownField extends StatelessWidget {
+  const _ServiceDropdownField({
+    required this.controller,
+    required this.label,
+    required this.options,
+    required this.emptyMessage,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final List<String> options;
+  final String emptyMessage;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = options.contains(controller.text) ? controller.text : null;
+    return DropdownButtonFormField<String>(
+      initialValue: selected,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: options.isEmpty ? emptyMessage : null,
+      ),
+      items: options
+          .map((option) => DropdownMenuItem<String>(
+                value: option,
+                child: Text(option),
+              ))
+          .toList(growable: false),
+      onChanged: options.isEmpty
+          ? null
+          : (value) {
+              controller.text = value ?? '';
+              onChanged(value);
+            },
+      validator: (value) => options.isEmpty
+          ? emptyMessage
+          : value == null || value.trim().isEmpty
+              ? 'Select $label.'
+              : null,
+    );
   }
 }
 
@@ -1137,36 +1306,16 @@ class _DeliveryLocationField extends StatelessWidget {
           prefixIcon: IconButton(
             tooltip: 'Choose delivery location',
             onPressed: () async {
-              final controller =
-                  TextEditingController(text: fields.location.text);
-              final value = await showDialog<String>(
+              final coordinate = await showDialog<LatLng>(
                 context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Choose delivery location'),
-                  content: TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(
-                      labelText: 'Chennai address',
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel'),
-                    ),
-                    FilledButton(
-                      onPressed: () =>
-                          Navigator.pop(context, controller.text.trim()),
-                      child: const Text('Use location'),
-                    ),
-                  ],
+                builder: (context) => _MapLocationPicker(
+                  latitude: fields.latitude,
+                  longitude: fields.longitude,
                 ),
               );
-              controller.dispose();
-              if (value == null) return;
-              fields.location.text = value;
-              fields.latitude = null;
-              fields.longitude = null;
+              if (coordinate == null) return;
+              fields.latitude = coordinate.latitude;
+              fields.longitude = coordinate.longitude;
               onChanged();
             },
             icon: const Icon(Icons.map_outlined),
@@ -1201,7 +1350,6 @@ class _DeliveryLocationField extends StatelessWidget {
                 }
                 fields.latitude = position.latitude;
                 fields.longitude = position.longitude;
-                fields.location.text = 'Current location, Chennai';
                 onChanged();
               } catch (error) {
                 if (context.mounted) {
@@ -1232,6 +1380,94 @@ class _DeliveryLocationField extends StatelessWidget {
           fields.longitude = null;
           onChanged();
         },
+      );
+}
+
+class _MapLocationPicker extends StatefulWidget {
+  const _MapLocationPicker({this.latitude, this.longitude});
+
+  final double? latitude;
+  final double? longitude;
+
+  @override
+  State<_MapLocationPicker> createState() => _MapLocationPickerState();
+}
+
+class _MapLocationPickerState extends State<_MapLocationPicker> {
+  static const _chennai = LatLng(13.0827, 80.2707);
+  late LatLng _center;
+  LatLng? _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _center = widget.latitude != null && widget.longitude != null
+        ? LatLng(widget.latitude!, widget.longitude!)
+        : _chennai;
+    _selected =
+        widget.latitude != null && widget.longitude != null ? _center : null;
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Choose delivery location'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 360,
+          child: FlutterMap(
+            options: MapOptions(
+              initialCenter: _center,
+              initialZoom: 11,
+              onTap: (_, point) {
+                if (!isChennaiLocation(
+                  latitude: point.latitude,
+                  longitude: point.longitude,
+                )) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Choose a location inside Chennai.'),
+                    ),
+                  );
+                  return;
+                }
+                setState(() => _selected = point);
+              },
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.urbantanker.app',
+              ),
+              if (_selected != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _selected!,
+                      width: 48,
+                      height: 48,
+                      child: const Icon(
+                        Icons.location_pin,
+                        color: Colors.red,
+                        size: 42,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: _selected == null
+                ? null
+                : () => Navigator.pop(context, _selected),
+            child: const Text('Use coordinates'),
+          ),
+        ],
       );
 }
 

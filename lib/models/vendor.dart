@@ -15,6 +15,8 @@ class VendorOrder {
     this.driverId,
     this.vehicle,
     this.driver,
+    this.latitude,
+    this.longitude,
   });
 
   final String id;
@@ -30,6 +32,8 @@ class VendorOrder {
   final String? driverId;
   final String? vehicle;
   final String? driver;
+  final double? latitude;
+  final double? longitude;
 
   factory VendorOrder.fromJson(Map<String, dynamic> json) => VendorOrder(
         id: (json['id'] ?? '').toString(),
@@ -53,6 +57,8 @@ class VendorOrder {
                 ?.toString(),
         driver: (json['driver'] ?? json['driverName'] ?? json['assignedDriver'])
             ?.toString(),
+        latitude: (json['latitude'] as num?)?.toDouble(),
+        longitude: (json['longitude'] as num?)?.toDouble(),
       );
 
   double get amountRupees => amountPaise / 100;
@@ -66,6 +72,8 @@ class VendorOrder {
         deliveryDate: scheduledFor,
         createdAt: createdAt,
         quotedAmount: amountPaise.toString(),
+        latitude: latitude,
+        longitude: longitude,
       );
 }
 
@@ -74,17 +82,23 @@ class VendorOrderServiceDetail {
     required this.service,
     required this.capacity,
     required this.details,
+    this.waterType,
+    this.tankerCount,
   });
 
   final String service;
   final String capacity;
   final String details;
+  final String? waterType;
+  final String? tankerCount;
 
   factory VendorOrderServiceDetail.fromJson(Map<String, dynamic> json) =>
       VendorOrderServiceDetail(
         service: (json['service'] ?? json['serviceId'] ?? '').toString(),
         capacity: (json['capacity'] ?? '').toString(),
         details: (json['details'] ?? '').toString(),
+        waterType: json['waterType']?.toString(),
+        tankerCount: json['tankerCount']?.toString(),
       );
 }
 

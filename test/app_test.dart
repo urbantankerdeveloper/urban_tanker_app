@@ -12,6 +12,7 @@ import 'package:urban_tanker_app/models/notification.dart';
 import 'package:urban_tanker_app/models/dispatcher.dart';
 import 'package:urban_tanker_app/models/booking_service_details.dart';
 import 'package:urban_tanker_app/models/booking_service_form.dart';
+import 'package:urban_tanker_app/models/service.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
 
 class _RecordingApiClient extends ApiClient {
@@ -147,6 +148,8 @@ void main() {
     const water = BookingServiceDetails(
       serviceId: 'water_tanker',
       quantity: '5000 litres',
+      waterType: 'Drinking water',
+      tankerCount: '2',
       details: 'Potable water for the overhead tank',
     );
     const cleaning = BookingServiceDetails(
@@ -158,8 +161,11 @@ void main() {
     expect(water.toJson(), {
       'serviceId': 'water_tanker',
       'capacity': '5000 litres',
+      'waterType': 'Drinking water',
+      'tankerCount': '2',
       'details': 'Potable water for the overhead tank',
     });
+
     expect(cleaning.toJson(), {
       'serviceId': 'tank_cleaning',
       'capacity': '2 tanks',
@@ -175,17 +181,42 @@ void main() {
     );
   });
 
+  test('service catalog maps configured dropdown options safely', () {
+    final service = TankerService.fromJson({
+      'code': 'water_tanker',
+      'name': 'Water tanker',
+      'config': {
+        'capacityOptions': ['5000 litres', '', '5000 litres'],
+        'waterTypeOptions': ['Drinking water'],
+        'tankerCountOptions': ['1', '5', '6', 'two'],
+      },
+    });
+
+    expect(service.capacityOptions, ['5000 litres']);
+    expect(service.waterTypeOptions, ['Drinking water']);
+    expect(service.tankerCountOptions, ['1', '5']);
+    expect(TankerService.fromJson({'code': 'other'}).detailOptions, isEmpty);
+  });
+
   test('combined booking request submits all per-service details', () {
     final body = buildBookingRequestBody(
       serviceId: 'water_tanker',
       capacity: '5000 litres',
       location: '12 Main Street',
       deliveryDate: '2026-10-25',
+      latitude: 13.0827,
+      longitude: 80.2707,
       services: const [
         BookingServiceDetails(
           serviceId: 'water_tanker',
           quantity: '5000 litres',
+          waterType: 'Drinking water',
+          tankerCount: '2',
           details: 'Potable water',
+          deliveryDate: '2026-10-25',
+          location: 'Customer-entered address',
+          latitude: 13.0827,
+          longitude: 80.2707,
         ),
         BookingServiceDetails(
           serviceId: 'tank_cleaning',
@@ -198,12 +229,20 @@ void main() {
 
     expect(body['serviceId'], 'water_tanker');
     expect(body['capacity'], '5000 litres');
+    expect(body['latitude'], 13.0827);
+    expect(body['longitude'], 80.2707);
     expect(body['couponCode'], 'SAVE10');
     expect(body['services'], [
       {
         'serviceId': 'water_tanker',
         'capacity': '5000 litres',
+        'waterType': 'Drinking water',
+        'tankerCount': '2',
         'details': 'Potable water',
+        'deliveryDate': '2026-10-25',
+        'location': 'Customer-entered address',
+        'latitude': 13.0827,
+        'longitude': 80.2707,
       },
       {
         'serviceId': 'tank_cleaning',

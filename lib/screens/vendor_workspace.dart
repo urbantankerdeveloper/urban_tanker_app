@@ -300,6 +300,11 @@ class _OrderCard extends ConsumerWidget {
                 ],
               ),
               Text(order.address),
+              if (order.latitude != null && order.longitude != null)
+                Text(
+                  'Delivery coordinates: ${order.latitude!.toStringAsFixed(5)}, '
+                  '${order.longitude!.toStringAsFixed(5)}',
+                ),
               if (order.serviceDetails.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 for (final detail in order.serviceDetails) ...[
@@ -309,6 +314,10 @@ class _OrderCard extends ConsumerWidget {
                   ),
                   if (detail.capacity.isNotEmpty)
                     Text('Capacity/quantity: ${detail.capacity}'),
+                  if (detail.waterType?.isNotEmpty == true)
+                    Text('Water type: ${detail.waterType}'),
+                  if (detail.tankerCount?.isNotEmpty == true)
+                    Text('Tanker count: ${detail.tankerCount}'),
                   if (detail.details.isNotEmpty) Text(detail.details),
                 ],
               ] else if (order.serviceCode.isNotEmpty) ...[
@@ -397,12 +406,21 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
               Text(order.address),
+              if (order.latitude != null && order.longitude != null)
+                Text(
+                  'Delivery coordinates: ${order.latitude!.toStringAsFixed(5)}, '
+                  '${order.longitude!.toStringAsFixed(5)}',
+                ),
               const SizedBox(height: 8),
               for (final detail in order.serviceDetails) ...[
                 Text(detail.service,
                     style: Theme.of(context).textTheme.titleSmall),
                 if (detail.capacity.isNotEmpty)
                   Text('Capacity/quantity: ${detail.capacity}'),
+                if (detail.waterType?.isNotEmpty == true)
+                  Text('Water type: ${detail.waterType}'),
+                if (detail.tankerCount?.isNotEmpty == true)
+                  Text('Tanker count: ${detail.tankerCount}'),
                 if (detail.details.isNotEmpty) Text(detail.details),
                 const SizedBox(height: 6),
               ],

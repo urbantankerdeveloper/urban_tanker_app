@@ -137,8 +137,8 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
                               (event) => Card(
                                 child: ListTile(
                                   leading: const Icon(Icons.timeline),
-                                  title: Text(
-                                      event.status.replaceAll('_', ' ')),
+                                  title:
+                                      Text(event.status.replaceAll('_', ' ')),
                                   subtitle: Text([
                                     if (event.note.isNotEmpty) event.note,
                                     _formatDateTime(event.createdAt),
