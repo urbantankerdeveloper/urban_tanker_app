@@ -14,6 +14,7 @@ import '../models/booking.dart';
 import '../models/session.dart';
 import '../models/account.dart';
 import '../models/notification.dart';
+import '../models/workspace_navigation.dart';
 import 'notification_inbox.dart';
 import 'bookings_screen.dart';
 import 'invoice_detail_screen.dart';
@@ -42,6 +43,7 @@ String _dateOnly(DateTime date) {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+  String? _activeNavigationItem;
   List<TankerService> _services = const [];
   bool _loadingServices = false;
   bool _bookingFormOpening = false;
@@ -920,6 +922,51 @@ class _HomeShellState extends State<HomeShell> {
         index: _index,
         children: tabs.map((tab) => _pageFor(tab, user)).toList(),
       ),
+      drawer: role == WorkspaceRole.customer
+          ? null
+          : Drawer(
+              child: SafeArea(
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        _titleForRole(role),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
+                    for (final group in workspaceNavigationForRole(role))
+                      ExpansionTile(
+                        title: Text(
+                          group.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        children: [
+                          for (final destination in group.destinations)
+                            ListTile(
+                              contentPadding:
+                                  const EdgeInsets.only(left: 32, right: 16),
+                              selected:
+                                  _activeNavigationItem == destination.label,
+                              title: Text(destination.label),
+                              onTap: () {
+                                setState(() {
+                                  _index = destination.index;
+                                  _activeNavigationItem = destination.label;
+                                });
+                                Navigator.pop(context);
+                              },
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
       floatingActionButton: role == WorkspaceRole.customer && _index == 0
           ? FloatingActionButton.extended(
               onPressed:
@@ -932,7 +979,10 @@ class _HomeShellState extends State<HomeShell> {
           : null,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (index) => setState(() => _index = index),
+        onDestinationSelected: (index) => setState(() {
+          _index = index;
+          _activeNavigationItem = null;
+        }),
         destinations: tabs
             .map((tab) => NavigationDestination(
                   icon: Icon(tab.icon),

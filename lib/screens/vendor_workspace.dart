@@ -305,6 +305,8 @@ class _OrderCard extends ConsumerWidget {
                   'Delivery coordinates: ${order.latitude!.toStringAsFixed(5)}, '
                   '${order.longitude!.toStringAsFixed(5)}',
                 ),
+              if (order.cancellationReason?.trim().isNotEmpty == true)
+                Text('Cancellation reason: ${order.cancellationReason}'),
               if (order.serviceDetails.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 for (final detail in order.serviceDetails) ...[
@@ -406,6 +408,8 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
               Text(order.address),
+              if (order.cancellationReason?.trim().isNotEmpty == true)
+                Text('Cancellation reason: ${order.cancellationReason}'),
               if (order.latitude != null && order.longitude != null)
                 Text(
                   'Delivery coordinates: ${order.latitude!.toStringAsFixed(5)}, '

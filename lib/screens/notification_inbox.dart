@@ -45,9 +45,13 @@ class _NotificationInboxState extends State<NotificationInbox> {
               tooltip: 'Mark all as read',
               icon: const Icon(Icons.done_all),
               onPressed: () async {
-                await widget.controller.api
-                    .markAllNotificationsRead(widget.role);
-                if (mounted) _reload();
+                try {
+                  await widget.controller.api
+                      .markAllNotificationsRead(widget.role);
+                  if (mounted) _reload();
+                } catch (error) {
+                  _showError(error);
+                }
               },
             ),
         ],
@@ -65,8 +69,8 @@ class _NotificationInboxState extends State<NotificationInbox> {
               action: _reload,
             );
           }
-          final items = snapshot.data ?? const [];
-          if (items.isEmpty) {
+          final groups = groupNotifications(snapshot.data ?? const []);
+          if (groups.isEmpty) {
             return const _InboxMessage(
               icon: Icons.notifications_none_outlined,
               message: 'You are all caught up.',
@@ -76,36 +80,43 @@ class _NotificationInboxState extends State<NotificationInbox> {
             onRefresh: () async => _reload(),
             child: ListView.separated(
               padding: const EdgeInsets.all(16),
-              itemCount: items.length,
+              itemCount: groups.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
-                final item = items[index];
+                final group = groups[index];
                 return Card(
-                  child: ListTile(
+                  child: ExpansionTile(
                     leading: Icon(
-                      item.read
+                      group.unreadItems.isEmpty
                           ? Icons.notifications_none_outlined
                           : Icons.notifications_active_outlined,
-                      color: item.read
-                          ? Theme.of(context).colorScheme.onSurfaceVariant
-                          : Theme.of(context).colorScheme.primary,
                     ),
-                    title: Text(item.title),
-                    subtitle: Text(_subtitle(item)),
-                    isThreeLine: item.message.isNotEmpty,
-                    onTap: () async {
-                      if (!item.read) {
-                        await widget.controller.api
-                            .markNotificationRead(widget.role, item.id);
-                      }
-                      if (item.bookingId != null ||
-                          item.invoiceId != null ||
-                          item.supportRequestId != null) {
-                        widget.onNotificationSelected?.call(item);
-                      } else if (mounted) {
-                        _reload();
-                      }
-                    },
+                    title: Text(group.title),
+                    subtitle: Text(
+                      '${group.items.length} event${group.items.length == 1 ? '' : 's'}'
+                      '${group.unreadItems.isEmpty ? '' : ' • ${group.unreadItems.length} unread'}',
+                    ),
+                    trailing: group.unreadItems.isEmpty
+                        ? null
+                        : TextButton(
+                            onPressed: () => _markGroupRead(group),
+                            child: const Text('Mark as read'),
+                          ),
+                    children: group.items
+                        .map(
+                          (item) => ListTile(
+                            leading: Icon(
+                              item.read
+                                  ? Icons.check_circle_outline
+                                  : Icons.circle_notifications_outlined,
+                            ),
+                            title: Text(item.title),
+                            subtitle: Text(_subtitle(item)),
+                            isThreeLine: true,
+                            onTap: () => _openNotification(item),
+                          ),
+                        )
+                        .toList(growable: false),
                   ),
                 );
               },
@@ -116,6 +127,40 @@ class _NotificationInboxState extends State<NotificationInbox> {
     );
   }
 
+  Future<void> _markGroupRead(NotificationGroup group) async {
+    try {
+      for (final item in group.unreadItems) {
+        await widget.controller.api.markNotificationRead(widget.role, item.id);
+      }
+      if (mounted) _reload();
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _openNotification(NotificationItem item) async {
+    try {
+      if (!item.read) {
+        await widget.controller.api.markNotificationRead(widget.role, item.id);
+      }
+      if (item.bookingId != null ||
+          item.invoiceId != null ||
+          item.supportRequestId != null) {
+        widget.onNotificationSelected?.call(item);
+      }
+      if (mounted) _reload();
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  void _showError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('Notification update failed: $error')));
+  }
+
   String _subtitle(NotificationItem item) {
     final target = item.bookingId != null
         ? 'Open booking'
@@ -124,7 +169,15 @@ class _NotificationInboxState extends State<NotificationInbox> {
             : item.supportRequestId != null
                 ? 'Open support request'
                 : '';
-    return [item.message, target].where((value) => value.isNotEmpty).join('\n');
+    final timestamp = item.createdAt == null
+        ? ''
+        : item.createdAt!.toLocal().toString().substring(0, 16);
+    return [
+      if (item.status != null) 'Status: ${item.status}',
+      item.message,
+      if (timestamp.isNotEmpty) timestamp,
+      target,
+    ].where((value) => value.isNotEmpty).join('\n');
   }
 }
 

@@ -12,6 +12,7 @@ class Booking {
     this.latitude,
     this.longitude,
     this.notes,
+    this.cancellationReason,
     this.serviceId,
     this.quotedAmount,
     this.paymentStatus,
@@ -32,6 +33,7 @@ class Booking {
   final double? latitude;
   final double? longitude;
   final String? notes;
+  final String? cancellationReason;
 
   double? get quotedAmountRupees {
     final paise = int.tryParse(quotedAmount ?? '');
@@ -61,6 +63,9 @@ class Booking {
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       notes: (json['notes'] ?? json['access_notes'])?.toString(),
+      cancellationReason:
+          (json['cancellation_reason'] ?? json['cancellationReason'])
+              ?.toString(),
       deliveryDate: DateTime.tryParse(
         (json['scheduled_for'] ?? json['delivery_date'] ?? '').toString(),
       ),

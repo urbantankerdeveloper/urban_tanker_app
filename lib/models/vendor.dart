@@ -17,6 +17,7 @@ class VendorOrder {
     this.driver,
     this.latitude,
     this.longitude,
+    this.cancellationReason,
   });
 
   final String id;
@@ -34,6 +35,7 @@ class VendorOrder {
   final String? driver;
   final double? latitude;
   final double? longitude;
+  final String? cancellationReason;
 
   factory VendorOrder.fromJson(Map<String, dynamic> json) => VendorOrder(
         id: (json['id'] ?? '').toString(),
@@ -59,6 +61,9 @@ class VendorOrder {
             ?.toString(),
         latitude: (json['latitude'] as num?)?.toDouble(),
         longitude: (json['longitude'] as num?)?.toDouble(),
+        cancellationReason:
+            (json['cancellation_reason'] ?? json['cancellationReason'])
+                ?.toString(),
       );
 
   double get amountRupees => amountPaise / 100;
@@ -74,6 +79,7 @@ class VendorOrder {
         quotedAmount: amountPaise.toString(),
         latitude: latitude,
         longitude: longitude,
+        cancellationReason: cancellationReason,
       );
 }
 
@@ -175,6 +181,66 @@ class VendorDriver {
       );
 
   bool get assignable => active && verification.toLowerCase() == 'approved';
+}
+
+class AdminFleetVehicle {
+  const AdminFleetVehicle({
+    required this.id,
+    required this.vendorId,
+    required this.registrationNumber,
+    required this.capacityLitres,
+    required this.active,
+    required this.verification,
+  });
+
+  final String id;
+  final String vendorId;
+  final String registrationNumber;
+  final int capacityLitres;
+  final bool active;
+  final String verification;
+
+  bool get eligible => active && verification.toLowerCase() == 'approved';
+
+  factory AdminFleetVehicle.fromJson(Map<String, dynamic> json) =>
+      AdminFleetVehicle(
+        id: (json['id'] ?? '').toString(),
+        vendorId: (json['vendor_id'] ?? json['vendorId'] ?? '').toString(),
+        registrationNumber: (json['registration_number'] ?? '').toString(),
+        capacityLitres: (json['capacity_litres'] as num?)?.toInt() ?? 0,
+        active: json['is_active'] == true,
+        verification: (json['verification'] ?? 'pending').toString(),
+      );
+}
+
+class AdminFleetDriver {
+  const AdminFleetDriver({
+    required this.id,
+    required this.vendorId,
+    required this.name,
+    required this.mobile,
+    required this.active,
+    required this.verification,
+  });
+
+  final String id;
+  final String vendorId;
+  final String name;
+  final String mobile;
+  final bool active;
+  final String verification;
+
+  bool get eligible => active && verification.toLowerCase() == 'approved';
+
+  factory AdminFleetDriver.fromJson(Map<String, dynamic> json) =>
+      AdminFleetDriver(
+        id: (json['id'] ?? '').toString(),
+        vendorId: (json['vendor_id'] ?? json['vendorId'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        mobile: (json['mobile_e164'] ?? json['mobile'] ?? '').toString(),
+        active: json['is_active'] == true,
+        verification: (json['verification'] ?? 'pending').toString(),
+      );
 }
 
 class VendorPayout {

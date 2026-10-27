@@ -236,6 +236,9 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
             ),
           if (booking.notes != null && booking.notes!.trim().isNotEmpty)
             Text('Access notes: ${booking.notes}'),
+          if (booking.cancellationReason != null &&
+              booking.cancellationReason!.trim().isNotEmpty)
+            Text('Cancellation reason: ${booking.cancellationReason}'),
           const SizedBox(height: 20),
           Card(
             child: Column(

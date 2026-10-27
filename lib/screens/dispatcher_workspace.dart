@@ -301,6 +301,8 @@ class _DispatchOrderCard extends ConsumerWidget {
       'Vendor': order['vendor_id'] ?? 'Unassigned',
       'Vehicle': order['vehicle_id'] ?? 'Unassigned',
       'Driver': order['driver_id'] ?? 'Unassigned',
+      'Cancellation reason':
+          order['cancellation_reason'] ?? order['cancellationReason'] ?? '—',
     };
     showDialog<void>(
       context: context,

@@ -36,6 +36,56 @@ class NotificationItem {
   }
 
   String? get bookingId => _id('bookingId');
+  String? get bookingReference =>
+      _id('bookingReference') ?? _id('reference') ?? _id('orderReference');
   String? get invoiceId => _id('invoiceId');
   String? get supportRequestId => _id('supportRequestId');
+  String? get status => _id('status') ?? _id('eventType');
+}
+
+class NotificationGroup {
+  const NotificationGroup({
+    required this.key,
+    required this.title,
+    required this.items,
+    required this.isBookingGroup,
+  });
+
+  final String key;
+  final String title;
+  final List<NotificationItem> items;
+  final bool isBookingGroup;
+
+  List<NotificationItem> get unreadItems =>
+      items.where((item) => !item.read).toList(growable: false);
+}
+
+List<NotificationGroup> groupNotifications(
+  List<NotificationItem> notifications,
+) {
+  final groups = <String, List<NotificationItem>>{};
+  final titles = <String, String>{};
+  final bookingGroups = <String, bool>{};
+  for (final item in notifications) {
+    final reference = item.bookingReference;
+    final bookingId = item.bookingId;
+    final groupKey = reference != null
+        ? 'booking-reference:$reference'
+        : bookingId != null
+            ? 'booking-id:$bookingId'
+            : 'notification:${item.id}';
+    groups.putIfAbsent(groupKey, () => []).add(item);
+    titles[groupKey] = reference ??
+        (bookingId == null ? item.title : 'Booking $bookingId');
+    bookingGroups[groupKey] = reference != null || bookingId != null;
+  }
+  return [
+    for (final entry in groups.entries)
+      NotificationGroup(
+        key: entry.key,
+        title: titles[entry.key]!,
+        items: entry.value,
+        isBookingGroup: bookingGroups[entry.key]!,
+      ),
+  ];
 }

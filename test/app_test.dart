@@ -13,6 +13,7 @@ import 'package:urban_tanker_app/models/dispatcher.dart';
 import 'package:urban_tanker_app/models/booking_service_details.dart';
 import 'package:urban_tanker_app/models/booking_service_form.dart';
 import 'package:urban_tanker_app/models/service.dart';
+import 'package:urban_tanker_app/models/workspace_navigation.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
 
 class _RecordingApiClient extends ApiClient {
@@ -196,6 +197,90 @@ void main() {
     expect(service.waterTypeOptions, ['Drinking water']);
     expect(service.tankerCountOptions, ['1', '5']);
     expect(TankerService.fromJson({'code': 'other'}).detailOptions, isEmpty);
+  });
+
+  test('workspace navigation exposes role-specific grouped destinations', () {
+    expect(
+      workspaceNavigationForRole(WorkspaceRole.admin)
+          .map((group) => group.title)
+          .toList(),
+      [
+        'Bookings & dispatch',
+        'People & fleet',
+        'Finance & promos',
+        'Reports & setup',
+      ],
+    );
+    expect(
+      workspaceNavigationForRole(WorkspaceRole.vendor)
+          .map((group) => group.title)
+          .toList(),
+      ['Orders & support', 'Services & team', 'Earnings'],
+    );
+    expect(
+      workspaceNavigationForRole(WorkspaceRole.dispatcher)
+          .map((group) => group.title)
+          .toList(),
+      ['Dispatch operations', 'Reports & alerts'],
+    );
+    expect(workspaceNavigationForRole(WorkspaceRole.customer), isEmpty);
+  });
+
+  test('notifications group booking events and separate unrelated events', () {
+    final events = [
+      NotificationItem.fromJson({
+        'id': 'event-1',
+        'title': 'Booking accepted',
+        'payload': {
+          'bookingId': 'booking-1',
+          'bookingReference': 'UT-1001',
+          'status': 'accepted',
+        },
+      }),
+      NotificationItem.fromJson({
+        'id': 'event-2',
+        'title': 'Driver en route',
+        'read_at': '2026-10-27T09:00:00Z',
+        'payload': {'bookingReference': 'UT-1001', 'status': 'en_route'},
+      }),
+      NotificationItem.fromJson({
+        'id': 'other-1',
+        'title': 'Account update',
+      }),
+      NotificationItem.fromJson({
+        'id': 'other-2',
+        'title': 'Account update',
+      }),
+    ];
+
+    final groups = groupNotifications(events);
+    expect(groups, hasLength(3));
+    final bookingGroup = groups.firstWhere(
+      (group) => group.title == 'UT-1001',
+    );
+    expect(bookingGroup.items, hasLength(2));
+    expect(bookingGroup.unreadItems.map((item) => item.id), ['event-1']);
+    expect(groups.where((group) => !group.isBookingGroup), hasLength(2));
+  });
+
+  test('admin and vendor cancellation require a useful reason', () async {
+    final api = _RecordingApiClient();
+    await expectLater(
+      api.cancelAdminOrder('booking-1', ' '),
+      throwsFormatException,
+    );
+    expect(api.requestPath, isNull);
+
+    await api.cancelAdminOrder('booking-1', 'Vendor unavailable');
+    expect(api.requestPath, '/admin/orders/booking-1/cancel');
+    expect(api.requestBody, {'reason': 'Vendor unavailable'});
+
+    api.requestPath = null;
+    await expectLater(
+      api.transitionVendorOrder('booking-1', action: 'reject', reason: ''),
+      throwsFormatException,
+    );
+    expect(api.requestPath, isNull);
   });
 
   test('combined booking request submits all per-service details', () {

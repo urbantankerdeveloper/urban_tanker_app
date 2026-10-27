@@ -453,6 +453,76 @@ class ApiClient {
   Future<List<AccountRecord>> adminCoupons() =>
       _records('/admin/coupons', 'admin coupons');
 
+  Future<List<AdminFleetVehicle>> adminVehicles() async {
+    final response = await request('GET', '/admin/vehicles');
+    return _vendorList(response, AdminFleetVehicle.fromJson, 'admin vehicles');
+  }
+
+  Future<List<AdminFleetDriver>> adminDrivers() async {
+    final response = await request('GET', '/admin/drivers');
+    return _vendorList(response, AdminFleetDriver.fromJson, 'admin drivers');
+  }
+
+  Future<AdminFleetVehicle> createAdminVehicle({
+    required String vendorId,
+    required String registrationNumber,
+    required int capacityLitres,
+    List<String> supportedServices = const [],
+  }) async {
+    final response = await request('POST', '/admin/vehicles', body: {
+      'vendorId': vendorId,
+      'registrationNumber': registrationNumber,
+      'capacityLitres': capacityLitres,
+      'supportedServices': supportedServices,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The vehicle response was invalid.');
+    }
+    return AdminFleetVehicle.fromJson(decoded);
+  }
+
+  Future<AdminFleetDriver> createAdminDriver({
+    required String vendorId,
+    required String name,
+    required String mobile,
+    required String licenceNumber,
+  }) async {
+    final response = await request('POST', '/admin/drivers', body: {
+      'vendorId': vendorId,
+      'name': name,
+      'mobileE164': normalizeIndianPhone(mobile),
+      'licenceNumber': licenceNumber,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The driver response was invalid.');
+    }
+    return AdminFleetDriver.fromJson(decoded);
+  }
+
+  Future<void> updateAdminVehicleStatus(
+    String id, {
+    required String verification,
+    required bool isActive,
+  }) async {
+    await request('PATCH', '/admin/vehicles/$id/status', body: {
+      'verification': verification,
+      'isActive': isActive,
+    });
+  }
+
+  Future<void> updateAdminDriverStatus(
+    String id, {
+    required String verification,
+    required bool isActive,
+  }) async {
+    await request('PATCH', '/admin/drivers/$id/status', body: {
+      'verification': verification,
+      'isActive': isActive,
+    });
+  }
+
   Future<Map<String, dynamic>> adminHealth() async {
     final response = await request('GET', '/admin/system/health');
     return _mapResponse(response, 'admin health');
@@ -1165,6 +1235,13 @@ class ApiClient {
     String? vehicleId,
     String? driverId,
   }) async {
+    if (action == 'reject' &&
+        ((reason?.trim().length ?? 0) < 2 ||
+            (reason?.trim().length ?? 0) > 500)) {
+      throw const FormatException(
+        'Enter a cancellation reason between 2 and 500 characters.',
+      );
+    }
     final response = await request(
       'PATCH',
       '/vendor/orders/$orderId/transition',
@@ -1385,10 +1462,16 @@ class ApiClient {
   }
 
   Future<AccountRecord> cancelAdminOrder(String id, String reason) async {
+    final normalizedReason = reason.trim();
+    if (normalizedReason.length < 2 || normalizedReason.length > 500) {
+      throw const FormatException(
+        'Enter a cancellation reason between 2 and 500 characters.',
+      );
+    }
     final response = await request(
       'POST',
       '/admin/orders/$id/cancel',
-      body: {'reason': reason},
+      body: {'reason': normalizedReason},
     );
     return AccountRecord(
         await _mapResponse(response, 'admin order cancellation'));
