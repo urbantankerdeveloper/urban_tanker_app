@@ -4,8 +4,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
-    // AGP 9 provides built-in Kotlin support, so org.jetbrains.kotlin.android is not applied here.
-    // The Flutter Gradle Plugin must be applied after the Android Gradle plugin.
+    id("kotlin-android")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
