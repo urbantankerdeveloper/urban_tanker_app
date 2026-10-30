@@ -18,6 +18,7 @@ class VendorOrder {
     this.latitude,
     this.longitude,
     this.cancellationReason,
+    this.statusMessage,
   });
 
   final String id;
@@ -25,6 +26,7 @@ class VendorOrder {
   final String serviceCode;
   final String address;
   final String status;
+  final String? statusMessage;
   final int amountPaise;
   final List<VendorOrderServiceDetail> serviceDetails;
   final DateTime? createdAt;
@@ -43,6 +45,7 @@ class VendorOrder {
         serviceCode: (json['service_code'] ?? json['service'] ?? '').toString(),
         address: (json['address_text'] ?? json['location'] ?? '').toString(),
         status: _normalizeVendorOrderStatus(json['status']),
+        statusMessage: json['statusMessage']?.toString(),
         amountPaise: _vendorAmountPaise(json),
         serviceDetails: _records(
           json['serviceDetails'] ?? json['service_details'],

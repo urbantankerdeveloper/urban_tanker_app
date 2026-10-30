@@ -147,7 +147,7 @@ class AppController extends ChangeNotifier {
       socketUrl: socketUrl.isNotEmpty
           ? socketUrl
           : api.baseUrl.replaceFirst(RegExp(r'/api$'), ''),
-      token: result.accessToken,
+      readToken: api.readAccessToken,
     );
     realtime!.connect((_, __) {});
     errorMessage = null;

@@ -10,10 +10,10 @@ class RealtimeEvent {
 }
 
 class RealtimeService {
-  RealtimeService({required this.socketUrl, required this.token});
+  RealtimeService({required this.socketUrl, required this.readToken});
 
   final String socketUrl;
-  final String token;
+  final Future<String?> Function() readToken;
   final StreamController<RealtimeEvent> _events =
       StreamController<RealtimeEvent>.broadcast();
   io.Socket? _socket;
@@ -27,7 +27,12 @@ class RealtimeService {
       socketUrl,
       io.OptionBuilder()
           .setTransports(['websocket', 'polling'])
-          .setAuth({'token': token})
+          // Auth is resolved on every (re)connect so a refreshed token is used.
+          .setAuthFn((callback) {
+            readToken()
+                .then((token) => callback({'token': token ?? ''}))
+                .catchError((_) => callback({'token': ''}));
+          })
           .enableReconnection()
           .build(),
     );
@@ -39,16 +44,20 @@ class RealtimeService {
       })
       ..on('disconnect', (reason) {
         isConnected = false;
-        _events.add(RealtimeEvent('disconnect', reason));
+        _emit(RealtimeEvent('disconnect', reason));
       })
       ..on('connect_error', (error) {
         isConnected = false;
-        _events.add(RealtimeEvent('connect_error', error));
+        _emit(RealtimeEvent('connect_error', error));
       })
       ..onAny((event, payload) {
-        _events.add(RealtimeEvent(event, payload));
+        _emit(RealtimeEvent(event, payload));
         onEvent(event, payload);
       });
+  }
+
+  void _emit(RealtimeEvent event) {
+    if (!_events.isClosed) _events.add(event);
   }
 
   void joinBooking(String bookingId) {

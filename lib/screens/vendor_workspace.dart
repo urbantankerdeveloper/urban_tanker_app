@@ -32,6 +32,8 @@ class _VendorOperationsScreenState
     _realtimeSubscription =
         ref.read(appControllerProvider).realtime?.events.listen((event) {
       if (event.name != 'vendor.order.created' &&
+          event.name != 'vendor.order.taken' &&
+          event.name != 'vendor.order.declined' &&
           event.name != 'booking.updated') {
         return;
       }
@@ -300,6 +302,8 @@ class _OrderCard extends ConsumerWidget {
                 ],
               ),
               Text(order.address),
+              if (order.statusMessage?.trim().isNotEmpty == true)
+                Text(order.statusMessage!),
               if (order.latitude != null && order.longitude != null)
                 Text(
                   'Delivery coordinates: ${order.latitude!.toStringAsFixed(5)}, '

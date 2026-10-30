@@ -2,14 +2,18 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../app/app_controller.dart';
+import '../app/providers.dart';
 import '../app/theme.dart';
 import '../models/service.dart';
 import '../models/booking_service_details.dart';
 import '../models/booking_service_form.dart';
+import '../services/api_client.dart';
+import '../services/realtime_service.dart';
 import '../models/booking.dart';
 import '../models/session.dart';
 import '../models/account.dart';
@@ -24,15 +28,14 @@ import 'vendor_workspace.dart';
 import 'admin_workspace.dart';
 import 'dispatcher_workspace.dart';
 import '../services/service_area.dart';
-import '../services/api_client.dart';
 
-class HomeShell extends StatefulWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({required this.controller, super.key});
 
   final AppController controller;
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
 String _dateOnly(DateTime date) {
@@ -41,7 +44,7 @@ String _dateOnly(DateTime date) {
   return '${date.year}-$month-$day';
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 0;
   String? _activeNavigationItem;
   List<TankerService> _services = const [];
@@ -49,6 +52,7 @@ class _HomeShellState extends State<HomeShell> {
   bool _bookingFormOpening = false;
   String? _serviceError;
   late Future<List<NotificationItem>>? _notifications;
+  StreamSubscription<RealtimeEvent>? _realtimeSubscription;
 
   WorkspaceRole get role => widget.controller.user!.role;
 
@@ -61,6 +65,38 @@ class _HomeShellState extends State<HomeShell> {
         ? widget.controller.api.notifications(role.name)
         : null;
     if (role == WorkspaceRole.customer) _loadServices();
+    _realtimeSubscription = widget.controller.realtime?.events.listen((event) {
+      if (!mounted) return;
+      switch (event.name) {
+        case 'booking.created':
+        case 'booking.updated':
+        case 'booking.rejected':
+        case 'booking.vendor_accepted':
+        case 'booking.delivered':
+          ref.invalidate(bookingsProvider);
+        case 'notification.created':
+          ref.invalidate(bookingsProvider);
+          _reloadNotifications();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _realtimeSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _reloadNotifications() {
+    if (!mounted ||
+        !(role == WorkspaceRole.customer ||
+            role == WorkspaceRole.vendor ||
+            role == WorkspaceRole.admin)) {
+      return;
+    }
+    setState(() {
+      _notifications = widget.controller.api.notifications(role.name);
+    });
   }
 
   Future<void> _loadServices() async {
@@ -145,7 +181,7 @@ class _HomeShellState extends State<HomeShell> {
     }
     final selectedServices = previousServiceIds.isNotEmpty
         ? previousServiceIds
-        : <String>{_services.first.id};
+        : <String>{};
     for (final address in addresses) {
       if (address.detail == previousBooking?.location) {
         selectedAddress = address.detail;
@@ -200,6 +236,46 @@ class _HomeShellState extends State<HomeShell> {
       }
       return;
     }
+    bool serviceHasMissingFields(String id) {
+      final fields = serviceFields[id]!;
+      final service = _services.firstWhere((item) => item.id == id);
+      final serviceSpecificMissing = id == 'water_tanker'
+          ? fields.waterType.text.trim().isEmpty ||
+              fields.tankerCount.text.trim().isEmpty
+          : fields.details.text.trim().isEmpty;
+      return fields.quantity.text.trim().isEmpty ||
+          serviceSpecificMissing ||
+          fields.location.text.trim().isEmpty ||
+          !isChennaiLocation(
+            address: fields.location.text,
+            latitude: fields.latitude,
+            longitude: fields.longitude,
+          ) ||
+          DateTime.tryParse(fields.deliveryDate.text.trim()) == null ||
+          service.capacityOptions.contains(fields.quantity.text) == false ||
+          (id == 'water_tanker' &&
+              (!service.waterTypeOptions.contains(fields.waterType.text) ||
+                  !service.tankerCountOptions
+                      .contains(fields.tankerCount.text)));
+    }
+
+    List<BookingServiceDetails> buildServiceDetails() => selectedServices
+        .map((serviceId) {
+          final fields = serviceFields[serviceId]!;
+          return BookingServiceDetails(
+            serviceId: serviceId,
+            quantity: fields.quantity.text,
+            waterType: fields.waterType.text,
+            tankerCount: fields.tankerCount.text,
+            details: fields.details.text,
+            deliveryDate: fields.deliveryDate.text.trim(),
+            location: fields.location.text.trim(),
+            latitude: fields.latitude,
+            longitude: fields.longitude,
+          );
+        })
+        .toList(growable: false);
+
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -338,37 +414,38 @@ class _HomeShellState extends State<HomeShell> {
                         ),
                     ],
                     const SizedBox(height: 12),
-                    for (final service in _services) ...[
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        value: selectedServices.contains(service.id),
-                        title: Text(service.name),
-                        subtitle: Text(service.description),
-                        onChanged: (selected) {
-                          setSheetState(() {
-                            if (selected == true) {
-                              selectedServices.add(service.id);
-                            } else {
-                              selectedServices.remove(service.id);
-                            }
-                            validatedCoupon = null;
-                            couponMessage = null;
-                            bookingFormError = null;
-                          });
-                        },
-                      ),
-                      if (selectedServices.contains(service.id))
-                        Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(service.name,
-                                    style:
-                                        Theme.of(context).textTheme.titleSmall),
-                                const SizedBox(height: 8),
+                    for (final service in _services.where(
+                        (service) => selectedServices.contains(service.id)))
+                      Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(service.name,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Remove ${service.name}',
+                                    onPressed: () {
+                                      setSheetState(() {
+                                        selectedServices.remove(service.id);
+                                        validatedCoupon = null;
+                                        couponMessage = null;
+                                        bookingFormError = null;
+                                      });
+                                    },
+                                    icon: const Icon(Icons.close),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
                                 _ServiceDropdownField(
                                   controller:
                                       serviceFields[service.id]!.quantity,
@@ -432,7 +509,51 @@ class _HomeShellState extends State<HomeShell> {
                             ),
                           ),
                         ),
-                    ],
+                    const SizedBox(height: 4),
+                    Builder(
+                      builder: (context) {
+                        final availableServices = _services
+                            .where((service) =>
+                                !selectedServices.contains(service.id))
+                            .toList();
+                        if (availableServices.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return OutlinedButton.icon(
+                          onPressed: () async {
+                            final pickedId = await showModalBottomSheet<String>(
+                              context: context,
+                              showDragHandle: true,
+                              builder: (pickerContext) => SafeArea(
+                                child: ListView(
+                                  shrinkWrap: true,
+                                  children: [
+                                    for (final service in availableServices)
+                                      ListTile(
+                                        title: Text(service.name),
+                                        subtitle: Text(service.description),
+                                        onTap: () => Navigator.of(pickerContext)
+                                            .pop(service.id),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                            if (pickedId == null) return;
+                            setSheetState(() {
+                              selectedServices.add(pickedId);
+                              validatedCoupon = null;
+                              couponMessage = null;
+                              bookingFormError = null;
+                            });
+                          },
+                          icon: const Icon(Icons.add),
+                          label: Text(selectedServices.isEmpty
+                              ? 'Add service'
+                              : 'Add another service'),
+                        );
+                      },
+                    ),
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: notesController,
@@ -497,6 +618,11 @@ class _HomeShellState extends State<HomeShell> {
                                     });
                                     return;
                                   }
+                                  if (selectedServices.isEmpty) {
+                                    setSheetState(() => couponMessage =
+                                        'Add a service before applying a coupon.');
+                                    return;
+                                  }
                                   setSheetState(() {
                                     validatingCoupon = true;
                                     couponMessage = null;
@@ -550,44 +676,25 @@ class _HomeShellState extends State<HomeShell> {
                         ),
                       ),
                     const SizedBox(height: 18),
+                    _LiveQuoteSummary(
+                      api: widget.controller.api,
+                      services: phoneVerified &&
+                              selectedServices.isNotEmpty &&
+                              !selectedServices.any(serviceHasMissingFields)
+                          ? buildServiceDetails()
+                          : const [],
+                      phone: normalizeIndianPhone(phoneController.text),
+                      paymentMethod: paymentMethod,
+                      couponCode: validatedCoupon == null
+                          ? null
+                          : couponController.text.trim(),
+                    ),
+                    const SizedBox(height: 12),
                     FilledButton(
                       onPressed: loadingPhoneVerification ||
                               selectedServices.isEmpty ||
                               !phoneVerified ||
-                              selectedServices.any((id) {
-                                final fields = serviceFields[id]!;
-                                final service = _services.firstWhere(
-                                  (item) => item.id == id,
-                                );
-                                final serviceSpecificMissing = id ==
-                                        'water_tanker'
-                                    ? fields.waterType.text.trim().isEmpty ||
-                                        fields.tankerCount.text.trim().isEmpty
-                                    : fields.details.text.trim().isEmpty;
-                                return fields.quantity.text.trim().isEmpty ||
-                                    serviceSpecificMissing ||
-                                    fields.location.text.trim().isEmpty ||
-                                    !isChennaiLocation(
-                                      address: fields.location.text,
-                                      latitude: fields.latitude,
-                                      longitude: fields.longitude,
-                                    ) ||
-                                    DateTime.tryParse(
-                                          fields.deliveryDate.text.trim(),
-                                        ) ==
-                                        null ||
-                                    service.capacityOptions
-                                            .contains(fields.quantity.text) ==
-                                        false ||
-                                    (id == 'water_tanker' &&
-                                        (!service.waterTypeOptions.contains(
-                                              fields.waterType.text,
-                                            ) ||
-                                            !service.tankerCountOptions
-                                                .contains(
-                                              fields.tankerCount.text,
-                                            )));
-                              })
+                              selectedServices.any(serviceHasMissingFields)
                           ? null
                           : () async {
                               if (selectedServices.isEmpty) {
@@ -597,36 +704,7 @@ class _HomeShellState extends State<HomeShell> {
                               }
                               if (!formKey.currentState!.validate()) return;
                               try {
-                                final services = selectedServices
-                                    .map((serviceId) => BookingServiceDetails(
-                                          serviceId: serviceId,
-                                          quantity: serviceFields[serviceId]!
-                                              .quantity
-                                              .text,
-                                          waterType: serviceFields[serviceId]!
-                                              .waterType
-                                              .text,
-                                          tankerCount: serviceFields[serviceId]!
-                                              .tankerCount
-                                              .text,
-                                          details: serviceFields[serviceId]!
-                                              .details
-                                              .text,
-                                          deliveryDate:
-                                              serviceFields[serviceId]!
-                                                  .deliveryDate
-                                                  .text
-                                                  .trim(),
-                                          location: serviceFields[serviceId]!
-                                              .location
-                                              .text
-                                              .trim(),
-                                          latitude: serviceFields[serviceId]!
-                                              .latitude,
-                                          longitude: serviceFields[serviceId]!
-                                              .longitude,
-                                        ))
-                                    .toList(growable: false);
+                                final services = buildServiceDetails();
                                 final quotePreview = await widget.controller.api
                                     .previewBookingQuote(
                                   serviceId: services.first.serviceId,
@@ -697,7 +775,7 @@ class _HomeShellState extends State<HomeShell> {
                                                 'Details: ${services[index].details.trim()}'),
                                             const SizedBox(height: 8),
                                           ],
-                                          Text(_quoteSummary(quote)),
+                                          Text(formatQuoteSummary(quote)),
                                         ],
                                       ),
                                     ),
@@ -783,18 +861,6 @@ class _HomeShellState extends State<HomeShell> {
         paymentMethod,
       );
     }
-  }
-
-  String _quoteSummary(Object? quote) {
-    if (quote is! Map<String, dynamic>) return 'Quote unavailable.';
-    String money(Object? value) =>
-        value is num ? '₹${(value / 100).toStringAsFixed(2)}' : 'Unavailable';
-    return [
-      'Subtotal: ${money(quote['subtotalPaise'])}',
-      'Discount: ${money(quote['discountPaise'])}',
-      'GST: ${money(quote['gstPaise'])}',
-      'Total: ${money(quote['totalPaise'])}',
-    ].join('\n');
   }
 
   Future<void> _showBookingConfirmation(
@@ -1637,4 +1703,174 @@ class _ErrorCard extends StatelessWidget {
               IconButton(onPressed: onRetry, icon: const Icon(Icons.refresh)),
         ),
       );
+}
+
+String formatQuoteSummary(Object? quote) {
+  if (quote is! Map<String, dynamic>) return 'Quote unavailable.';
+  String money(Object? value) =>
+      value is num ? '₹${(value / 100).toStringAsFixed(2)}' : 'Unavailable';
+  return [
+    'Subtotal: ${money(quote['subtotalPaise'])}',
+    'Discount: ${money(quote['discountPaise'])}',
+    'GST: ${money(quote['gstPaise'])}',
+    'Total: ${money(quote['totalPaise'])}',
+  ].join('\n');
+}
+
+class _LiveQuoteSummary extends StatefulWidget {
+  const _LiveQuoteSummary({
+    required this.api,
+    required this.services,
+    required this.phone,
+    required this.paymentMethod,
+    this.couponCode,
+  });
+
+  final ApiClient api;
+  final List<BookingServiceDetails> services;
+  final String phone;
+  final String paymentMethod;
+  final String? couponCode;
+
+  @override
+  State<_LiveQuoteSummary> createState() => _LiveQuoteSummaryState();
+}
+
+class _LiveQuoteSummaryState extends State<_LiveQuoteSummary> {
+  static const _debounceDelay = Duration(milliseconds: 400);
+
+  Timer? _debounce;
+  String _lastKey = '';
+  int _requestCount = 0;
+  bool _loading = false;
+  Object? _quote;
+  String? _error;
+
+  String get _inputKey => [
+        for (final service in widget.services)
+          [
+            service.serviceId,
+            service.quantity,
+            service.waterType,
+            service.tankerCount,
+            service.details,
+            service.deliveryDate,
+            service.location,
+            service.latitude,
+            service.longitude,
+          ].join('|'),
+        widget.phone,
+        widget.paymentMethod,
+        widget.couponCode ?? '',
+      ].join('\n');
+
+  @override
+  void initState() {
+    super.initState();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LiveQuoteSummary oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_inputKey != _lastKey) setState(_schedule);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _schedule() {
+    final key = _inputKey;
+    _lastKey = key;
+    _debounce?.cancel();
+    _error = null;
+    if (widget.services.isEmpty) {
+      _loading = false;
+      _quote = null;
+      return;
+    }
+    _loading = true;
+    _debounce = Timer(_debounceDelay, () => _fetch(key));
+  }
+
+  Future<void> _fetch(String key) async {
+    final requestId = ++_requestCount;
+    final first = widget.services.first;
+    try {
+      final response = await widget.api.previewBookingQuote(
+        serviceId: first.serviceId,
+        capacity: first.quantity,
+        services: widget.services,
+        location: first.location ?? '',
+        deliveryDate: first.deliveryDate ?? '',
+        paymentMethod: widget.paymentMethod,
+        latitude: first.latitude,
+        longitude: first.longitude,
+        couponCode: widget.couponCode,
+        phone: widget.phone,
+      );
+      if (!mounted || requestId != _requestCount || key != _lastKey) return;
+      setState(() {
+        _loading = false;
+        _quote = response['quote'];
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted || requestId != _requestCount || key != _lastKey) return;
+      setState(() {
+        _loading = false;
+        _quote = null;
+        _error = error.toString();
+      });
+    }
+  }
+
+  void _retry() => setState(_schedule);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (widget.services.isEmpty) {
+      return Text(
+        'Complete the service details to see the price.',
+        style: theme.textTheme.bodyMedium,
+      );
+    }
+    if (_loading) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 12),
+          Expanded(child: Text('Calculating price…')),
+        ],
+      );
+    }
+    if (_error != null) {
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Price unavailable: $_error',
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+          ),
+          TextButton(onPressed: _retry, child: const Text('Retry')),
+        ],
+      );
+    }
+    return Semantics(
+      liveRegion: true,
+      child: Text(
+        formatQuoteSummary(_quote),
+        style: theme.textTheme.bodyMedium,
+      ),
+    );
+  }
 }
