@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -80,6 +81,69 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           _reloadNotifications();
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _offerBiometricEnrollment();
+    });
+  }
+
+  Future<void> _offerBiometricEnrollment() async {
+    final controller = widget.controller;
+    if (!controller.pendingBiometricEnrollment) return;
+    await controller.markBiometricPromptOffered();
+    final available = await controller.biometricAuth.canAuthenticate();
+    if (!mounted) return;
+    final enable = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.fingerprint),
+        title: const Text('Enable biometric unlock?'),
+        content: Text(
+          available
+              ? 'Use your fingerprint or device biometric to unlock this saved session.'
+              : 'No fingerprint or device biometric is enrolled. Set one up in your device settings, then sign in again to enable biometric unlock.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Not now'),
+          ),
+          if (available)
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Enable'),
+            ),
+        ],
+      ),
+    );
+    if (enable != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final authenticated = await controller.biometricAuth.authenticate(
+        'Confirm biometric unlock for Urban Tanker',
+      );
+      if (!mounted) return;
+      if (authenticated) {
+        await controller.setBiometricEnabled(true);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Biometric unlock enabled.')),
+        );
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Biometric unlock was not enabled.'),
+          ),
+        );
+      }
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            error.message ?? 'Biometric unlock could not be enabled.',
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -180,9 +244,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             previousBooking.capacity;
       }
     }
-    final selectedServices = previousServiceIds.isNotEmpty
-        ? previousServiceIds
-        : <String>{};
+    final selectedServices =
+        previousServiceIds.isNotEmpty ? previousServiceIds : <String>{};
     for (final address in addresses) {
       if (address.detail == previousBooking?.location) {
         selectedAddress = address.detail;
@@ -260,8 +323,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                       .contains(fields.tankerCount.text)));
     }
 
-    List<BookingServiceDetails> buildServiceDetails() => selectedServices
-        .map((serviceId) {
+    List<BookingServiceDetails> buildServiceDetails() =>
+        selectedServices.map((serviceId) {
           final fields = serviceFields[serviceId]!;
           return BookingServiceDetails(
             serviceId: serviceId,
@@ -274,8 +337,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             latitude: fields.latitude,
             longitude: fields.longitude,
           );
-        })
-        .toList(growable: false);
+        }).toList(growable: false);
 
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -447,69 +509,67 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                 ],
                               ),
                               const SizedBox(height: 8),
+                              _ServiceDropdownField(
+                                controller: serviceFields[service.id]!.quantity,
+                                label: BookingServiceForm.forService(service.id)
+                                    .quantityLabel,
+                                options: service.capacityOptions,
+                                emptyMessage:
+                                    'No capacity options are configured.',
+                                onChanged: (_) => setSheetState(() {}),
+                              ),
+                              if (service.id == 'water_tanker') ...[
+                                const SizedBox(height: 8),
                                 _ServiceDropdownField(
                                   controller:
-                                      serviceFields[service.id]!.quantity,
-                                  label:
-                                      BookingServiceForm.forService(service.id)
-                                          .quantityLabel,
-                                  options: service.capacityOptions,
+                                      serviceFields[service.id]!.waterType,
+                                  label: 'Water type',
+                                  options: service.waterTypeOptions,
                                   emptyMessage:
-                                      'No capacity options are configured.',
+                                      'No water type options are configured.',
                                   onChanged: (_) => setSheetState(() {}),
                                 ),
-                                if (service.id == 'water_tanker') ...[
-                                  const SizedBox(height: 8),
-                                  _ServiceDropdownField(
-                                    controller:
-                                        serviceFields[service.id]!.waterType,
-                                    label: 'Water type',
-                                    options: service.waterTypeOptions,
-                                    emptyMessage:
-                                        'No water type options are configured.',
-                                    onChanged: (_) => setSheetState(() {}),
-                                  ),
-                                ],
-                                if (service.id == 'water_tanker') ...[
-                                  const SizedBox(height: 8),
-                                  _ServiceDropdownField(
-                                    controller:
-                                        serviceFields[service.id]!.tankerCount,
-                                    label: 'Tanker count',
-                                    options: service.tankerCountOptions,
-                                    emptyMessage:
-                                        'No tanker count options are configured.',
-                                    onChanged: (_) => setSheetState(() {}),
-                                  ),
-                                ],
+                              ],
+                              if (service.id == 'water_tanker') ...[
                                 const SizedBox(height: 8),
-                                if (service.id != 'water_tanker')
-                                  _ServiceDropdownField(
-                                    controller:
-                                        serviceFields[service.id]!.details,
-                                    label: BookingServiceForm.forService(
-                                            service.id)
-                                        .detailsLabel,
-                                    options: service.detailOptions,
-                                    emptyMessage:
-                                        'No service detail options are configured.',
-                                    onChanged: (_) => setSheetState(() {}),
-                                  ),
-                                const SizedBox(height: 8),
-                                _DeliveryLocationField(
-                                  fields: serviceFields[service.id]!,
-                                  onChanged: () => setSheetState(() {}),
-                                ),
-                                const SizedBox(height: 8),
-                                _DeliveryDateField(
+                                _ServiceDropdownField(
                                   controller:
-                                      serviceFields[service.id]!.deliveryDate,
-                                  onChanged: () => setSheetState(() {}),
+                                      serviceFields[service.id]!.tankerCount,
+                                  label: 'Tanker count',
+                                  options: service.tankerCountOptions,
+                                  emptyMessage:
+                                      'No tanker count options are configured.',
+                                  onChanged: (_) => setSheetState(() {}),
                                 ),
                               ],
-                            ),
+                              const SizedBox(height: 8),
+                              if (service.id != 'water_tanker')
+                                _ServiceDropdownField(
+                                  controller:
+                                      serviceFields[service.id]!.details,
+                                  label:
+                                      BookingServiceForm.forService(service.id)
+                                          .detailsLabel,
+                                  options: service.detailOptions,
+                                  emptyMessage:
+                                      'No service detail options are configured.',
+                                  onChanged: (_) => setSheetState(() {}),
+                                ),
+                              const SizedBox(height: 8),
+                              _DeliveryLocationField(
+                                fields: serviceFields[service.id]!,
+                                onChanged: () => setSheetState(() {}),
+                              ),
+                              const SizedBox(height: 8),
+                              _DeliveryDateField(
+                                controller:
+                                    serviceFields[service.id]!.deliveryDate,
+                                onChanged: () => setSheetState(() {}),
+                              ),
+                            ],
                           ),
                         ),
+                      ),
                     const SizedBox(height: 4),
                     Builder(
                       builder: (context) {
@@ -1445,7 +1505,8 @@ class _DeliveryLocationField extends StatelessWidget {
                   if (!context.mounted) return;
                   await showAppPermissionDialog(
                     context,
-                    message: 'Turn on location services to use your current location.',
+                    message:
+                        'Turn on location services to use your current location.',
                     onOpenSettings: () {
                       unawaited(Geolocator.openLocationSettings());
                     },
@@ -1460,7 +1521,8 @@ class _DeliveryLocationField extends StatelessWidget {
                   if (!context.mounted) return;
                   await showAppPermissionDialog(
                     context,
-                    message: 'Allow location access in device settings to use your current location.',
+                    message:
+                        'Allow location access in device settings to use your current location.',
                     onOpenSettings: () {
                       unawaited(Geolocator.openAppSettings());
                     },

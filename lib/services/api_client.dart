@@ -163,6 +163,52 @@ class ApiClient {
     }
   }
 
+  Future<String> requestPhoneAuthOtp(String phone) async {
+    final normalized = normalizeIndianPhone(phone);
+    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
+      throw const FormatException('Enter a valid 10-digit mobile number.');
+    }
+    final response = await request(
+      'POST',
+      '/auth/phone/request-otp',
+      body: {'phone': normalized},
+      retry: false,
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic> ||
+        decoded['challengeId'] is! String) {
+      throw const FormatException('The phone sign-in response was invalid.');
+    }
+    return decoded['challengeId'] as String;
+  }
+
+  Future<AuthResult> verifyPhoneAuthOtp({
+    required String phone,
+    required String challengeId,
+    required String otp,
+    String? name,
+  }) async {
+    final normalized = normalizeIndianPhone(phone);
+    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
+      throw const FormatException('Enter a valid 10-digit mobile number.');
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(otp.trim())) {
+      throw const FormatException('Enter the 6-digit verification code.');
+    }
+    final response = await request(
+      'POST',
+      '/auth/phone/verify-otp',
+      body: {
+        'phone': normalized,
+        'challengeId': challengeId,
+        'otp': otp.trim(),
+        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+      },
+      retry: false,
+    );
+    return _saveAuthResult(jsonDecode(response.body));
+  }
+
   Future<PhoneVerificationState> phoneVerification() async {
     final response = await request('GET', '/customer/phone-verification');
     final decoded = jsonDecode(response.body);

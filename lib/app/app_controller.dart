@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/session.dart';
 import '../services/api_client.dart';
+import '../services/biometric_auth_service.dart';
 import '../services/realtime_service.dart';
 import '../services/push_notification_service.dart';
 
@@ -13,14 +14,22 @@ class AppController extends ChangeNotifier {
   AppController({
     required this.api,
     required SharedPreferences preferences,
-  }) : _preferences = preferences;
+    BiometricAuthService? biometricAuth,
+  })  : _preferences = preferences,
+        biometricAuth = biometricAuth ?? BiometricAuthService();
 
   final ApiClient api;
   final SharedPreferences _preferences;
+  final BiometricAuthService biometricAuth;
   SessionUser? user;
   RealtimeService? realtime;
   ThemeMode themeMode = ThemeMode.system;
   bool busy = false;
+  bool biometricEnabled = false;
+  bool biometricLocked = false;
+  bool biometricPromptOffered = false;
+  bool pendingBiometricEnrollment = false;
+  String? phoneOtpChallengeId;
   String? errorMessage;
   String? successMessage;
   late final PushNotificationService pushNotifications =
@@ -41,6 +50,10 @@ class AppController extends ChangeNotifier {
     controller.themeMode =
         themeModeFromName(preferences.getString('theme_mode')) ??
             ThemeMode.system;
+    controller.biometricEnabled =
+        preferences.getBool('biometric_enabled') ?? false;
+    controller.biometricPromptOffered =
+        preferences.getBool('biometric_prompt_offered') ?? false;
     final rawUser = preferences.getString('session_user');
     final token = await controller.api.readAccessToken();
     final refreshToken = await controller.api.readRefreshToken();
@@ -61,13 +74,80 @@ class AppController extends ChangeNotifier {
         await controller.api.clearTokens();
       }
     }
+    controller.biometricLocked =
+        controller.user != null && controller.biometricEnabled;
     return controller;
+  }
+
+  Future<void> requestPhoneAuthOtp(String phone) async {
+    await _run(() async {
+      phoneOtpChallengeId = await api.requestPhoneAuthOtp(phone);
+      successMessage = 'Verification code sent. It expires in 10 minutes.';
+    });
+  }
+
+  Future<void> signInWithPhoneAuthOtp({
+    required String phone,
+    required String otp,
+    String? name,
+  }) async {
+    await _run(() async {
+      final challengeId = phoneOtpChallengeId;
+      if (challengeId == null) {
+        throw StateError('Request a verification code before signing in.');
+      }
+      final result = await api.verifyPhoneAuthOtp(
+        phone: phone,
+        challengeId: challengeId,
+        otp: otp,
+        name: name,
+      );
+      phoneOtpChallengeId = null;
+      _setSession(result);
+      pendingBiometricEnrollment = !biometricEnabled && !biometricPromptOffered;
+    });
+  }
+
+  Future<void> markBiometricPromptOffered() async {
+    biometricPromptOffered = true;
+    await _preferences.setBool('biometric_prompt_offered', true);
+    notifyListeners();
+  }
+
+  Future<void> setBiometricEnabled(bool enabled) async {
+    biometricEnabled = enabled;
+    biometricLocked = false;
+    pendingBiometricEnrollment = false;
+    await _preferences.setBool('biometric_enabled', enabled);
+    if (!enabled) {
+      biometricPromptOffered = false;
+      await _preferences.setBool('biometric_prompt_offered', false);
+    }
+    notifyListeners();
+  }
+
+  void lockBiometricSession() {
+    if (user == null || !biometricEnabled || biometricLocked) return;
+    biometricLocked = true;
+    notifyListeners();
+  }
+
+  void unlockBiometricSession() {
+    if (!biometricLocked) return;
+    biometricLocked = false;
+    notifyListeners();
+  }
+
+  Future<void> usePhoneOtpRecovery() async {
+    await setBiometricEnabled(false);
+    await signOut();
   }
 
   Future<void> signIn(String credential, String password) async {
     await _run(() async {
       final result = await api.login(credential.trim(), password);
       _setSession(result);
+      pendingBiometricEnrollment = !biometricEnabled && !biometricPromptOffered;
     });
   }
 

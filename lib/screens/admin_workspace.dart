@@ -215,10 +215,29 @@ class AdminReportsScreen extends ConsumerWidget {
           children: [
             Text('Reports', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 16),
-            _MetricTile(
-              label: 'Registered vendors',
-              value: '${items.length}',
-              icon: Icons.storefront_outlined,
+            Card(
+              child: ExpansionTile(
+                leading: const Icon(Icons.storefront_outlined),
+                title: Text('Registered vendors (${items.length})'),
+                subtitle: const Text('Tap to view registered vendor accounts'),
+                children: items.isEmpty
+                    ? const [
+                        ListTile(
+                          title: Text('No registered vendors yet.'),
+                        ),
+                      ]
+                    : items
+                        .map(
+                          (vendor) => ListTile(
+                            leading: const CircleAvatar(
+                              child: Icon(Icons.storefront_outlined),
+                            ),
+                            title: Text(_registeredVendorName(vendor)),
+                            subtitle: Text(_registeredVendorDetails(vendor)),
+                          ),
+                        )
+                        .toList(growable: false),
+              ),
             ),
             _AdminReportForm(),
           ],
@@ -226,6 +245,37 @@ class AdminReportsScreen extends ConsumerWidget {
       },
     );
   }
+}
+
+String _registeredVendorName(AccountRecord vendor) {
+  for (final key in [
+    'business_name',
+    'businessName',
+    'company_name',
+    'companyName',
+    'vendor_name',
+    'vendorName',
+    'display_name',
+    'displayName',
+    'name',
+    'title',
+  ]) {
+    final value = vendor.data[key]?.toString().trim();
+    if (value != null && value.isNotEmpty) return value;
+  }
+  return vendor.id.isEmpty ? 'Unnamed vendor' : 'Vendor ${vendor.id}';
+}
+
+String _registeredVendorDetails(AccountRecord vendor) {
+  final details = <String>[
+    for (final key in ['email', 'phone', 'phone_number', 'phoneNumber'])
+      if (vendor.data[key]?.toString().trim().isNotEmpty == true)
+        vendor.data[key].toString().trim(),
+    for (final key in ['verification_status', 'verificationStatus', 'status'])
+      if (vendor.data[key]?.toString().trim().isNotEmpty == true)
+        vendor.data[key].toString().trim().replaceAll('_', ' '),
+  ];
+  return details.isEmpty ? 'No contact or status details available.' : details.join(' • ');
 }
 
 class _AdminOrdersSection extends ConsumerStatefulWidget {
