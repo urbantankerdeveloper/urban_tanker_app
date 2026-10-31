@@ -27,6 +27,8 @@ class _RecordingApiClient extends ApiClient {
     String method,
     String path, {
     Map<String, dynamic>? body,
+    List<int>? bodyBytes,
+    String contentType = 'application/json',
     bool retry = true,
   }) async {
     requestPath = path;
@@ -45,6 +47,8 @@ class _VendorUploadApiClient extends ApiClient {
     String method,
     String path, {
     Map<String, dynamic>? body,
+    List<int>? bodyBytes,
+    String contentType = 'application/json',
     bool retry = true,
   }) async {
     expect(method, 'POST');

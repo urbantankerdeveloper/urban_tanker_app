@@ -802,19 +802,25 @@ class ApiClient {
     String method,
     String path, {
     Map<String, dynamic>? body,
+    List<int>? bodyBytes,
+    String contentType = 'application/json',
     bool retry = true,
   }) async {
     final token = await readAccessToken();
     final headers = <String, String>{
-      'Content-Type': 'application/json',
+      'Content-Type': contentType,
       'X-Client-Platform': 'mobile',
     };
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
     final httpRequest = http.Request(method, Uri.parse('$baseUrl$path'))
-      ..headers.addAll(headers)
-      ..body = body == null ? '' : jsonEncode(body);
+      ..headers.addAll(headers);
+    if (bodyBytes != null) {
+      httpRequest.bodyBytes = bodyBytes;
+    } else {
+      httpRequest.body = body == null ? '' : jsonEncode(body);
+    }
     final response = await _client
         .send(httpRequest)
         .then(http.Response.fromStream)
@@ -823,7 +829,14 @@ class ApiClient {
     if (response.statusCode == 401 && retry && path != '/auth/mobile-refresh') {
       final newToken = await _refreshAccessToken();
       if (newToken != null) {
-        return request(method, path, body: body, retry: false);
+        return request(
+          method,
+          path,
+          body: body,
+          bodyBytes: bodyBytes,
+          contentType: contentType,
+          retry: false,
+        );
       }
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -1185,11 +1198,47 @@ class ApiClient {
       throw const FormatException('The selected file name is invalid.');
     }
 
+    return _uploadToDocumentBucket(
+      path: 'vendor/${DateTime.now().millisecondsSinceEpoch}_$safeName',
+      contentType: contentType,
+      bytes: bytes,
+    );
+  }
+
+  Future<void> uploadCustomerSelfie({required List<int> bytes}) async {
+    if (bytes.isEmpty) {
+      throw const FormatException(
+          'The selfie could not be read. Please retake it.');
+    }
+    if (bytes.length > 3 * 1024 * 1024) {
+      throw const FormatException(
+          'The photo is larger than 3 MB. Choose a smaller photo.');
+    }
+    final isJpeg = bytes.length >= 3 &&
+        bytes[0] == 0xff &&
+        bytes[1] == 0xd8 &&
+        bytes[2] == 0xff;
+    if (!isJpeg) {
+      throw const FormatException('Choose a JPEG photo.');
+    }
+    await request(
+      'POST',
+      '/customer/profile/selfie',
+      bodyBytes: bytes,
+      contentType: 'image/jpeg',
+    );
+  }
+
+  Future<String> _uploadToDocumentBucket({
+    required String path,
+    required String contentType,
+    required List<int> bytes,
+  }) async {
     final signedResponse = await request(
       'POST',
       '/uploads/signed-url',
       body: {
-        'path': 'vendor/${DateTime.now().millisecondsSinceEpoch}_$safeName',
+        'path': path,
         'bucket': 'urban-tanker-documents',
         'contentType': contentType,
         'size': bytes.length,

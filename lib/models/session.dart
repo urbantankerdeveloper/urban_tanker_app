@@ -15,6 +15,7 @@ class SessionUser {
     required this.role,
     this.email,
     this.themeMode,
+    this.selfieRequired = false,
   });
 
   final String? id;
@@ -23,6 +24,7 @@ class SessionUser {
   final WorkspaceRole role;
   final String? email;
   final String? themeMode;
+  final bool selfieRequired;
 
   factory SessionUser.fromJson(Map<String, dynamic> json) {
     return SessionUser(
@@ -32,8 +34,19 @@ class SessionUser {
       role: roleFromString(json['role'] as String?),
       email: json['email'] as String?,
       themeMode: json['themeMode'] as String?,
+      selfieRequired: json['selfieRequired'] == true,
     );
   }
+
+  SessionUser copyWith({bool? selfieRequired}) => SessionUser(
+        id: id,
+        name: name,
+        username: username,
+        role: role,
+        email: email,
+        themeMode: themeMode,
+        selfieRequired: selfieRequired ?? this.selfieRequired,
+      );
 }
 
 class AuthResult {

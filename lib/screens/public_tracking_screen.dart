@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../models/booking.dart';
 import '../app/page_components.dart';
@@ -112,7 +114,8 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
                               style: Theme.of(context).textTheme.titleMedium),
                           const SizedBox(height: 8),
                           if (!tracking.trackingAvailable ||
-                              tracking.lastLocation == null)
+                              tracking.lastLocation?.latitude == null ||
+                              tracking.lastLocation?.longitude == null)
                             const Card(
                               child: ListTile(
                                 leading: Icon(Icons.location_off_outlined),
@@ -122,19 +125,17 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
                                 ),
                               ),
                             )
-                          else
-                            Card(
-                              child: ListTile(
-                                leading: const Icon(Icons.location_on_outlined),
-                                title: Text(
-                                  '${tracking.lastLocation!.latitude}, '
-                                  '${tracking.lastLocation!.longitude}',
-                                ),
-                                subtitle: Text(
-                                  'Updated ${_formatDateTime(tracking.lastLocation!.recordedAt)}',
-                                ),
-                              ),
+                          else ...[
+                            _VehicleMap(
+                              latitude: tracking.lastLocation!.latitude!,
+                              longitude: tracking.lastLocation!.longitude!,
                             ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Updated ${_formatDateTime(tracking.lastLocation!.recordedAt)}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
                           const SizedBox(height: 16),
                           Text('Status timeline',
                               style: Theme.of(context).textTheme.titleMedium),
@@ -186,6 +187,70 @@ class _TrackingField extends StatelessWidget {
           ),
         ),
       );
+}
+
+class _VehicleMap extends StatefulWidget {
+  const _VehicleMap({required this.latitude, required this.longitude});
+
+  final double latitude;
+  final double longitude;
+
+  @override
+  State<_VehicleMap> createState() => _VehicleMapState();
+}
+
+class _VehicleMapState extends State<_VehicleMap> {
+  final _controller = MapController();
+
+  @override
+  void didUpdateWidget(covariant _VehicleMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.latitude != widget.latitude ||
+        oldWidget.longitude != widget.longitude) {
+      _controller.move(LatLng(widget.latitude, widget.longitude), 15);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vehicle = LatLng(widget.latitude, widget.longitude);
+    return SizedBox(
+      height: 260,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: FlutterMap(
+          mapController: _controller,
+          options: MapOptions(initialCenter: vehicle, initialZoom: 15),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.urbantanker.app',
+            ),
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: vehicle,
+                  width: 44,
+                  height: 44,
+                  child: Icon(
+                    Icons.local_shipping,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 36,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 String _formatDateTime(DateTime? value) =>

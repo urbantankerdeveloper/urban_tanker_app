@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Capture vendor documents and delivery proof photos when you choose to submit them.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a selfie or a document photo from your photo library when you choose to upload it.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to unlock your Urban Tanker session.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
@@ -71,6 +73,17 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.urbantanker.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>urbantanker</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

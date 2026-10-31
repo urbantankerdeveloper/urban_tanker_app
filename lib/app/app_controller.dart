@@ -40,6 +40,8 @@ class AppController extends ChangeNotifier {
 
   bool get isSignedIn => user != null;
 
+  bool get requiresSelfie => user?.selfieRequired ?? false;
+
   static Future<AppController> create() async {
     final preferences = await SharedPreferences.getInstance();
     final controller = AppController(
@@ -218,6 +220,29 @@ class AppController extends ChangeNotifier {
         _ => null,
       };
 
+  void markSelfieCaptured() {
+    final current = user;
+    if (current == null) return;
+    final updated = current.copyWith(selfieRequired: false);
+    user = updated;
+    _persistSessionUser(updated);
+    notifyListeners();
+  }
+
+  void _persistSessionUser(SessionUser sessionUser) {
+    _preferences.setString(
+      'session_user',
+      jsonEncode({
+        'id': sessionUser.id,
+        'name': sessionUser.name,
+        'username': sessionUser.username,
+        'role': sessionUser.role.name,
+        'email': sessionUser.email,
+        'selfieRequired': sessionUser.selfieRequired,
+      }),
+    );
+  }
+
   void _setSession(AuthResult result) {
     user = result.user;
     final savedTheme = themeModeFromName(result.user.themeMode);
@@ -229,16 +254,7 @@ class AppController extends ChangeNotifier {
     if (userId != null) {
       unawaited(pushNotifications.identify(userId));
     }
-    _preferences.setString(
-      'session_user',
-      jsonEncode({
-        'id': result.user.id,
-        'name': result.user.name,
-        'username': result.user.username,
-        'role': result.user.role.name,
-        'email': result.user.email,
-      }),
-    );
+    _persistSessionUser(result.user);
     final socketUrl = const String.fromEnvironment('SOCKET_URL');
     realtime?.dispose();
     realtime = RealtimeService(
