@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
+import '../app/page_components.dart';
 import '../models/booking.dart';
 import '../models/booking_service_form.dart';
 import '../services/realtime_service.dart';
@@ -17,15 +18,14 @@ class BookingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bookings = ref.watch(bookingsProvider);
     return bookings.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => _BookingMessage(
-        icon: Icons.cloud_off_outlined,
-        message: error.toString(),
-        action: () => ref.invalidate(bookingsProvider),
+      loading: () => const AppStateView.loading(),
+      error: (error, _) => AppStateView.error(
+        error: error,
+        onRetry: () => ref.invalidate(bookingsProvider),
       ),
       data: (items) {
         if (items.isEmpty) {
-          return const _BookingMessage(
+          return const AppStateView.empty(
             icon: Icons.receipt_long_outlined,
             message: 'Your bookings will appear here.',
           );
@@ -33,7 +33,7 @@ class BookingsScreen extends ConsumerWidget {
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(bookingsProvider),
           child: ListView.separated(
-            padding: const EdgeInsets.all(16),
+            padding: AppPageInsets.standard,
             itemCount: items.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (context, index) => _BookingTile(
@@ -220,7 +220,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: AppPageInsets.standard,
         children: [
           Text(
             currentStatus.replaceAll('_', ' ').toUpperCase(),
@@ -325,10 +325,10 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
               ),
             ),
             error: (error, _) => Card(
-              child: ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: const Text('Tracking unavailable'),
-                subtitle: Text(error.toString()),
+              child: AppStateInline.error(
+                error: error,
+                message: 'Live tracking is temporarily unavailable.',
+                onRetry: _refreshTracking,
               ),
             ),
             data: (snapshot) => Card(
@@ -549,39 +549,6 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     } finally {
       review.dispose();
     }
-  }
-}
-
-class _BookingMessage extends StatelessWidget {
-  const _BookingMessage({
-    required this.icon,
-    required this.message,
-    this.action,
-  });
-
-  final IconData icon;
-  final String message;
-  final VoidCallback? action;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 44),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            if (action != null) ...[
-              const SizedBox(height: 12),
-              OutlinedButton(onPressed: action, child: const Text('Try again')),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 }
 

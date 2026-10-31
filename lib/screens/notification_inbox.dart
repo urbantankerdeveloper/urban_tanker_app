@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
+import '../app/page_components.dart';
 import '../models/notification.dart';
 
 class NotificationInbox extends StatefulWidget {
@@ -60,18 +61,17 @@ class _NotificationInboxState extends State<NotificationInbox> {
         future: _notifications,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const AppStateView.loading();
           }
           if (snapshot.hasError) {
-            return _InboxMessage(
-              icon: Icons.cloud_off_outlined,
-              message: snapshot.error.toString(),
-              action: _reload,
+            return AppStateView.error(
+              error: snapshot.error!,
+              onRetry: _reload,
             );
           }
           final groups = groupNotifications(snapshot.data ?? const []);
           if (groups.isEmpty) {
-            return const _InboxMessage(
+            return const AppStateView.empty(
               icon: Icons.notifications_none_outlined,
               message: 'You are all caught up.',
             );
@@ -79,7 +79,7 @@ class _NotificationInboxState extends State<NotificationInbox> {
           return RefreshIndicator(
             onRefresh: () async => _reload(),
             child: ListView.separated(
-              padding: const EdgeInsets.all(16),
+              padding: AppPageInsets.standard,
               itemCount: groups.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
@@ -178,38 +178,5 @@ class _NotificationInboxState extends State<NotificationInbox> {
       if (timestamp.isNotEmpty) timestamp,
       target,
     ].where((value) => value.isNotEmpty).join('\n');
-  }
-}
-
-class _InboxMessage extends StatelessWidget {
-  const _InboxMessage({
-    required this.icon,
-    required this.message,
-    this.action,
-  });
-
-  final IconData icon;
-  final String message;
-  final VoidCallback? action;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 44),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            if (action != null) ...[
-              const SizedBox(height: 12),
-              OutlinedButton(onPressed: action, child: const Text('Try again')),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 }

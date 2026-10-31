@@ -123,6 +123,7 @@ class ApiClient {
     required String password,
     required String name,
     required String phone,
+    String? themeMode,
   }) async {
     final response = await request('POST', '/auth/signup', body: {
       'email': email,
@@ -130,6 +131,7 @@ class ApiClient {
       'name': name,
       'phone': phone,
       'role': 'customer',
+      if (themeMode != null) 'themeMode': themeMode,
     });
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
@@ -872,6 +874,14 @@ class ApiClient {
         .whereType<Map<String, dynamic>>()
         .map(NotificationItem.fromJson)
         .toList();
+  }
+
+  Future<void> updateThemePreference(String themeMode) async {
+    await request(
+      'PATCH',
+      '/auth/preferences',
+      body: {'themeMode': themeMode},
+    );
   }
 
   Future<void> registerDevice({

@@ -38,11 +38,9 @@ class AppController extends ChangeNotifier {
       preferences: preferences,
     );
     await controller.pushNotifications.initialize();
-    controller.themeMode = switch (preferences.getString('theme_mode')) {
-      'light' => ThemeMode.light,
-      'dark' => ThemeMode.dark,
-      _ => ThemeMode.system,
-    };
+    controller.themeMode =
+        themeModeFromName(preferences.getString('theme_mode')) ??
+            ThemeMode.system;
     final rawUser = preferences.getString('session_user');
     final token = await controller.api.readAccessToken();
     final refreshToken = await controller.api.readRefreshToken();
@@ -85,6 +83,7 @@ class AppController extends ChangeNotifier {
         password: password,
         name: name.trim(),
         phone: phone.trim(),
+        themeMode: themeMode.name,
       );
       if (result == null) {
         successMessage =
@@ -117,6 +116,13 @@ class AppController extends ChangeNotifier {
     themeMode = mode;
     await _preferences.setString('theme_mode', mode.name);
     notifyListeners();
+    if (user != null) {
+      try {
+        await api.updateThemePreference(mode.name);
+      } catch (_) {
+        // The local choice is kept; it is sent again the next time it changes.
+      }
+    }
   }
 
   void clearError() {
@@ -125,8 +131,20 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  static ThemeMode? themeModeFromName(String? name) => switch (name) {
+        'light' => ThemeMode.light,
+        'dark' => ThemeMode.dark,
+        'system' => ThemeMode.system,
+        _ => null,
+      };
+
   void _setSession(AuthResult result) {
     user = result.user;
+    final savedTheme = themeModeFromName(result.user.themeMode);
+    if (savedTheme != null) {
+      themeMode = savedTheme;
+      unawaited(_preferences.setString('theme_mode', savedTheme.name));
+    }
     final userId = result.user.id;
     if (userId != null) {
       unawaited(pushNotifications.identify(userId));

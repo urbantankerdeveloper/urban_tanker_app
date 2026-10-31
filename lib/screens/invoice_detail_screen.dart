@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../app/providers.dart';
+import '../app/page_components.dart';
 import '../models/account.dart';
 
 class InvoiceDetailScreen extends ConsumerWidget {
@@ -20,20 +21,10 @@ class InvoiceDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Invoice')),
       body: invoice.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(error.toString()),
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: () =>
-                    ref.invalidate(customerInvoiceProvider(invoiceId)),
-                child: const Text('Try again'),
-              ),
-            ],
-          ),
+        loading: () => const AppStateView.loading(),
+        error: (error, _) => AppStateView.error(
+          error: error,
+          onRetry: () => ref.invalidate(customerInvoiceProvider(invoiceId)),
         ),
         data: (value) => _InvoiceBody(invoice: value),
       ),
@@ -49,7 +40,7 @@ class _InvoiceBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: AppPageInsets.standard,
       children: [
         Card(
           child: Padding(

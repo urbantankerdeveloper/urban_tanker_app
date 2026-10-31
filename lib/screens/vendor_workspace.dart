@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../app/providers.dart';
+import '../app/page_components.dart';
 import '../models/vendor.dart';
 import '../services/api_client.dart';
 import '../services/realtime_service.dart';
@@ -54,7 +55,7 @@ class _VendorOperationsScreenState
   Widget build(BuildContext context) {
     final orders = ref.watch(vendorOrdersProvider);
     return orders.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const AppStateView.loading(),
       error: (error, _) => _VendorError(
         message: error.toString(),
         retry: () => ref.invalidate(vendorOrdersProvider),
@@ -68,7 +69,7 @@ class _VendorOperationsScreenState
               ..invalidate(vendorDashboardProvider);
           },
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: AppPageInsets.standard,
             children: [
               TextField(
                 controller: _searchController,
@@ -204,10 +205,7 @@ class _OfflineMutationsCardState extends ConsumerState<_OfflineMutationsCard> {
         ),
         children: [
           mutations.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
+            loading: () => const AppStateInline.loading(),
             error: (error, _) => ListTile(
               title: const Text('Could not load pending mutations'),
               subtitle: Text(error.toString()),
@@ -571,7 +569,14 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
   Future<void> _startLocationSharing() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      _showLocationMessage('Turn on location services to share your location.');
+      if (!mounted) return;
+      await showAppPermissionDialog(
+        context,
+        message: 'Turn on location services to share your location.',
+        onOpenSettings: () {
+          unawaited(Geolocator.openLocationSettings());
+        },
+      );
       return;
     }
     var permission = await Geolocator.checkPermission();
@@ -580,11 +585,21 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
     }
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
-      _showLocationMessage(
-        permission == LocationPermission.deniedForever
-            ? 'Allow location access in device settings to share your location.'
-            : 'Location permission is required to share your location.',
-      );
+      if (permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        await showAppPermissionDialog(
+          context,
+          message:
+              'Allow location access in device settings to share your location.',
+          onOpenSettings: () {
+            unawaited(Geolocator.openAppSettings());
+          },
+        );
+      } else {
+        _showLocationMessage(
+          'Location permission is required to share your location.',
+        );
+      }
       return;
     }
     if (!mounted) return;
@@ -862,7 +877,7 @@ class VendorFleetScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final dashboard = ref.watch(vendorDashboardProvider);
     return dashboard.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const AppStateView.loading(),
       error: (error, _) => _VendorError(
         message: error.toString(),
         retry: () => ref.invalidate(vendorDashboardProvider),
@@ -870,7 +885,7 @@ class VendorFleetScreen extends ConsumerWidget {
       data: (value) => RefreshIndicator(
         onRefresh: () async => ref.invalidate(vendorDashboardProvider),
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: AppPageInsets.standard,
           children: [
             Row(
               children: [
@@ -1841,7 +1856,7 @@ class VendorEarningsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final payouts = ref.watch(vendorPayoutsProvider);
     return payouts.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const AppStateView.loading(),
       error: (error, _) => _VendorError(
         message: error.toString(),
         retry: () => ref.invalidate(vendorPayoutsProvider),
@@ -2031,18 +2046,9 @@ class _VendorError extends StatelessWidget {
   final String message;
   final VoidCallback retry;
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(message, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              OutlinedButton(onPressed: retry, child: const Text('Try again')),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => AppStateView.error(
+        error: message,
+        onRetry: retry,
       );
 }
 

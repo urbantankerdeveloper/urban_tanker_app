@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
+import '../app/page_components.dart';
 import '../app/theme.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -74,7 +75,7 @@ class _AuthScreenState extends State<AuthScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: AppPageInsets.standard,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: Form(
@@ -179,7 +180,12 @@ class _AuthScreenState extends State<AuthScreen> {
                     ],
                     if (controller.errorMessage != null) ...[
                       const SizedBox(height: 12),
-                      Text(controller.errorMessage!,
+                      Text(
+                          AppStateView.isNetworkError(
+                            controller.errorMessage!,
+                          )
+                              ? 'No network connection. Check your internet connection and try again.'
+                              : controller.errorMessage!,
                           style: TextStyle(
                               color: Theme.of(context).colorScheme.error)),
                     ],

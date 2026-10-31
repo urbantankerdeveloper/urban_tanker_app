@@ -18,6 +18,7 @@ class _FakeApiClient extends ApiClient {
     required String password,
     required String name,
     required String phone,
+    String? themeMode,
   }) async {
     if (signupError != null) throw ApiException(signupError!, 503);
     return null;

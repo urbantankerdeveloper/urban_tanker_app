@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../app/providers.dart';
+import '../app/page_components.dart';
 import '../models/account.dart';
 import '../models/notification.dart';
 import '../models/vendor.dart';
@@ -15,8 +16,11 @@ class AdminPulseScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final healthState = ref.watch(adminHealthProvider);
     return healthState.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => _AdminError(error: error.toString()),
+      loading: () => const AppStateView.loading(),
+      error: (error, _) => AppStateView.error(
+        error: error,
+        onRetry: () => ref.invalidate(adminHealthProvider),
+      ),
       data: (health) {
         final migrations = health['migrations'] is List
             ? (health['migrations'] as List).whereType<Map>().toList()
@@ -24,7 +28,7 @@ class AdminPulseScreen extends ConsumerWidget {
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(adminHealthProvider),
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: AppPageInsets.standard,
             children: [
               Text('Platform pulse',
                   style: Theme.of(context).textTheme.headlineSmall),
@@ -112,7 +116,7 @@ class AdminOperationsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: AppPageInsets.standard,
       children: [
         _AdminGroup(
           title: 'Bookings & dispatch',
@@ -198,18 +202,22 @@ class AdminReportsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return FutureBuilder<List<AccountRecord>>(
-      future: ref.read(appControllerProvider).api.adminVendors(),
-      builder: (context, snapshot) {
-        final count = snapshot.data?.length ?? 0;
+    final vendors = ref.watch(dispatcherVendorsProvider);
+    return vendors.when(
+      loading: () => const AppStateView.loading(message: 'Loading reports...'),
+      error: (error, _) => AppStateView.error(
+        error: error,
+        onRetry: () => ref.invalidate(dispatcherVendorsProvider),
+      ),
+      data: (items) {
         return ListView(
-          padding: const EdgeInsets.all(20),
+          padding: AppPageInsets.standard,
           children: [
             Text('Reports', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 16),
             _MetricTile(
               label: 'Registered vendors',
-              value: '$count',
+              value: '${items.length}',
               icon: Icons.storefront_outlined,
             ),
             _AdminReportForm(),
@@ -1886,19 +1894,6 @@ class _MetricTile extends StatelessWidget {
           leading: Icon(icon),
           title: Text(label),
           trailing: Text(value),
-        ),
-      );
-}
-
-class _AdminError extends StatelessWidget {
-  const _AdminError({required this.error});
-  final String error;
-
-  @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(error, textAlign: TextAlign.center),
         ),
       );
 }

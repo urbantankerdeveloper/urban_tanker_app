@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
+import '../app/page_components.dart';
 import '../models/account.dart';
 import '../services/api_client.dart';
 import 'invoice_detail_screen.dart';
@@ -14,7 +15,7 @@ class CustomerAccountScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(customerProfileProvider);
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: AppPageInsets.standard,
       children: [
         profile.when(
           loading: () => const LinearProgressIndicator(),
@@ -1003,18 +1004,8 @@ class _AccountError extends StatelessWidget {
   final VoidCallback retry;
 
   @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        Icons.error_outline,
-        color: Theme.of(context).colorScheme.error,
-      ),
-      title: const Text('Could not load this section'),
-      subtitle: Text(message),
-      trailing: IconButton(
-        onPressed: retry,
-        icon: const Icon(Icons.refresh),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AppStateInline.error(
+        error: message,
+        onRetry: retry,
+      );
 }

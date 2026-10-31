@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/booking.dart';
+import '../app/page_components.dart';
 import '../services/api_client.dart';
 
 class PublicTrackingScreen extends StatefulWidget {
@@ -59,20 +60,32 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
     final tracking = _tracking;
     return Scaffold(
       appBar: AppBar(title: const Text('Track your booking')),
-      body: _error != null
-          ? _TrackingError(message: _error!, onRetry: _refresh)
+      body: _error != null && tracking == null
+          ? AppStateView.error(error: _error!, onRetry: _refresh)
           : _loading && tracking == null
-              ? const Center(child: CircularProgressIndicator())
+              ? const AppStateView.loading(message: 'Loading your tracking details...')
               : tracking == null
-                  ? _TrackingError(
+                  ? AppStateView.empty(
+                      icon: Icons.link_off_outlined,
+                      title: 'Tracking link unavailable',
                       message: 'This tracking link is invalid or expired.',
-                      onRetry: _refresh,
+                      action: OutlinedButton(
+                        onPressed: _refresh,
+                        child: const Text('Refresh'),
+                      ),
                     )
                   : RefreshIndicator(
                       onRefresh: _refresh,
                       child: ListView(
-                        padding: const EdgeInsets.all(20),
+                        padding: AppPageInsets.standard,
                         children: [
+                          if (_error != null)
+                            AppStateInline.error(
+                              error: _error!,
+                              message:
+                                  'Could not refresh tracking. Showing the last available update.',
+                              onRetry: _refresh,
+                            ),
                           Text(
                             tracking.bookingReference,
                             style: Theme.of(context).textTheme.titleLarge,
@@ -169,28 +182,6 @@ class _TrackingField extends StatelessWidget {
               Text(label, style: Theme.of(context).textTheme.labelMedium),
               const SizedBox(height: 6),
               Text(value, style: Theme.of(context).textTheme.titleMedium),
-            ],
-          ),
-        ),
-      );
-}
-
-class _TrackingError extends StatelessWidget {
-  const _TrackingError({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(message, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              OutlinedButton(onPressed: onRetry, child: const Text('Refresh')),
             ],
           ),
         ),

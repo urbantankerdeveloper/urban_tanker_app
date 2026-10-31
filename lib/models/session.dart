@@ -14,6 +14,7 @@ class SessionUser {
     required this.username,
     required this.role,
     this.email,
+    this.themeMode,
   });
 
   final String? id;
@@ -21,6 +22,7 @@ class SessionUser {
   final String username;
   final WorkspaceRole role;
   final String? email;
+  final String? themeMode;
 
   factory SessionUser.fromJson(Map<String, dynamic> json) {
     return SessionUser(
@@ -29,6 +31,7 @@ class SessionUser {
       username: (json['username'] ?? json['email'] ?? '').toString(),
       role: roleFromString(json['role'] as String?),
       email: json['email'] as String?,
+      themeMode: json['themeMode'] as String?,
     );
   }
 }

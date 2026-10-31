@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
+import '../app/page_components.dart';
 import '../models/account.dart';
 import '../models/dispatcher.dart';
 
@@ -39,7 +40,7 @@ class _DispatcherDispatchScreenState
     return RefreshIndicator(
       onRefresh: () async => ref.invalidate(dispatcherOrdersProvider(filter)),
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: AppPageInsets.standard,
         children: [
           DropdownButtonFormField<String?>(
             initialValue: status,
@@ -74,8 +75,12 @@ class _DispatcherDispatchScreenState
           ),
           const SizedBox(height: 12),
           vendors.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (error, _) => Text('Vendor filter unavailable: $error'),
+            loading: () => const AppStateInline.loading(),
+            error: (error, _) => AppStateInline.error(
+              error: error,
+              message: 'Vendor filter unavailable: $error',
+              onRetry: () => ref.invalidate(dispatcherVendorsProvider),
+            ),
             data: (items) => DropdownButtonFormField<String?>(
               initialValue: vendorId,
               decoration: const InputDecoration(labelText: 'Vendor'),
@@ -149,7 +154,7 @@ class _DispatcherDispatchScreenState
           ),
           const SizedBox(height: 12),
           orders.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const AppStateInline.loading(),
             error: (error, _) => _DispatcherError(
               message: error.toString(),
               retry: () => ref.invalidate(dispatcherOrdersProvider(filter)),
@@ -489,7 +494,7 @@ class DispatcherLiveScreen extends ConsumerWidget {
                 .toList() ??
             const [];
         return ListView(
-          padding: const EdgeInsets.all(16),
+          padding: AppPageInsets.standard,
           children: [
             Text('Live operations',
                 style: Theme.of(context).textTheme.headlineSmall),
@@ -540,7 +545,7 @@ class _DispatcherAlertsScreenState
       data: (items) => RefreshIndicator(
         onRefresh: () async => ref.invalidate(dispatcherAlertsProvider(status)),
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: AppPageInsets.standard,
           children: [
             DropdownButtonFormField<String?>(
               initialValue: status,
@@ -667,17 +672,8 @@ class _DispatcherError extends StatelessWidget {
   final VoidCallback retry;
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(message, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              OutlinedButton(onPressed: retry, child: const Text('Try again')),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => AppStateInline.error(
+        error: message,
+        onRetry: retry,
       );
 }

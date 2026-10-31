@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
+import '../app/page_components.dart';
 import '../models/account.dart';
 
 class SupportRequestDetailScreen extends ConsumerWidget {
@@ -15,25 +16,11 @@ class SupportRequestDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Support request')),
       body: request.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.cloud_off_outlined, size: 44),
-                const SizedBox(height: 12),
-                Text(error.toString(), textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                OutlinedButton(
-                  onPressed: () =>
-                      ref.invalidate(customerSupportRequestProvider(requestId)),
-                  child: const Text('Try again'),
-                ),
-              ],
-            ),
-          ),
+        loading: () => const AppStateView.loading(),
+        error: (error, _) => AppStateView.error(
+          error: error,
+          onRetry: () =>
+              ref.invalidate(customerSupportRequestProvider(requestId)),
         ),
         data: (item) => _SupportRequestBody(item: item),
       ),
@@ -50,7 +37,7 @@ class _SupportRequestBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final timeline = item.timeline;
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: AppPageInsets.standard,
       children: [
         Text(item.title, style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),

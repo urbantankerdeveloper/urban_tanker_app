@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../app/app_controller.dart';
+import '../app/page_components.dart';
 import '../app/providers.dart';
 import '../app/theme.dart';
 import '../models/service.dart';
@@ -1130,7 +1131,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return RefreshIndicator(
       onRefresh: _loadServices,
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: AppPageInsets.standard,
         children: [
           Text('Good to see you, ${user.name.split(' ').first}.',
               style: Theme.of(context).textTheme.headlineSmall),
@@ -1170,7 +1171,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           if (_loadingServices)
-            const Center(child: CircularProgressIndicator())
+            const AppStateInline.loading()
           else if (_serviceError != null)
             _ErrorCard(message: _serviceError!, onRetry: _loadServices)
           else if (_services.isEmpty)
@@ -1193,7 +1194,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       WorkspaceRole.customer => 'Your account activity and saved details.',
     };
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: AppPageInsets.standard,
       children: [
         Text(tab.label, style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
@@ -1441,19 +1442,42 @@ class _DeliveryLocationField extends StatelessWidget {
             onPressed: () async {
               try {
                 if (!await Geolocator.isLocationServiceEnabled()) {
-                  throw const FormatException(
-                    'Turn on location services first.',
+                  if (!context.mounted) return;
+                  await showAppPermissionDialog(
+                    context,
+                    message: 'Turn on location services to use your current location.',
+                    onOpenSettings: () {
+                      unawaited(Geolocator.openLocationSettings());
+                    },
                   );
+                  return;
                 }
                 var permission = await Geolocator.checkPermission();
                 if (permission == LocationPermission.denied) {
                   permission = await Geolocator.requestPermission();
                 }
-                if (permission == LocationPermission.denied ||
-                    permission == LocationPermission.deniedForever) {
-                  throw const FormatException(
-                    'Location permission is required.',
+                if (permission == LocationPermission.deniedForever) {
+                  if (!context.mounted) return;
+                  await showAppPermissionDialog(
+                    context,
+                    message: 'Allow location access in device settings to use your current location.',
+                    onOpenSettings: () {
+                      unawaited(Geolocator.openAppSettings());
+                    },
                   );
+                  return;
+                }
+                if (permission == LocationPermission.denied) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Location permission is needed to use your current location.',
+                        ),
+                      ),
+                    );
+                  }
+                  return;
                 }
                 final position = await Geolocator.getCurrentPosition();
                 if (!isChennaiLocation(
@@ -1693,15 +1717,9 @@ class _ErrorCard extends StatelessWidget {
   final Future<void> Function() onRetry;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: ListTile(
-          leading: Icon(Icons.error_outline,
-              color: Theme.of(context).colorScheme.error),
-          title: const Text('Could not load services'),
-          subtitle: Text(message),
-          trailing:
-              IconButton(onPressed: onRetry, icon: const Icon(Icons.refresh)),
-        ),
+  Widget build(BuildContext context) => AppStateInline.error(
+        error: message,
+        onRetry: () => onRetry(),
       );
 }
 
