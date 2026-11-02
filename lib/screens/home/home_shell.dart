@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -36,6 +35,8 @@ import '../admin/admin_reports_screen.dart';
 import '../dispatcher_workspace.dart';
 import '../../services/service_area.dart';
 import '../../services/friendly_error.dart';
+import '../unlock_setup_screen.dart';
+import '../security_settings_screen.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({required this.controller, super.key});
@@ -89,68 +90,42 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _offerBiometricEnrollment();
+      _offerUnlockSetup();
     });
   }
 
-  Future<void> _offerBiometricEnrollment() async {
+  /// After the first sign-in, offers to set up an MPIN (and fingerprint).
+  Future<void> _offerUnlockSetup() async {
     final controller = widget.controller;
-    if (!controller.pendingBiometricEnrollment) return;
+    if (!controller.pendingUnlockSetup) return;
     await controller.markBiometricPromptOffered();
-    final available = await controller.biometricAuth.canAuthenticate();
     if (!mounted) return;
-    final enable = await showDialog<bool>(
+    final setUp = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.fingerprint),
-        title: const Text('Enable biometric unlock?'),
-        content: Text(
-          available
-              ? 'Use your fingerprint or device biometric to unlock this saved session.'
-              : 'No fingerprint or device biometric is enrolled. Set one up in your device settings, then sign in again to enable biometric unlock.',
+        icon: const Icon(Icons.lock_outline),
+        title: const Text('Set up quick unlock?'),
+        content: const Text(
+          'Create an MPIN so you can unlock the app without your password. You can also use your fingerprint if your device supports it.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Not now'),
           ),
-          if (available)
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Enable'),
-            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Set up'),
+          ),
         ],
       ),
     );
-    if (enable != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final authenticated = await controller.biometricAuth.authenticate(
-        'Confirm biometric unlock for Urban Tanker',
-      );
-      if (!mounted) return;
-      if (authenticated) {
-        await controller.setBiometricEnabled(true);
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Biometric unlock enabled.')),
-        );
-      } else {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Biometric unlock was not enabled.'),
-          ),
-        );
-      }
-    } on PlatformException catch (error) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            error.message ?? 'Biometric unlock could not be enabled.',
-          ),
-        ),
-      );
-    }
+    if (setUp != true || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UnlockSetupScreen(controller: controller),
+      ),
+    );
   }
 
   @override
@@ -1070,6 +1045,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 ),
               );
             },
+          ),
+          IconButton(
+            tooltip: 'Security',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SecuritySettingsScreen(
+                  controller: widget.controller,
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.lock_outline),
           ),
           IconButton(
             tooltip: 'Theme',

@@ -9,6 +9,7 @@ import '../services/api_client.dart';
 import '../services/biometric_auth_service.dart';
 import '../services/friendly_error.dart';
 import '../services/invoice_files.dart';
+import '../services/mpin_service.dart';
 import '../services/realtime_service.dart';
 import '../services/push_notification_service.dart';
 
@@ -17,20 +18,24 @@ class AppController extends ChangeNotifier {
     required this.api,
     required SharedPreferences preferences,
     BiometricAuthService? biometricAuth,
+    MpinService? mpin,
   })  : _preferences = preferences,
-        biometricAuth = biometricAuth ?? BiometricAuthService();
+        biometricAuth = biometricAuth ?? BiometricAuthService(),
+        mpin = mpin ?? MpinService(store: const SecureMpinStore());
 
   final ApiClient api;
   final SharedPreferences _preferences;
   final BiometricAuthService biometricAuth;
+  final MpinService mpin;
   SessionUser? user;
   RealtimeService? realtime;
   ThemeMode themeMode = ThemeMode.system;
   bool busy = false;
   bool biometricEnabled = false;
-  bool biometricLocked = false;
+  bool mpinEnabled = false;
+  bool sessionLocked = false;
   bool biometricPromptOffered = false;
-  bool pendingBiometricEnrollment = false;
+  bool pendingUnlockSetup = false;
   String? phoneOtpChallengeId;
   String? errorMessage;
   String? successMessage;
@@ -57,6 +62,7 @@ class AppController extends ChangeNotifier {
         preferences.getBool('biometric_enabled') ?? false;
     controller.biometricPromptOffered =
         preferences.getBool('biometric_prompt_offered') ?? false;
+    controller.mpinEnabled = await controller.mpin.isSet();
     final token = await controller.api.readAccessToken();
     final refreshToken = await controller.api.readRefreshToken();
     var rawUser = await controller.api.readSessionUser();
@@ -88,8 +94,8 @@ class AppController extends ChangeNotifier {
         await controller.api.clearSession();
       }
     }
-    controller.biometricLocked =
-        controller.user != null && controller.biometricEnabled;
+    controller.sessionLocked =
+        controller.user != null && controller.quickUnlockEnabled;
     return controller;
   }
 
@@ -118,7 +124,7 @@ class AppController extends ChangeNotifier {
       );
       phoneOtpChallengeId = null;
       _setSession(result);
-      pendingBiometricEnrollment = !biometricEnabled && !biometricPromptOffered;
+      pendingUnlockSetup = !quickUnlockEnabled && !biometricPromptOffered;
     });
   }
 
@@ -130,8 +136,8 @@ class AppController extends ChangeNotifier {
 
   Future<void> setBiometricEnabled(bool enabled) async {
     biometricEnabled = enabled;
-    biometricLocked = false;
-    pendingBiometricEnrollment = false;
+    sessionLocked = false;
+    pendingUnlockSetup = false;
     await _preferences.setBool('biometric_enabled', enabled);
     if (!enabled) {
       biometricPromptOffered = false;
@@ -140,19 +146,49 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void lockBiometricSession() {
-    if (user == null || !biometricEnabled || biometricLocked) return;
-    biometricLocked = true;
+  void lockSession() {
+    if (user == null || !quickUnlockEnabled || sessionLocked) return;
+    sessionLocked = true;
     notifyListeners();
   }
 
-  void unlockBiometricSession() {
-    if (!biometricLocked) return;
-    biometricLocked = false;
+  /// Fingerprint or MPIN can unlock the session.
+  bool get quickUnlockEnabled => biometricEnabled || mpinEnabled;
+
+  Future<void> setMpin(String pin) async {
+    await mpin.setPin(pin);
+    mpinEnabled = true;
+    pendingUnlockSetup = false;
+    notifyListeners();
+  }
+
+  /// Unlocks on a correct MPIN. After too many wrong tries the user is signed
+  /// out and must use the phone OTP flow again.
+  Future<MpinCheck> unlockWithMpin(String pin) async {
+    final check = await mpin.verify(pin);
+    if (check.isAccepted) {
+      unlockSession();
+    } else if (check.isLocked) {
+      await usePhoneOtpRecovery();
+    }
+    return check;
+  }
+
+  Future<void> disableMpin() async {
+    await mpin.clear();
+    mpinEnabled = false;
+    if (!biometricEnabled) sessionLocked = false;
+    notifyListeners();
+  }
+
+  void unlockSession() {
+    if (!sessionLocked) return;
+    sessionLocked = false;
     notifyListeners();
   }
 
   Future<void> usePhoneOtpRecovery() async {
+    await disableMpin();
     await setBiometricEnabled(false);
     await signOut();
   }
@@ -161,7 +197,7 @@ class AppController extends ChangeNotifier {
     await _run(() async {
       final result = await api.login(credential.trim(), password);
       _setSession(result);
-      pendingBiometricEnrollment = !biometricEnabled && !biometricPromptOffered;
+      pendingUnlockSetup = !quickUnlockEnabled && !biometricPromptOffered;
     });
   }
 
@@ -224,6 +260,7 @@ class AppController extends ChangeNotifier {
     realtime?.dispose();
     realtime = null;
     user = null;
+    sessionLocked = false;
     try {
       await api.clearSession();
     } catch (_) {

@@ -4,7 +4,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../screens/biometric_lock_screen.dart';
+import '../screens/app_lock_screen.dart';
 import '../screens/public_tracking_screen.dart';
 import '../services/tracking_link.dart';
 import 'providers.dart';
@@ -64,7 +64,7 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final controller = ref.read(appControllerProvider);
     if (state == AppLifecycleState.paused) {
-      controller.lockBiometricSession();
+      controller.lockSession();
       controller.realtime?.pause();
     } else if (state == AppLifecycleState.resumed) {
       controller.realtime?.resume();
@@ -98,8 +98,8 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
               child: child ?? const SizedBox.shrink(),
             ),
           ),
-          if (controller.biometricLocked)
-            BiometricLockScreen(controller: controller),
+          if (controller.sessionLocked)
+            AppLockScreen(controller: controller),
         ],
       ),
       home: controller.isSignedIn

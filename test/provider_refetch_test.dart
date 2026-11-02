@@ -33,8 +33,8 @@ void main() {
 
     await controller.setThemeMode(ThemeMode.dark);
     await controller.setBiometricEnabled(true);
-    controller.lockBiometricSession();
-    controller.unlockBiometricSession();
+    controller.lockSession();
+    controller.unlockSession();
     await Future<void>.delayed(Duration.zero);
 
     expect(api.adminHealthCalls, 1);
