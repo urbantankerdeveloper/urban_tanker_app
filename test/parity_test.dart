@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:urban_tanker_app/models/vendor.dart';
-import 'package:urban_tanker_app/screens/home_shell.dart';
+import 'package:urban_tanker_app/screens/home/home_shell.dart';
 
 void main() {
   group('VendorOrder parity', () {

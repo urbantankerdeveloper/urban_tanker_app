@@ -11,7 +11,7 @@ import 'providers.dart';
 import 'page_components.dart';
 import 'theme.dart';
 import '../screens/auth_screen.dart';
-import '../screens/home_shell.dart';
+import '../screens/home/home_shell.dart';
 import '../screens/selfie_capture_screen.dart';
 
 class UrbanTankerApp extends ConsumerStatefulWidget {
@@ -92,7 +92,12 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
       builder: (context, child) => Stack(
         fit: StackFit.expand,
         children: [
-          ConnectivityBanner(child: child ?? const SizedBox.shrink()),
+          ConnectivityBanner(
+            child: SlowServerBanner(
+              slow: controller.api.slowRequest,
+              child: child ?? const SizedBox.shrink(),
+            ),
+          ),
           if (controller.biometricLocked)
             BiometricLockScreen(controller: controller),
         ],

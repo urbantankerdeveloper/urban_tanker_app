@@ -300,9 +300,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     if (controller.errorMessage != null) ...[
                       const SizedBox(height: 12),
                       Text(
-                        AppStateView.isNetworkError(controller.errorMessage!)
-                            ? 'No network connection. Check your internet connection and try again.'
-                            : controller.errorMessage!,
+                        controller.errorMessage!,
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.error,
                         ),

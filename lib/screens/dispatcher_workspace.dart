@@ -5,6 +5,7 @@ import '../app/providers.dart';
 import '../app/page_components.dart';
 import '../models/account.dart';
 import '../models/dispatcher.dart';
+import '../services/friendly_error.dart';
 
 class DispatcherDispatchScreen extends ConsumerStatefulWidget {
   const DispatcherDispatchScreen({super.key});
@@ -37,173 +38,181 @@ class _DispatcherDispatchScreenState
     );
     final orders = ref.watch(dispatcherOrdersProvider(filter));
     final vendors = ref.watch(dispatcherVendorsProvider);
-    return RefreshIndicator(
-      onRefresh: () async => ref.invalidate(dispatcherOrdersProvider(filter)),
-      child: ListView(
-        padding: AppPageInsets.standard,
-        children: [
-          DropdownButtonFormField<String?>(
-            initialValue: status,
-            decoration: const InputDecoration(labelText: 'Filter status'),
-            items: const [
-              DropdownMenuItem(value: null, child: Text('All statuses')),
-              DropdownMenuItem(
-                value: 'pending_vendor',
-                child: Text('Pending assignment'),
+    // Fixed filters above the orders. Only the order rows are built lazily.
+    final header = <Widget>[
+      DropdownButtonFormField<String?>(
+        initialValue: status,
+        decoration: const InputDecoration(labelText: 'Filter status'),
+        items: const [
+          DropdownMenuItem(value: null, child: Text('All statuses')),
+          DropdownMenuItem(
+            value: 'pending_vendor',
+            child: Text('Pending assignment'),
+          ),
+          DropdownMenuItem(value: 'vendor_assigned', child: Text('Assigned')),
+          DropdownMenuItem(value: 'en_route', child: Text('En route')),
+          DropdownMenuItem(value: 'arrived', child: Text('Arrived')),
+          DropdownMenuItem(value: 'delivered', child: Text('Delivered')),
+        ],
+        onChanged: (value) => setState(() {
+          status = value;
+          page = 1;
+        }),
+      ),
+      const SizedBox(height: 12),
+      TextFormField(
+        decoration: const InputDecoration(
+          labelText: 'Service code',
+          prefixIcon: Icon(Icons.water_drop_outlined),
+        ),
+        onChanged: (value) => setState(() {
+          service = value.trim().isEmpty ? null : value.trim();
+          page = 1;
+        }),
+      ),
+      const SizedBox(height: 12),
+      vendors.when(
+        loading: () => const AppStateInline.loading(),
+        error: (error, _) => AppStateInline.error(
+          error: error,
+          message: 'Vendor filter unavailable: $error',
+          onRetry: () => ref.invalidate(dispatcherVendorsProvider),
+        ),
+        data: (items) => DropdownButtonFormField<String?>(
+          initialValue: vendorId,
+          decoration: const InputDecoration(labelText: 'Vendor'),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('All vendors'),
+            ),
+            ...items.map(
+              (vendor) => DropdownMenuItem<String?>(
+                value: vendor.id,
+                child: Text(vendor.title),
               ),
-              DropdownMenuItem(
-                  value: 'vendor_assigned', child: Text('Assigned')),
-              DropdownMenuItem(value: 'en_route', child: Text('En route')),
-              DropdownMenuItem(value: 'arrived', child: Text('Arrived')),
-              DropdownMenuItem(value: 'delivered', child: Text('Delivered')),
-            ],
-            onChanged: (value) => setState(() {
-              status = value;
-              page = 1;
-            }),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            decoration: const InputDecoration(
-              labelText: 'Service code',
-              prefixIcon: Icon(Icons.water_drop_outlined),
             ),
-            onChanged: (value) => setState(() {
-              service = value.trim().isEmpty ? null : value.trim();
-              page = 1;
-            }),
+          ],
+          onChanged: (value) => setState(() {
+            vendorId = value;
+            page = 1;
+          }),
+        ),
+      ),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<bool?>(
+        initialValue: assigned,
+        decoration: const InputDecoration(labelText: 'Assignment'),
+        items: const [
+          DropdownMenuItem<bool?>(
+            value: null,
+            child: Text('Assigned and unassigned'),
           ),
-          const SizedBox(height: 12),
-          vendors.when(
-            loading: () => const AppStateInline.loading(),
-            error: (error, _) => AppStateInline.error(
-              error: error,
-              message: 'Vendor filter unavailable: $error',
-              onRetry: () => ref.invalidate(dispatcherVendorsProvider),
-            ),
-            data: (items) => DropdownButtonFormField<String?>(
-              initialValue: vendorId,
-              decoration: const InputDecoration(labelText: 'Vendor'),
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text('All vendors'),
-                ),
-                ...items.map(
-                  (vendor) => DropdownMenuItem<String?>(
-                    value: vendor.id,
-                    child: Text(vendor.title),
-                  ),
-                ),
-              ],
-              onChanged: (value) => setState(() {
-                vendorId = value;
+          DropdownMenuItem<bool?>(
+            value: true,
+            child: Text('Assigned only'),
+          ),
+          DropdownMenuItem<bool?>(
+            value: false,
+            child: Text('Unassigned only'),
+          ),
+        ],
+        onChanged: (value) => setState(() {
+          assigned = value;
+          page = 1;
+        }),
+      ),
+      const SizedBox(height: 12),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          OutlinedButton.icon(
+            onPressed: () => _chooseDate(
+              (value) => setState(() {
+                from = value;
                 page = 1;
               }),
             ),
+            icon: const Icon(Icons.calendar_today_outlined),
+            label: Text(from == null ? 'From date' : 'From $from'),
           ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<bool?>(
-            initialValue: assigned,
-            decoration: const InputDecoration(labelText: 'Assignment'),
-            items: const [
-              DropdownMenuItem<bool?>(
-                value: null,
-                child: Text('Assigned and unassigned'),
-              ),
-              DropdownMenuItem<bool?>(
-                value: true,
-                child: Text('Assigned only'),
-              ),
-              DropdownMenuItem<bool?>(
-                value: false,
-                child: Text('Unassigned only'),
-              ),
-            ],
-            onChanged: (value) => setState(() {
-              assigned = value;
-              page = 1;
-            }),
+          OutlinedButton.icon(
+            onPressed: () => _chooseDate(
+              (value) => setState(() {
+                to = value;
+                page = 1;
+              }),
+            ),
+            icon: const Icon(Icons.event_outlined),
+            label: Text(to == null ? 'To date' : 'To $to'),
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _chooseDate(
-                  (value) => setState(() {
-                    from = value;
-                    page = 1;
-                  }),
-                ),
-                icon: const Icon(Icons.calendar_today_outlined),
-                label: Text(from == null ? 'From date' : 'From $from'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _chooseDate(
-                  (value) => setState(() {
-                    to = value;
-                    page = 1;
-                  }),
-                ),
-                icon: const Icon(Icons.event_outlined),
-                label: Text(to == null ? 'To date' : 'To $to'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          orders.when(
-            loading: () => const AppStateInline.loading(),
-            error: (error, _) => _DispatcherError(
-              message: error.toString(),
+        ],
+      ),
+      const SizedBox(height: 12),
+    ];
+    // Each entry builds one order row, the empty message, or the pager, so
+    // the rows are only created when they scroll into view.
+    final body = orders.when<List<Widget Function()>>(
+      loading: () => [() => const AppStateInline.loading()],
+      error: (error, _) => [
+        () => _DispatcherError(
+              message: friendlyError(error),
               retry: () => ref.invalidate(dispatcherOrdersProvider(filter)),
             ),
-            data: (pageData) {
-              final rows = (pageData['rows'] as List?)
-                      ?.whereType<Map<String, dynamic>>()
-                      .toList() ??
-                  const [];
-              if (rows.isEmpty) {
-                return const _DispatcherEmpty(message: 'No dispatch orders.');
-              }
-              final currentPage = (pageData['page'] as num?)?.toInt() ?? page;
-              final total = (pageData['total'] as num?)?.toInt() ?? rows.length;
-              final pageSize = (pageData['pageSize'] as num?)?.toInt() ?? 25;
-              return Column(
-                children: [
-                  ...rows.map((row) => _DispatchOrderCard(order: row)),
-                  if (total > pageSize)
+      ],
+      data: (pageData) {
+        final rows = (pageData['rows'] as List?)
+                ?.whereType<Map<String, dynamic>>()
+                .toList() ??
+            const [];
+        if (rows.isEmpty) {
+          return [
+            () => const _DispatcherEmpty(message: 'No dispatch orders.'),
+          ];
+        }
+        final currentPage = (pageData['page'] as num?)?.toInt() ?? page;
+        final total = (pageData['total'] as num?)?.toInt() ?? rows.length;
+        final pageSize = (pageData['pageSize'] as num?)?.toInt() ?? 25;
+        return [
+          for (final row in rows) () => _DispatchOrderCard(order: row),
+          if (total > pageSize)
+            () => Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Page $currentPage of ${(total / pageSize).ceil()}'),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                            'Page $currentPage of ${(total / pageSize).ceil()}'),
-                        Row(
-                          children: [
-                            IconButton(
-                              tooltip: 'Previous page',
-                              onPressed: currentPage > 1
-                                  ? () => setState(() => page = currentPage - 1)
-                                  : null,
-                              icon: const Icon(Icons.chevron_left),
-                            ),
-                            IconButton(
-                              tooltip: 'Next page',
-                              onPressed: currentPage * pageSize < total
-                                  ? () => setState(() => page = currentPage + 1)
-                                  : null,
-                              icon: const Icon(Icons.chevron_right),
-                            ),
-                          ],
+                        IconButton(
+                          tooltip: 'Previous page',
+                          onPressed: currentPage > 1
+                              ? () => setState(() => page = currentPage - 1)
+                              : null,
+                          icon: const Icon(Icons.chevron_left),
+                        ),
+                        IconButton(
+                          tooltip: 'Next page',
+                          onPressed: currentPage * pageSize < total
+                              ? () => setState(() => page = currentPage + 1)
+                              : null,
+                          icon: const Icon(Icons.chevron_right),
                         ),
                       ],
                     ),
-                ],
-              );
-            },
-          ),
-        ],
+                  ],
+                ),
+        ];
+      },
+    );
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(dispatcherOrdersProvider(filter)),
+      child: ListView.builder(
+        padding: AppPageInsets.standard,
+        itemCount: header.length + body.length,
+        itemBuilder: (_, index) {
+          if (index < header.length) return header[index];
+          return body[index - header.length]();
+        },
       ),
     );
   }
@@ -483,7 +492,7 @@ class DispatcherLiveScreen extends ConsumerWidget {
     return orders.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => _DispatcherError(
-        message: error.toString(),
+        message: friendlyError(error),
         retry: () => ref.invalidate(dispatcherOrdersProvider),
       ),
       data: (page) {
@@ -493,28 +502,34 @@ class DispatcherLiveScreen extends ConsumerWidget {
                     !['delivered', 'cancelled'].contains(row['status']))
                 .toList() ??
             const [];
-        return ListView(
+        // Fixed heading above the live rows; only the rows are built lazily.
+        final header = <Widget>[
+          Text('Live operations',
+              style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 12),
+        ];
+        return ListView.builder(
           padding: AppPageInsets.standard,
-          children: [
-            Text('Live operations',
-                style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 12),
-            if (rows.isEmpty)
-              const _DispatcherEmpty(message: 'No active live operations.')
-            else
-              ...rows.map(
-                (row) => Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.radar_outlined),
-                    title: Text((row['reference'] ?? row['id']).toString()),
-                    subtitle: Text(
-                      '${row['status'] ?? ''}\n'
-                      'Location: ${row['latitude'] ?? '—'}, ${row['longitude'] ?? '—'}',
-                    ),
-                  ),
+          itemCount: header.length + (rows.isEmpty ? 1 : rows.length),
+          itemBuilder: (_, index) {
+            if (index < header.length) return header[index];
+            if (rows.isEmpty) {
+              return const _DispatcherEmpty(
+                message: 'No active live operations.',
+              );
+            }
+            final row = rows[index - header.length];
+            return Card(
+              child: ListTile(
+                leading: const Icon(Icons.radar_outlined),
+                title: Text((row['reference'] ?? row['id']).toString()),
+                subtitle: Text(
+                  '${row['status'] ?? ''}\n'
+                  'Location: ${row['latitude'] ?? '—'}, ${row['longitude'] ?? '—'}',
                 ),
               ),
-          ],
+            );
+          },
         );
       },
     );
@@ -539,46 +554,53 @@ class _DispatcherAlertsScreenState
     return alerts.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => _DispatcherError(
-        message: error.toString(),
+        message: friendlyError(error),
         retry: () => ref.invalidate(dispatcherAlertsProvider(status)),
       ),
-      data: (items) => RefreshIndicator(
-        onRefresh: () async => ref.invalidate(dispatcherAlertsProvider(status)),
-        child: ListView(
-          padding: AppPageInsets.standard,
-          children: [
-            DropdownButtonFormField<String?>(
-              initialValue: status,
-              decoration: const InputDecoration(labelText: 'Alert status'),
-              items: const [
-                DropdownMenuItem(value: null, child: Text('Open alerts')),
-                DropdownMenuItem(value: 'resolved', child: Text('Resolved')),
-                DropdownMenuItem(value: 'dismissed', child: Text('Dismissed')),
-              ],
-              onChanged: (value) => setState(() => status = value),
-            ),
-            const SizedBox(height: 12),
-            if (items.isEmpty)
-              const _DispatcherEmpty(message: 'No dispatch alerts.')
-            else
-              ...items.map(
-                (item) => Card(
-                  child: ListTile(
-                    leading: Icon(
-                      item.status == 'open'
-                          ? Icons.warning_amber_outlined
-                          : Icons.check_circle_outline,
-                    ),
-                    title: Text(item.title),
-                    subtitle: Text('${item.detail}\nStatus: ${item.status}'),
-                    isThreeLine: true,
-                    onTap: () => _showAlert(context, item),
+      data: (items) {
+        // Fixed status filter above the alert rows; only the rows are lazy.
+        final header = <Widget>[
+          DropdownButtonFormField<String?>(
+            initialValue: status,
+            decoration: const InputDecoration(labelText: 'Alert status'),
+            items: const [
+              DropdownMenuItem(value: null, child: Text('Open alerts')),
+              DropdownMenuItem(value: 'resolved', child: Text('Resolved')),
+              DropdownMenuItem(value: 'dismissed', child: Text('Dismissed')),
+            ],
+            onChanged: (value) => setState(() => status = value),
+          ),
+          const SizedBox(height: 12),
+        ];
+        return RefreshIndicator(
+          onRefresh: () async =>
+              ref.invalidate(dispatcherAlertsProvider(status)),
+          child: ListView.builder(
+            padding: AppPageInsets.standard,
+            itemCount: header.length + (items.isEmpty ? 1 : items.length),
+            itemBuilder: (_, index) {
+              if (index < header.length) return header[index];
+              if (items.isEmpty) {
+                return const _DispatcherEmpty(message: 'No dispatch alerts.');
+              }
+              final item = items[index - header.length];
+              return Card(
+                child: ListTile(
+                  leading: Icon(
+                    item.status == 'open'
+                        ? Icons.warning_amber_outlined
+                        : Icons.check_circle_outline,
                   ),
+                  title: Text(item.title),
+                  subtitle: Text('${item.detail}\nStatus: ${item.status}'),
+                  isThreeLine: true,
+                  onTap: () => _showAlert(context, item),
                 ),
-              ),
-          ],
-        ),
-      ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 

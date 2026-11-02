@@ -10,6 +10,11 @@ import '../app/app_controller.dart';
 import '../services/photo_permissions.dart';
 import '../services/secure_screen.dart';
 import '../services/temporary_photo.dart';
+import '../services/friendly_error.dart';
+
+/// Longest side of the captured photo. Smaller photos upload faster and decode
+/// with less memory.
+const _photoSide = 720;
 
 class SelfieCaptureScreen extends StatefulWidget {
   const SelfieCaptureScreen({required this.controller, super.key});
@@ -66,8 +71,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
         imageQuality: 80,
-        maxWidth: 1080,
-        maxHeight: 1080,
+        maxWidth: _photoSide.toDouble(),
+        maxHeight: _photoSide.toDouble(),
         requestFullMetadata: pickerRequestsFullMetadata,
       );
       if (photo == null || !mounted) return;
@@ -102,7 +107,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       _photo = null;
       if (mounted) widget.controller.markSelfieCaptured();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = friendlyError(error));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -147,7 +152,11 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           )
-                        : Image.file(File(photo.path), fit: BoxFit.cover),
+                        : Image.file(
+                            File(photo.path),
+                            fit: BoxFit.cover,
+                            cacheWidth: _photoSide,
+                          ),
                   ),
                 ),
               ),

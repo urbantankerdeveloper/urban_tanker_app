@@ -7,6 +7,7 @@ import '../models/account.dart';
 import '../services/api_client.dart';
 import '../services/masking.dart';
 import '../services/secure_screen.dart';
+import '../services/friendly_error.dart';
 import 'invoice_detail_screen.dart';
 import 'support_request_detail_screen.dart';
 
@@ -23,7 +24,7 @@ class CustomerAccountScreen extends ConsumerWidget {
           profile.when(
             loading: () => const LinearProgressIndicator(),
             error: (error, _) => _AccountError(
-              message: error.toString(),
+              message: friendlyError(error),
               retry: () => ref.invalidate(customerProfileProvider),
             ),
             data: (user) => Card(
@@ -306,7 +307,7 @@ class CustomerAccountScreen extends ConsumerWidget {
                           if (dialogContext.mounted) {
                             setState(() {
                               saving = false;
-                              error = value.toString();
+                              error = friendlyError(value);
                             });
                           }
                         }
@@ -468,7 +469,7 @@ class CustomerAccountScreen extends ConsumerWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
+          SnackBar(content: Text(friendlyError(error))),
         );
       }
     }
@@ -509,7 +510,7 @@ class CustomerAccountScreen extends ConsumerWidget {
       } catch (error) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(error.toString())),
+            SnackBar(content: Text(friendlyError(error))),
           );
         }
       }
@@ -572,7 +573,7 @@ class CustomerAccountScreen extends ConsumerWidget {
       } catch (error) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(error.toString())),
+            SnackBar(content: Text(friendlyError(error))),
           );
         }
       }
@@ -630,7 +631,7 @@ class _UsageCard extends ConsumerWidget {
           child: LinearProgressIndicator(),
         ),
         error: (error, _) => _AccountError(
-          message: error.toString(),
+          message: friendlyError(error),
           retry: () => ref.invalidate(customerUsageProvider),
         ),
         data: (value) => Padding(
@@ -687,7 +688,7 @@ class _MembershipSection extends ConsumerWidget {
               child: CircularProgressIndicator(),
             ),
             error: (error, _) => _AccountError(
-              message: error.toString(),
+              message: friendlyError(error),
               retry: () => ref.invalidate(customerMembershipProvider),
             ),
             data: (value) => value == null
@@ -723,7 +724,7 @@ class _MembershipSection extends ConsumerWidget {
                         } catch (error) {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(error.toString())),
+                            SnackBar(content: Text(friendlyError(error))),
                           );
                         }
                       },
@@ -750,7 +751,7 @@ class _MembershipSection extends ConsumerWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
+          SnackBar(content: Text(friendlyError(error))),
         );
       }
       return;
@@ -764,43 +765,43 @@ class _MembershipSection extends ConsumerWidget {
                 padding: EdgeInsets.all(20),
                 child: Text('No membership plans are currently available.'),
               )
-            : ListView(
+            : ListView.builder(
                 shrinkWrap: true,
-                children: plans
-                    .map(
-                      (plan) => ListTile(
-                        title: Text(plan.title),
-                        subtitle: Text(plan.detail),
-                        onTap: plan.id.isEmpty
-                            ? null
-                            : () async {
-                                try {
-                                  await ref
-                                      .read(appControllerProvider)
-                                      .api
-                                      .requestMembership(plan.id);
-                                  ref.invalidate(customerMembershipProvider);
-                                  if (context.mounted) {
-                                    Navigator.pop(context);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Membership request submitted.',
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                } catch (error) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(error.toString())),
-                                    );
-                                  }
-                                }
-                              },
-                      ),
-                    )
-                    .toList(),
+                itemCount: plans.length,
+                itemBuilder: (_, index) {
+                  final plan = plans[index];
+                  return ListTile(
+                    title: Text(plan.title),
+                    subtitle: Text(plan.detail),
+                    onTap: plan.id.isEmpty
+                        ? null
+                        : () async {
+                            try {
+                              await ref
+                                  .read(appControllerProvider)
+                                  .api
+                                  .requestMembership(plan.id);
+                              ref.invalidate(customerMembershipProvider);
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Membership request submitted.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            } catch (error) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(friendlyError(error))),
+                                );
+                              }
+                            }
+                          },
+                  );
+                },
               ),
       ),
     );
@@ -872,7 +873,7 @@ class _AccountSection extends ConsumerWidget {
               child: CircularProgressIndicator(),
             ),
             error: (error, _) => _AccountError(
-              message: error.toString(),
+              message: friendlyError(error),
               retry: () => retry(ref),
             ),
             data: (items) => items.isEmpty
@@ -949,7 +950,7 @@ class _FormDialogState extends State<_FormDialog> {
       if (mounted) {
         setState(() {
           busy = false;
-          error = value.toString();
+          error = friendlyError(value);
         });
       }
     }

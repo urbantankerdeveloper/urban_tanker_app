@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:urban_tanker_app/app/providers.dart';
 import 'package:urban_tanker_app/models/account.dart';
-import 'package:urban_tanker_app/screens/admin_workspace.dart';
+import 'package:urban_tanker_app/screens/admin/admin_reports_screen.dart';
 
 void main() {
   testWidgets('registered vendors expand to show vendor details',

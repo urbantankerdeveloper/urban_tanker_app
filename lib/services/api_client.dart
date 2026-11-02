@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -70,6 +72,10 @@ String normalizeIndianPhone(String value) {
 
 class ApiException implements Exception {
   const ApiException(this.message, this.statusCode);
+
+  /// Used when the server sent no readable error message.
+  static String genericFailureMessage(int statusCode) =>
+      'Request failed ($statusCode).';
 
   final String message;
   final int statusCode;
@@ -883,6 +889,19 @@ class ApiClient {
         .toList();
   }
 
+  static const _slowRequestAfter = Duration(seconds: 3);
+  static const _retryDelays = [
+    Duration(milliseconds: 500),
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+  ];
+  static const _retryableStatusCodes = {502, 503, 504};
+
+  /// True while a request has taken longer than 3 seconds. The UI uses it to
+  /// show that the server is waking up.
+  final ValueNotifier<bool> slowRequest = ValueNotifier<bool>(false);
+  int _slowRequestCount = 0;
+
   Future<http.Response> request(
     String method,
     String path, {
@@ -890,31 +909,54 @@ class ApiClient {
     List<int>? bodyBytes,
     String contentType = 'application/json',
     bool retry = true,
+  }) =>
+      _trackSlowRequest(
+        _requestOnce(
+          method,
+          path,
+          body: body,
+          bodyBytes: bodyBytes,
+          contentType: contentType,
+          retry: retry,
+        ),
+      );
+
+  Future<T> _trackSlowRequest<T>(Future<T> operation) {
+    var slow = false;
+    final timer = Timer(_slowRequestAfter, () {
+      slow = true;
+      _slowRequestCount++;
+      slowRequest.value = true;
+    });
+    return operation.whenComplete(() {
+      timer.cancel();
+      if (slow) {
+        _slowRequestCount--;
+        slowRequest.value = _slowRequestCount > 0;
+      }
+    });
+  }
+
+  Future<http.Response> _requestOnce(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    List<int>? bodyBytes,
+    String contentType = 'application/json',
+    bool retry = true,
   }) async {
-    final token = await readAccessToken();
-    final headers = <String, String>{
-      'Content-Type': contentType,
-      'X-Client-Platform': 'mobile',
-    };
-    if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
-    }
-    final httpRequest = http.Request(method, Uri.parse('$baseUrl$path'))
-      ..headers.addAll(headers);
-    if (bodyBytes != null) {
-      httpRequest.bodyBytes = bodyBytes;
-    } else {
-      httpRequest.body = body == null ? '' : jsonEncode(body);
-    }
-    final response = await _client
-        .send(httpRequest)
-        .then(http.Response.fromStream)
-        .timeout(const Duration(seconds: 20));
+    final response = await _sendWithRetries(
+      method,
+      path,
+      body: body,
+      bodyBytes: bodyBytes,
+      contentType: contentType,
+    );
 
     if (response.statusCode == 401 && retry && path != '/auth/mobile-refresh') {
       final newToken = await _refreshAccessToken();
       if (newToken != null) {
-        return request(
+        return _requestOnce(
           method,
           path,
           body: body,
@@ -925,7 +967,7 @@ class ApiClient {
       }
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      var message = 'Request failed (${response.statusCode}).';
+      var message = ApiException.genericFailureMessage(response.statusCode);
       try {
         final decoded = _decodeBody(response);
         if (decoded is Map<String, dynamic>) {
@@ -958,6 +1000,66 @@ class ApiClient {
       throw ApiException(message, response.statusCode);
     }
     return response;
+  }
+
+  /// Sends the request. Only GET requests are retried, after timeouts, network
+  /// errors and 502/503/504 responses. Writes are never sent twice.
+  Future<http.Response> _sendWithRetries(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    List<int>? bodyBytes,
+    required String contentType,
+  }) async {
+    for (var attempt = 0;; attempt++) {
+      final canRetry = method == 'GET' && attempt < _retryDelays.length;
+      try {
+        final response = await _sendOnce(
+          method,
+          path,
+          body: body,
+          bodyBytes: bodyBytes,
+          contentType: contentType,
+        );
+        if (!canRetry || !_retryableStatusCodes.contains(response.statusCode)) {
+          return response;
+        }
+      } catch (error) {
+        if (!canRetry || !_isNetworkFailure(error)) rethrow;
+      }
+      await Future<void>.delayed(_retryDelays[attempt]);
+    }
+  }
+
+  bool _isNetworkFailure(Object error) =>
+      error is TimeoutException || error is SocketException;
+
+  Future<http.Response> _sendOnce(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    List<int>? bodyBytes,
+    required String contentType,
+  }) async {
+    final token = await readAccessToken();
+    final headers = <String, String>{
+      'Content-Type': contentType,
+      'X-Client-Platform': 'mobile',
+    };
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    final httpRequest = http.Request(method, Uri.parse('$baseUrl$path'))
+      ..headers.addAll(headers);
+    if (bodyBytes != null) {
+      httpRequest.bodyBytes = bodyBytes;
+    } else {
+      httpRequest.body = body == null ? '' : jsonEncode(body);
+    }
+    return _client
+        .send(httpRequest)
+        .then(http.Response.fromStream)
+        .timeout(const Duration(seconds: 20));
   }
 
   Future<String?> _refreshAccessToken() {

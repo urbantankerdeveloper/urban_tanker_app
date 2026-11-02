@@ -1,0 +1,64 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:urban_tanker_app/app/page_components.dart';
+import 'package:urban_tanker_app/app/theme.dart';
+
+Widget _scaled(Widget child) => MaterialApp(
+      theme: buildLightTheme(),
+      home: MediaQuery(
+        data: const MediaQueryData(
+          size: Size(360, 640),
+          textScaler: TextScaler.linear(1.5),
+        ),
+        child: Scaffold(body: child),
+      ),
+    );
+
+void main() {
+  testWidgets('error and empty states do not overflow at 1.5x text',
+      (tester) async {
+    await tester.pumpWidget(
+      _scaled(
+        AppStateView.error(
+          error: Exception('The server rejected the request.'),
+          onRetry: () {},
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(
+      _scaled(
+        const AppStateView.empty(
+          icon: Icons.receipt_long_outlined,
+          message: 'Your bookings will appear here.',
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('inline errors and the slow-server notice do not overflow',
+      (tester) async {
+    await tester.pumpWidget(
+      _scaled(
+        AppStateInline.error(
+          error: Exception('Something failed'),
+          onRetry: () {},
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(
+      _scaled(
+        SlowServerBanner(
+          slow: ValueNotifier<bool>(true),
+          child: const SizedBox.shrink(),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('Waking up the server, please wait...'), findsOneWidget);
+  });
+}

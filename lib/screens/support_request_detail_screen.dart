@@ -36,49 +36,59 @@ class _SupportRequestBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final timeline = item.timeline;
-    return ListView(
-      padding: AppPageInsets.standard,
-      children: [
-        Text(item.title, style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 8),
-        Chip(
-          avatar: const Icon(Icons.flag_outlined, size: 18),
-          label: Text(item.status.isEmpty ? 'Unknown status' : item.status),
+    // Fixed details above the conversation; only the timeline entries are lazy.
+    final header = <Widget>[
+      Text(item.title, style: Theme.of(context).textTheme.headlineSmall),
+      const SizedBox(height: 8),
+      Semantics(
+        label:
+            'Request status: ${item.status.isEmpty ? 'Unknown status' : item.status}',
+        child: ExcludeSemantics(
+          child: Chip(
+            avatar: const Icon(Icons.flag_outlined, size: 18),
+            label: Text(item.status.isEmpty ? 'Unknown status' : item.status),
+          ),
         ),
-        if (item.bookingId != null) ...[
-          const SizedBox(height: 8),
-          Text('Linked booking: ${item.bookingId}'),
-        ],
-        const SizedBox(height: 20),
-        Text('Conversation', style: Theme.of(context).textTheme.titleLarge),
+      ),
+      if (item.bookingId != null) ...[
         const SizedBox(height: 8),
-        if (timeline.isEmpty)
-          Card(
+        Text('Linked booking: ${item.bookingId}'),
+      ],
+      const SizedBox(height: 20),
+      Text('Conversation', style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 8),
+    ];
+    return ListView.builder(
+      padding: AppPageInsets.standard,
+      itemCount: header.length + (timeline.isEmpty ? 1 : timeline.length),
+      itemBuilder: (_, index) {
+        if (index < header.length) return header[index];
+        if (timeline.isEmpty) {
+          return Card(
             child: ListTile(
               leading: const Icon(Icons.message_outlined),
               title: Text(item.detail),
               subtitle: const Text('Customer message'),
             ),
-          )
-        else
-          ...timeline.map(
-            (entry) => Card(
-              child: ListTile(
-                leading: Icon(
-                  entry['type'] == 'support'
-                      ? Icons.support_agent_outlined
-                      : Icons.person_outline,
-                ),
-                title: Text(
-                  entry['type'] == 'support' ? 'Support team' : 'You',
-                ),
-                subtitle: Text(
-                  '${entry['message'] ?? ''}\n${_date(entry['createdAt'])}',
-                ),
-              ),
+          );
+        }
+        final entry = timeline[index - header.length];
+        return Card(
+          child: ListTile(
+            leading: Icon(
+              entry['type'] == 'support'
+                  ? Icons.support_agent_outlined
+                  : Icons.person_outline,
+            ),
+            title: Text(
+              entry['type'] == 'support' ? 'Support team' : 'You',
+            ),
+            subtitle: Text(
+              '${entry['message'] ?? ''}\n${_date(entry['createdAt'])}',
             ),
           ),
-      ],
+        );
+      },
     );
   }
 

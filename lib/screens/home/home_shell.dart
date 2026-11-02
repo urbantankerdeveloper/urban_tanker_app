@@ -8,29 +8,34 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
-import '../app/app_controller.dart';
-import '../app/page_components.dart';
-import '../app/providers.dart';
-import '../app/theme.dart';
-import '../models/service.dart';
-import '../models/booking_service_details.dart';
-import '../models/booking_service_form.dart';
-import '../services/api_client.dart';
-import '../services/realtime_service.dart';
-import '../models/booking.dart';
-import '../models/session.dart';
-import '../models/account.dart';
-import '../models/notification.dart';
-import '../models/workspace_navigation.dart';
-import 'notification_inbox.dart';
-import 'bookings_screen.dart';
-import 'invoice_detail_screen.dart';
-import 'support_request_detail_screen.dart';
-import 'customer_account_screen.dart';
-import 'vendor_workspace.dart';
-import 'admin_workspace.dart';
-import 'dispatcher_workspace.dart';
-import '../services/service_area.dart';
+import '../../app/app_controller.dart';
+import '../../app/page_components.dart';
+import '../../app/providers.dart';
+import '../../app/theme.dart';
+import '../../models/service.dart';
+import '../../models/booking_service_details.dart';
+import '../../models/booking_service_form.dart';
+import '../../services/api_client.dart';
+import '../../services/realtime_service.dart';
+import '../../models/booking.dart';
+import '../../models/session.dart';
+import '../../models/account.dart';
+import '../../models/notification.dart';
+import '../../models/workspace_navigation.dart';
+import '../notification_inbox.dart';
+import '../bookings_screen.dart';
+import '../invoice_detail_screen.dart';
+import '../support_request_detail_screen.dart';
+import '../customer_account_screen.dart';
+import '../vendor/vendor_operations_screen.dart';
+import '../vendor/vendor_fleet_screen.dart';
+import '../vendor/vendor_earnings_screen.dart';
+import '../admin/admin_pulse_screen.dart';
+import '../admin/admin_operations_screen.dart';
+import '../admin/admin_reports_screen.dart';
+import '../dispatcher_workspace.dart';
+import '../../services/service_area.dart';
+import '../../services/friendly_error.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({required this.controller, super.key});
@@ -174,7 +179,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     try {
       _services = await widget.controller.api.services();
     } catch (error) {
-      _serviceError = error.toString();
+      _serviceError = friendlyError(error);
     } finally {
       if (mounted) setState(() => _loadingServices = false);
     }
@@ -442,7 +447,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                 });
                               } catch (error) {
                                 setSheetState(
-                                    () => bookingFormError = error.toString());
+                                    () => bookingFormError = friendlyError(error));
                               }
                             },
                             child: const Text('Send OTP'),
@@ -474,7 +479,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                 });
                               } catch (error) {
                                 setSheetState(
-                                    () => bookingFormError = error.toString());
+                                    () => bookingFormError = friendlyError(error));
                               }
                             },
                             child: const Text('Verify OTP'),
@@ -591,17 +596,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                               context: context,
                               showDragHandle: true,
                               builder: (pickerContext) => SafeArea(
-                                child: ListView(
+                                child: ListView.builder(
                                   shrinkWrap: true,
-                                  children: [
-                                    for (final service in availableServices)
-                                      ListTile(
-                                        title: Text(service.name),
-                                        subtitle: Text(service.description),
-                                        onTap: () => Navigator.of(pickerContext)
-                                            .pop(service.id),
-                                      ),
-                                  ],
+                                  itemCount: availableServices.length,
+                                  itemBuilder: (_, index) {
+                                    final service = availableServices[index];
+                                    return ListTile(
+                                      title: Text(service.name),
+                                      subtitle: Text(service.description),
+                                      onTap: () => Navigator.of(pickerContext)
+                                          .pop(service.id),
+                                    );
+                                  },
                                 ),
                               ),
                             );
@@ -709,7 +715,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                   } catch (error) {
                                     setSheetState(() {
                                       validatedCoupon = null;
-                                      couponMessage = error.toString();
+                                      couponMessage = friendlyError(error);
                                     });
                                   } finally {
                                     if (context.mounted) {
@@ -917,7 +923,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                               } catch (error) {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(error.toString())),
+                                    SnackBar(content: Text(friendlyError(error))),
                                   );
                                 }
                               } finally {
@@ -1220,57 +1226,65 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Widget _customerOverview(SessionUser user) {
+    // The loading, error, or empty state is shown in place of the service cards.
+    final Widget? statusCard = _loadingServices
+        ? const AppStateInline.loading()
+        : _serviceError != null
+            ? _ErrorCard(message: _serviceError!, onRetry: _loadServices)
+            : _services.isEmpty
+                ? const _EmptyCard(
+                    message: 'No services are available right now.',
+                  )
+                : null;
+    // Fixed intro above the service cards. Only the service cards are lazy.
+    final header = <Widget>[
+      Text('Good to see you, ${user.name.split(' ').first}.',
+          style: Theme.of(context).textTheme.headlineSmall),
+      const SizedBox(height: 6),
+      const Text('Reliable water delivery, without the runaround.'),
+      const SizedBox(height: 22),
+      Card(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF17454D)
+            : ink,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('NEXT DELIVERY',
+                  style: TextStyle(color: mint, letterSpacing: 1.5)),
+              const SizedBox(height: 8),
+              Text('Book a tanker when you need it.',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(color: Colors.white)),
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: _services.isEmpty ? null : _createBooking,
+                icon: const Icon(Icons.arrow_forward),
+                label: const Text('Start a booking'),
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 24),
+      Text('Available services', style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 12),
+    ];
     return RefreshIndicator(
       onRefresh: _loadServices,
-      child: ListView(
+      child: ListView.builder(
         padding: AppPageInsets.standard,
-        children: [
-          Text('Good to see you, ${user.name.split(' ').first}.',
-              style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 6),
-          const Text('Reliable water delivery, without the runaround.'),
-          const SizedBox(height: 22),
-          Card(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF17454D)
-                : ink,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('NEXT DELIVERY',
-                      style: TextStyle(color: mint, letterSpacing: 1.5)),
-                  const SizedBox(height: 8),
-                  Text('Book a tanker when you need it.',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(color: Colors.white)),
-                  const SizedBox(height: 16),
-                  TextButton.icon(
-                    onPressed: _services.isEmpty ? null : _createBooking,
-                    icon: const Icon(Icons.arrow_forward),
-                    label: const Text('Start a booking'),
-                    style: TextButton.styleFrom(foregroundColor: Colors.white),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text('Available services',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          if (_loadingServices)
-            const AppStateInline.loading()
-          else if (_serviceError != null)
-            _ErrorCard(message: _serviceError!, onRetry: _loadServices)
-          else if (_services.isEmpty)
-            const _EmptyCard(message: 'No services are available right now.')
-          else
-            ..._services.map((service) => _ServiceCard(service: service)),
-        ],
+        itemCount: header.length + (statusCard == null ? _services.length : 1),
+        itemBuilder: (_, index) {
+          if (index < header.length) return header[index];
+          if (statusCard != null) return statusCard;
+          return _ServiceCard(service: _services[index - header.length]);
+        },
       ),
     );
   }
@@ -1392,7 +1406,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
+          SnackBar(content: Text(friendlyError(error))),
         );
       }
     }
@@ -1588,7 +1602,7 @@ class _DeliveryLocationField extends StatelessWidget {
               } catch (error) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(error.toString())),
+                    SnackBar(content: Text(friendlyError(error))),
                   );
                 }
               }
@@ -1645,10 +1659,12 @@ class _MapLocationPickerState extends State<_MapLocationPicker> {
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: const Text('Choose delivery location'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 360,
-          child: FlutterMap(
+        content: Semantics(
+          label: 'Map to choose the delivery location',
+          child: SizedBox(
+            width: double.maxFinite,
+            height: 360,
+            child: FlutterMap(
             options: MapOptions(
               initialCenter: _center,
               initialZoom: 11,
@@ -1688,6 +1704,7 @@ class _MapLocationPickerState extends State<_MapLocationPicker> {
                   ],
                 ),
             ],
+          ),
           ),
         ),
         actions: [
@@ -1935,7 +1952,7 @@ class _LiveQuoteSummaryState extends State<_LiveQuoteSummary> {
       setState(() {
         _loading = false;
         _quote = null;
-        _error = error.toString();
+        _error = friendlyError(error);
       });
     }
   }

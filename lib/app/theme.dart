@@ -8,7 +8,8 @@ const paper = Color(0xFFF5FBFC);
 const line = Color(0xFFDCE9E8);
 const mint = Color(0xFFC7EADB);
 const yellow = Color(0xFFF8CA63);
-const coral = Color(0xFFD96250);
+// Darkened from the brand coral so error text meets WCAG AA (4.5:1) on white.
+const coral = Color(0xFFB8432F);
 
 ThemeData _theme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
@@ -32,7 +33,7 @@ ThemeData _theme(Brightness brightness) {
       .toTheme;
   final scheme = theme.colorScheme;
   return theme.copyWith(
-    textTheme: theme.textTheme.apply(fontFamily: 'Poppins'),
+    textTheme: theme.textTheme.apply(fontFamily: 'Manrope'),
     appBarTheme: AppBarTheme(
       backgroundColor: dark ? const Color(0xFF0B1B1E) : paper,
       foregroundColor: scheme.onSurface,

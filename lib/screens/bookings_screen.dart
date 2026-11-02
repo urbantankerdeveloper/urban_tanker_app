@@ -8,14 +8,44 @@ import '../app/page_components.dart';
 import '../models/booking.dart';
 import '../models/booking_service_form.dart';
 import '../services/realtime_service.dart';
+import '../services/friendly_error.dart';
 
-class BookingsScreen extends ConsumerWidget {
+class BookingsScreen extends ConsumerStatefulWidget {
   const BookingsScreen({this.onBookAgain, super.key});
 
   final Future<void> Function(Booking booking)? onBookAgain;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BookingsScreen> createState() => _BookingsScreenState();
+}
+
+class _BookingsScreenState extends ConsumerState<BookingsScreen> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_loadMoreNearEnd);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_loadMoreNearEnd)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _loadMoreNearEnd() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 400) {
+      unawaited(ref.read(bookingsProvider.notifier).loadMore());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final bookings = ref.watch(bookingsProvider);
     return bookings.when(
       loading: () => const AppStateView.loading(),
@@ -23,7 +53,8 @@ class BookingsScreen extends ConsumerWidget {
         error: error,
         onRetry: () => ref.invalidate(bookingsProvider),
       ),
-      data: (items) {
+      data: (page) {
+        final items = page.items;
         if (items.isEmpty) {
           return const AppStateView.empty(
             icon: Icons.receipt_long_outlined,
@@ -33,16 +64,78 @@ class BookingsScreen extends ConsumerWidget {
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(bookingsProvider),
           child: ListView.separated(
+            controller: _scrollController,
             padding: AppPageInsets.standard,
-            itemCount: items.length,
+            itemCount: items.length + (page.hasMore ? 1 : 0),
             separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) => _BookingTile(
-              booking: items[index],
-              onBookAgain: onBookAgain,
-            ),
+            itemBuilder: (context, index) {
+              if (index == items.length) {
+                return _BookingsFooter(
+                  failed: page.loadMoreFailed,
+                  onVisible: () =>
+                      unawaited(ref.read(bookingsProvider.notifier).loadMore()),
+                  onRetry: () =>
+                      ref.read(bookingsProvider.notifier).retryLoadMore(),
+                );
+              }
+              return _BookingTile(
+                booking: items[index],
+                onBookAgain: widget.onBookAgain,
+              );
+            },
           ),
         );
       },
+    );
+  }
+}
+
+/// Shown as the last list row while more bookings exist. Asks for the next
+/// page once it is built, which covers lists too short to scroll.
+class _BookingsFooter extends StatefulWidget {
+  const _BookingsFooter({
+    required this.failed,
+    required this.onVisible,
+    required this.onRetry,
+  });
+
+  final bool failed;
+  final VoidCallback onVisible;
+  final VoidCallback onRetry;
+
+  @override
+  State<_BookingsFooter> createState() => _BookingsFooterState();
+}
+
+class _BookingsFooterState extends State<_BookingsFooter> {
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.failed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onVisible();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.failed) {
+      return Center(
+        child: TextButton(
+          onPressed: widget.onRetry,
+          child: const Text("Couldn't load more. Tap to retry."),
+        ),
+      );
+    }
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: SizedBox.square(
+          dimension: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
     );
   }
 }
@@ -106,20 +199,25 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
   StreamSubscription<RealtimeEvent>? _realtimeSubscription;
   Timer? _refreshTimer;
   bool _liveUpdatesConnected = false;
+  bool _inForeground = true;
   String? _liveUpdatesError;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _startRefreshTimer();
     _connectRealtime();
+    _startRefreshTimer();
   }
 
+  /// Polling is only a fallback. It runs while the live connection is down and
+  /// the app is in the foreground.
   void _startRefreshTimer() {
     _refreshTimer?.cancel();
+    _refreshTimer = null;
+    if (!_inForeground || _liveUpdatesConnected) return;
     _refreshTimer = Timer.periodic(
-      const Duration(seconds: 30),
+      const Duration(seconds: 60),
       (_) => _refreshTracking(),
     );
   }
@@ -139,7 +237,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
       );
       realtime.joinBooking(widget.booking.id);
     } catch (error) {
-      if (mounted) setState(() => _liveUpdatesError = error.toString());
+      if (mounted) setState(() => _liveUpdatesError = friendlyError(error));
     }
   }
 
@@ -150,6 +248,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
           _liveUpdatesConnected = false;
           _liveUpdatesError = payload.toString();
         });
+        _startRefreshTimer();
       }
       return;
     }
@@ -160,6 +259,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
           _liveUpdatesConnected = true;
           _liveUpdatesError = null;
         });
+        _startRefreshTimer();
       }
       return;
     }
@@ -185,11 +285,13 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _inForeground = true;
       _refreshTracking();
       _startRefreshTimer();
     } else if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      _inForeground = false;
       _refreshTimer?.cancel();
       _refreshTimer = null;
     }
@@ -435,7 +537,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
       }
     }
   }
@@ -458,7 +560,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
       }
     }
   }
@@ -487,7 +589,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
       }
     }
   }
@@ -545,7 +647,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
       }
     } finally {
       review.dispose();

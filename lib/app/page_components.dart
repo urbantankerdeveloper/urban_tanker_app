@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../services/friendly_error.dart';
 
 class AppPageInsets {
   const AppPageInsets._();
@@ -43,7 +46,7 @@ class AppStateView extends StatelessWidget {
       message: message ??
           (isOffline
               ? 'Check your internet connection and try again.'
-              : error.toString()),
+              : friendlyError(error)),
       action: onRetry == null
           ? null
           : OutlinedButton.icon(
@@ -170,7 +173,7 @@ class AppStateInline extends StatelessWidget {
         color: Theme.of(context).colorScheme.error,
       ),
       title: Text(offline ? 'No network connection' : 'Could not load this section'),
-      subtitle: Text(message ?? error.toString()),
+      subtitle: Text(message ?? friendlyError(error)),
       trailing: onRetry == null
           ? null
           : IconButton(
@@ -304,6 +307,64 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
           ),
         Expanded(child: widget.child),
       ],
+    );
+  }
+}
+
+/// Shows a notice while a request has taken longer than 3 seconds. The server
+/// on the free tier can take a while to wake up.
+class SlowServerBanner extends StatelessWidget {
+  const SlowServerBanner({
+    required this.slow,
+    required this.child,
+    super.key,
+  });
+
+  final ValueListenable<bool> slow;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: slow,
+      child: child,
+      builder: (context, isSlow, child) => Column(
+        children: [
+          if (isSlow)
+            Material(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Waking up the server, please wait...',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          Expanded(child: child!),
+        ],
+      ),
     );
   }
 }

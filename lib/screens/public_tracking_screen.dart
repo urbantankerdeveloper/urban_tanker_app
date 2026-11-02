@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import '../models/booking.dart';
 import '../app/page_components.dart';
 import '../services/api_client.dart';
+import '../services/friendly_error.dart';
 
 class PublicTrackingScreen extends StatefulWidget {
   const PublicTrackingScreen({
@@ -22,7 +23,10 @@ class PublicTrackingScreen extends StatefulWidget {
   State<PublicTrackingScreen> createState() => _PublicTrackingScreenState();
 }
 
-class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
+class _PublicTrackingScreenState extends State<PublicTrackingScreen>
+    with WidgetsBindingObserver {
+  static const _pollInterval = Duration(seconds: 30);
+
   PublicTrackingSnapshot? _tracking;
   String? _error;
   Timer? _timer;
@@ -31,27 +35,54 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
   @override
   void initState() {
     super.initState();
-    _refresh();
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _refresh());
+    WidgetsBinding.instance.addObserver(this);
+    _startPolling();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh now, since the data may be old after time in the background.
+      _startPolling();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _timer?.cancel();
+      _timer = null;
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     super.dispose();
   }
 
+  void _startPolling() {
+    _timer?.cancel();
+    _timer = Timer.periodic(_pollInterval, (_) => _refresh());
+    _refresh();
+  }
+
   Future<void> _refresh() async {
     if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    // Only the first load shows a spinner. Later refreshes keep the last data.
+    if (_tracking == null) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final result = await widget.api.publicTracking(widget.token);
-      if (mounted) setState(() => _tracking = result);
+      if (mounted) {
+        setState(() {
+          _tracking = result;
+          _error = null;
+        });
+      }
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = friendlyError(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -76,93 +107,100 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
                         child: const Text('Refresh'),
                       ),
                     )
-                  : RefreshIndicator(
-                      onRefresh: _refresh,
-                      child: ListView(
-                        padding: AppPageInsets.standard,
-                        children: [
-                          if (_error != null)
-                            AppStateInline.error(
-                              error: _error!,
-                              message:
-                                  'Could not refresh tracking. Showing the last available update.',
-                              onRetry: _refresh,
-                            ),
-                          Text(
-                            tracking.bookingReference,
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 16),
-                          _TrackingField(
-                            label: 'Current status',
-                            value: tracking.status.replaceAll('_', ' '),
-                          ),
-                          _TrackingField(
-                            label: 'Expected delivery',
-                            value: _formatDateTime(tracking.expectedDelivery),
-                          ),
-                          _TrackingField(
-                            label: 'Vehicle',
-                            value: tracking.vehicle ?? 'Not assigned',
-                          ),
-                          _TrackingField(
-                            label: 'Driver',
-                            value: tracking.driver ?? 'Not assigned',
-                          ),
-                          const SizedBox(height: 16),
-                          Text('Vehicle location',
-                              style: Theme.of(context).textTheme.titleMedium),
-                          const SizedBox(height: 8),
-                          if (!tracking.trackingAvailable ||
-                              tracking.lastLocation?.latitude == null ||
-                              tracking.lastLocation?.longitude == null)
-                            const Card(
-                              child: ListTile(
-                                leading: Icon(Icons.location_off_outlined),
-                                title: Text('Location not available yet'),
-                                subtitle: Text(
-                                  'The latest vehicle location will appear here when shared.',
-                                ),
-                              ),
-                            )
-                          else ...[
-                            _VehicleMap(
-                              latitude: tracking.lastLocation!.latitude!,
-                              longitude: tracking.lastLocation!.longitude!,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Updated ${_formatDateTime(tracking.lastLocation!.recordedAt)}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                          Text('Status timeline',
-                              style: Theme.of(context).textTheme.titleMedium),
-                          const SizedBox(height: 8),
-                          if (tracking.events.isEmpty)
-                            const Card(
-                              child: ListTile(
-                                title: Text('No delivery events yet.'),
-                              ),
-                            )
-                          else
-                            ...tracking.events.map(
-                              (event) => Card(
-                                child: ListTile(
-                                  leading: const Icon(Icons.timeline),
-                                  title:
-                                      Text(event.status.replaceAll('_', ' ')),
-                                  subtitle: Text([
-                                    if (event.note.isNotEmpty) event.note,
-                                    _formatDateTime(event.createdAt),
-                                  ].join('\n')),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+                  : _trackingList(context, tracking),
+    );
+  }
+
+  /// Fixed tracking details come before the status timeline. Only the timeline
+  /// events are built lazily.
+  Widget _trackingList(BuildContext context, PublicTrackingSnapshot tracking) {
+    final header = <Widget>[
+      if (_error != null)
+        AppStateInline.error(
+          error: _error!,
+          message:
+              'Could not refresh tracking. Showing the last available update.',
+          onRetry: _refresh,
+        ),
+      Text(
+        tracking.bookingReference,
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
+      const SizedBox(height: 16),
+      _TrackingField(
+        label: 'Current status',
+        value: tracking.status.replaceAll('_', ' '),
+      ),
+      _TrackingField(
+        label: 'Expected delivery',
+        value: _formatDateTime(tracking.expectedDelivery),
+      ),
+      _TrackingField(
+        label: 'Vehicle',
+        value: tracking.vehicle ?? 'Not assigned',
+      ),
+      _TrackingField(
+        label: 'Driver',
+        value: tracking.driver ?? 'Not assigned',
+      ),
+      const SizedBox(height: 16),
+      Text('Vehicle location', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      if (!tracking.trackingAvailable ||
+          tracking.lastLocation?.latitude == null ||
+          tracking.lastLocation?.longitude == null)
+        const Card(
+          child: ListTile(
+            leading: Icon(Icons.location_off_outlined),
+            title: Text('Location not available yet'),
+            subtitle: Text(
+              'The latest vehicle location will appear here when shared.',
+            ),
+          ),
+        )
+      else ...[
+        _VehicleMap(
+          latitude: tracking.lastLocation!.latitude!,
+          longitude: tracking.lastLocation!.longitude!,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Updated ${_formatDateTime(tracking.lastLocation!.recordedAt)}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+      const SizedBox(height: 16),
+      Text('Status timeline', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+    ];
+    final events = tracking.events;
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView.builder(
+        padding: AppPageInsets.standard,
+        itemCount: header.length + (events.isEmpty ? 1 : events.length),
+        itemBuilder: (_, index) {
+          if (index < header.length) return header[index];
+          if (events.isEmpty) {
+            return const Card(
+              child: ListTile(
+                title: Text('No delivery events yet.'),
+              ),
+            );
+          }
+          final event = events[index - header.length];
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.timeline),
+              title: Text(event.status.replaceAll('_', ' ')),
+              subtitle: Text([
+                if (event.note.isNotEmpty) event.note,
+                _formatDateTime(event.createdAt),
+              ].join('\n')),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -220,33 +258,36 @@ class _VehicleMapState extends State<_VehicleMap> {
   @override
   Widget build(BuildContext context) {
     final vehicle = LatLng(widget.latitude, widget.longitude);
-    return SizedBox(
-      height: 260,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: FlutterMap(
-          mapController: _controller,
-          options: MapOptions(initialCenter: vehicle, initialZoom: 15),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.urbantanker.app',
-            ),
-            MarkerLayer(
-              markers: [
-                Marker(
-                  point: vehicle,
-                  width: 44,
-                  height: 44,
-                  child: Icon(
-                    Icons.local_shipping,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 36,
+    return Semantics(
+      label: 'Map showing the vehicle location',
+      child: SizedBox(
+        height: 260,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: FlutterMap(
+            mapController: _controller,
+            options: MapOptions(initialCenter: vehicle, initialZoom: 15),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.urbantanker.app',
+              ),
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: vehicle,
+                    width: 44,
+                    height: 44,
+                    child: Icon(
+                      Icons.local_shipping,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 36,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,114 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:share_plus/share_plus.dart';
 
-import '../app/providers.dart';
-import '../app/page_components.dart';
-import '../models/account.dart';
-import '../models/notification.dart';
-import '../models/vendor.dart';
-import '../services/api_client.dart';
-
-class AdminPulseScreen extends ConsumerWidget {
-  const AdminPulseScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final healthState = ref.watch(adminHealthProvider);
-    return healthState.when(
-      loading: () => const AppStateView.loading(),
-      error: (error, _) => AppStateView.error(
-        error: error,
-        onRetry: () => ref.invalidate(adminHealthProvider),
-      ),
-      data: (health) {
-        final migrations = health['migrations'] is List
-            ? (health['migrations'] as List).whereType<Map>().toList()
-            : const [];
-        return RefreshIndicator(
-          onRefresh: () async => ref.invalidate(adminHealthProvider),
-          child: ListView(
-            padding: AppPageInsets.standard,
-            children: [
-              Text('Platform pulse',
-                  style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 16),
-              _MetricTile(
-                label: 'System status',
-                value: health['ok'] == true ? 'Healthy' : 'Attention required',
-                icon: health['ok'] == true
-                    ? Icons.check_circle_outline
-                    : Icons.warning_amber_outlined,
-              ),
-              _MetricTile(
-                label: 'Realtime',
-                value: (health['realtime'] as Map?)?['connected'] == true
-                    ? 'Connected'
-                    : 'Unavailable',
-                icon: Icons.radar_outlined,
-              ),
-              _MetricTile(
-                label: 'Storage',
-                value: (health['storage'] as Map?)?['configured'] == true
-                    ? 'Configured'
-                    : 'Not configured',
-                icon: Icons.storage_outlined,
-              ),
-              const SizedBox(height: 12),
-              const Text('Migration checks'),
-              ...migrations.map(
-                (item) => ListTile(
-                  dense: true,
-                  leading: Icon(
-                    item['applied'] == true ? Icons.check : Icons.error_outline,
-                  ),
-                  title: Text((item['table'] ?? 'Table').toString()),
-                  subtitle: Text(item['applied'] == true
-                      ? 'Available'
-                      : (item['error'] ?? 'Unavailable').toString()),
-                  trailing: item['applied'] == true
-                      ? null
-                      : TextButton(
-                          onPressed: () => ref.invalidate(adminHealthProvider),
-                          child: const Text('Retry'),
-                        ),
-                ),
-              ),
-              if ((health['configuration'] as Map?)
-                      ?.values
-                      .any((value) => value != true) ==
-                  true)
-                const ListTile(
-                  leading: Icon(Icons.warning_amber_outlined),
-                  title: Text('Configuration warnings'),
-                  subtitle:
-                      Text('One or more integrations are not configured.'),
-                ),
-              FilledButton.tonal(
-                onPressed: () async {
-                  try {
-                    await ref
-                        .read(appControllerProvider)
-                        .api
-                        .adminStorageCleanup();
-                    ref.invalidate(adminHealthProvider);
-                  } catch (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Cleanup failed: $error')),
-                      );
-                    }
-                  }
-                },
-                child: const Text('Run storage cleanup'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
+import '../../app/providers.dart';
+import '../../app/page_components.dart';
+import '../../models/account.dart';
+import '../../models/notification.dart';
+import '../../models/vendor.dart';
+import '../../services/api_client.dart';
+import '../../services/friendly_error.dart';
 
 class AdminOperationsScreen extends ConsumerWidget {
   const AdminOperationsScreen({super.key});
@@ -197,89 +96,6 @@ class _AdminGroup extends StatelessWidget {
       );
 }
 
-class AdminReportsScreen extends ConsumerWidget {
-  const AdminReportsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final vendors = ref.watch(dispatcherVendorsProvider);
-    return vendors.when(
-      loading: () => const AppStateView.loading(message: 'Loading reports...'),
-      error: (error, _) => AppStateView.error(
-        error: error,
-        onRetry: () => ref.invalidate(dispatcherVendorsProvider),
-      ),
-      data: (items) {
-        return ListView(
-          padding: AppPageInsets.standard,
-          children: [
-            Text('Reports', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 16),
-            Card(
-              child: ExpansionTile(
-                leading: const Icon(Icons.storefront_outlined),
-                title: Text('Registered vendors (${items.length})'),
-                subtitle: const Text('Tap to view registered vendor accounts'),
-                children: items.isEmpty
-                    ? const [
-                        ListTile(
-                          title: Text('No registered vendors yet.'),
-                        ),
-                      ]
-                    : items
-                        .map(
-                          (vendor) => ListTile(
-                            leading: const CircleAvatar(
-                              child: Icon(Icons.storefront_outlined),
-                            ),
-                            title: Text(_registeredVendorName(vendor)),
-                            subtitle: Text(_registeredVendorDetails(vendor)),
-                          ),
-                        )
-                        .toList(growable: false),
-              ),
-            ),
-            _AdminReportForm(),
-          ],
-        );
-      },
-    );
-  }
-}
-
-String _registeredVendorName(AccountRecord vendor) {
-  for (final key in [
-    'business_name',
-    'businessName',
-    'company_name',
-    'companyName',
-    'vendor_name',
-    'vendorName',
-    'display_name',
-    'displayName',
-    'name',
-    'title',
-  ]) {
-    final value = vendor.data[key]?.toString().trim();
-    if (value != null && value.isNotEmpty) return value;
-  }
-  return vendor.id.isEmpty ? 'Unnamed vendor' : 'Vendor ${vendor.id}';
-}
-
-String _registeredVendorDetails(AccountRecord vendor) {
-  final details = <String>[
-    for (final key in ['email', 'phone', 'phone_number', 'phoneNumber'])
-      if (vendor.data[key]?.toString().trim().isNotEmpty == true)
-        vendor.data[key].toString().trim(),
-    for (final key in ['verification_status', 'verificationStatus', 'status'])
-      if (vendor.data[key]?.toString().trim().isNotEmpty == true)
-        vendor.data[key].toString().trim().replaceAll('_', ' '),
-  ];
-  return details.isEmpty
-      ? 'No contact or status details available.'
-      : details.join(' • ');
-}
-
 class _AdminOrdersSection extends ConsumerStatefulWidget {
   const _AdminOrdersSection();
 
@@ -316,11 +132,18 @@ class _AdminOrdersSectionState extends ConsumerState<_AdminOrdersSection> {
             }),
           ),
           FutureBuilder<Map<String, dynamic>>(
-            future: ref.read(appControllerProvider).api.adminOrders(
-                  page: page,
-                  status: status,
-                ),
+            future: ref.watch(
+              dispatcherOrdersProvider(
+                DispatcherOrderFilter(page: page, status: status),
+              ).future,
+            ),
             builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return ListTile(
+                  title: const Text('Could not load this section'),
+                  subtitle: Text(friendlyError(snapshot.error!)),
+                );
+              }
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Padding(
                   padding: EdgeInsets.all(16),
@@ -350,12 +173,14 @@ class _AdminOrdersSectionState extends ConsumerState<_AdminOrdersSection> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       IconButton(
+                        tooltip: 'Previous page',
                         onPressed:
                             page > 1 ? () => setState(() => page--) : null,
                         icon: const Icon(Icons.chevron_left),
                       ),
                       Text('Page $page'),
                       IconButton(
+                        tooltip: 'Next page',
                         onPressed: rows.length >= 25
                             ? () => setState(() => page++)
                             : null,
@@ -702,7 +527,7 @@ class _AdminServicesSectionState extends ConsumerState<_AdminServicesSection> {
                 if (snapshot.hasError) {
                   return ListTile(
                     title: const Text('Services could not be loaded'),
-                    subtitle: Text(snapshot.error.toString()),
+                    subtitle: Text(friendlyError(snapshot.error!)),
                     trailing: IconButton(
                       tooltip: 'Retry',
                       onPressed: () => setState(_reload),
@@ -884,7 +709,7 @@ class _AdminServicesSectionState extends ConsumerState<_AdminServicesSection> {
                         }
                       } catch (value) {
                         setDialogState(() {
-                          error = value.toString();
+                          error = friendlyError(value);
                           saving = false;
                         });
                       }
@@ -1040,7 +865,7 @@ class _AdminFleetSectionState extends ConsumerState<_AdminFleetSection> {
               if (snapshot.hasError) {
                 return ListTile(
                   title: Text('$title could not be loaded'),
-                  subtitle: Text(snapshot.error.toString()),
+                  subtitle: Text(friendlyError(snapshot.error!)),
                   trailing: IconButton(
                     tooltip: 'Retry',
                     onPressed: () => setState(_reload),
@@ -1291,7 +1116,7 @@ class _AdminFleetSectionState extends ConsumerState<_AdminFleetSection> {
                         }
                       } catch (value) {
                         setDialogState(() {
-                          error = value.toString();
+                          error = friendlyError(value);
                           saving = false;
                         });
                       }
@@ -1391,8 +1216,14 @@ class _AdminNotificationSectionState
               },
             ),
             FutureBuilder<List<NotificationItem>>(
-              future: ref.read(appControllerProvider).api.adminNotifications(),
+              future: ref.watch(adminNotificationsProvider.future),
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return ListTile(
+                    title: const Text('Could not load this section'),
+                    subtitle: Text(friendlyError(snapshot.error!)),
+                  );
+                }
                 final items = snapshot.data ?? const [];
                 final groups = groupNotifications(items);
                 return ExpansionTile(
@@ -1420,7 +1251,11 @@ class _AdminNotificationSectionState
                                                 .markAdminNotificationRead(
                                                     item.id);
                                           }
-                                          if (mounted) setState(() {});
+                                          if (mounted) {
+                                            ref.invalidate(
+                                              adminNotificationsProvider,
+                                            );
+                                          }
                                         } catch (error) {
                                           if (context.mounted) {
                                             ScaffoldMessenger.of(context)
@@ -1505,12 +1340,20 @@ class _AdminAuditSectionState extends ConsumerState<_AdminAuditSection> {
               ),
             ),
             FutureBuilder<Map<String, dynamic>>(
-              future: ref.read(appControllerProvider).api.adminAuditLogs(
-                    page: page,
-                    action: action,
-                    entityType: entityType,
-                  ),
+              future: ref.watch(
+                adminAuditLogsProvider((
+                  page: page,
+                  action: action,
+                  entityType: entityType,
+                )).future,
+              ),
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return ListTile(
+                    title: const Text('Could not load this section'),
+                    subtitle: Text(friendlyError(snapshot.error!)),
+                  );
+                }
                 final rows = (snapshot.data?['rows'] as List?)
                         ?.whereType<Map>()
                         .toList() ??
@@ -1528,12 +1371,14 @@ class _AdminAuditSectionState extends ConsumerState<_AdminAuditSection> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         IconButton(
+                          tooltip: 'Previous page',
                           onPressed:
                               page > 1 ? () => setState(() => page--) : null,
                           icon: const Icon(Icons.chevron_left),
                         ),
                         Text('Page $page'),
                         IconButton(
+                          tooltip: 'Next page',
                           onPressed: rows.length >= 50
                               ? () => setState(() => page++)
                               : null,
@@ -1550,7 +1395,7 @@ class _AdminAuditSectionState extends ConsumerState<_AdminAuditSection> {
       );
 }
 
-class _AdminSimpleRecords extends ConsumerWidget {
+class _AdminSimpleRecords extends ConsumerStatefulWidget {
   const _AdminSimpleRecords({
     required this.title,
     required this.icon,
@@ -1562,14 +1407,30 @@ class _AdminSimpleRecords extends ConsumerWidget {
   final Future<List<AccountRecord>> Function(dynamic api) loader;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Card(
+  ConsumerState<_AdminSimpleRecords> createState() =>
+      _AdminSimpleRecordsState();
+}
+
+class _AdminSimpleRecordsState extends ConsumerState<_AdminSimpleRecords> {
+  // Loaded once per mounted card so rebuilds do not call the API again.
+  late final Future<List<AccountRecord>> _records =
+      widget.loader(ref.read(apiProvider));
+
+  @override
+  Widget build(BuildContext context) => Card(
         child: ExpansionTile(
-          leading: Icon(icon),
-          title: Text(title),
+          leading: Icon(widget.icon),
+          title: Text(widget.title),
           children: [
             FutureBuilder<List<AccountRecord>>(
-              future: loader(ref.read(appControllerProvider).api),
+              future: _records,
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return ListTile(
+                    title: const Text('Could not load this section'),
+                    subtitle: Text(friendlyError(snapshot.error!)),
+                  );
+                }
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Padding(
                     padding: EdgeInsets.all(16),
@@ -1685,7 +1546,7 @@ Future<void> _adminForm(
                       }
                     } catch (value) {
                       setDialogState(() {
-                        error = value.toString();
+                        error = friendlyError(value);
                         saving = false;
                       });
                     }
@@ -1707,64 +1568,6 @@ Future<void> _adminForm(
       SnackBar(content: Text('$title completed successfully.')),
     );
   }
-}
-
-class _AdminReportForm extends ConsumerStatefulWidget {
-  const _AdminReportForm();
-
-  @override
-  ConsumerState<_AdminReportForm> createState() => _AdminReportFormState();
-}
-
-class _AdminReportFormState extends ConsumerState<_AdminReportForm> {
-  Map<String, dynamic>? report;
-
-  @override
-  Widget build(BuildContext context) => Card(
-        child: ExpansionTile(
-          leading: const Icon(Icons.filter_alt_outlined),
-          title: const Text('Filtered report'),
-          children: [
-            FilledButton(
-              onPressed: () async {
-                final today = DateTime.now().toIso8601String().split('T').first;
-                try {
-                  final value =
-                      await ref.read(appControllerProvider).api.adminReport({
-                    'type': 'revenue',
-                    'from': today,
-                    'to': today,
-                  });
-                  if (mounted) setState(() => report = value);
-                } catch (error) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error.toString())));
-                  }
-                }
-              },
-              child: const Text('Run today report'),
-            ),
-            if (report != null)
-              ListTile(
-                title: Text('Total: ₹${report!['total'] ?? 0}'),
-                subtitle:
-                    Text('Rows: ${(report!['rows'] as List?)?.length ?? 0}'),
-                trailing: IconButton(
-                  tooltip: 'Share report',
-                  icon: const Icon(Icons.share_outlined),
-                  onPressed: () => SharePlus.instance.share(
-                    ShareParams(
-                      text: 'Urban Tanker report\n'
-                          'Total: ₹${report!['total'] ?? 0}\n'
-                          'Rows: ${(report!['rows'] as List?)?.length ?? 0}',
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
 }
 
 class _AdminRecordsSection extends ConsumerWidget {
@@ -1792,7 +1595,7 @@ class _AdminRecordsSection extends ConsumerWidget {
         title: Text(title),
         trailing: onAdd == null
             ? null
-            : IconButton(onPressed: onAdd, icon: const Icon(Icons.add)),
+            : IconButton(tooltip: 'Add', onPressed: onAdd, icon: const Icon(Icons.add)),
         children: [
           FutureBuilder<List<AccountRecord>>(
             future: loader(ref.read(appControllerProvider).api),
@@ -1806,7 +1609,7 @@ class _AdminRecordsSection extends ConsumerWidget {
               if (snapshot.hasError) {
                 return ListTile(
                   title: Text('Could not load $title'),
-                  subtitle: Text(snapshot.error.toString()),
+                  subtitle: Text(friendlyError(snapshot.error!)),
                 );
               }
               final records = snapshot.data ?? const [];
@@ -1938,22 +1741,4 @@ Future<void> _createCoupon(BuildContext context, WidgetRef ref) async {
   for (final controller in [code, label, discount, expires]) {
     controller.dispose();
   }
-}
-
-class _MetricTile extends StatelessWidget {
-  const _MetricTile(
-      {required this.label, required this.value, required this.icon});
-
-  final String label;
-  final String value;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) => Card(
-        child: ListTile(
-          leading: Icon(icon),
-          title: Text(label),
-          trailing: Text(value),
-        ),
-      );
 }

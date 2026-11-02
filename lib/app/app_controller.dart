@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
 import '../services/biometric_auth_service.dart';
+import '../services/friendly_error.dart';
 import '../services/invoice_files.dart';
 import '../services/realtime_service.dart';
 import '../services/push_notification_service.dart';
@@ -49,7 +50,6 @@ class AppController extends ChangeNotifier {
       api: ApiClient(),
       preferences: preferences,
     );
-    await controller.pushNotifications.initialize();
     controller.themeMode =
         themeModeFromName(preferences.getString('theme_mode')) ??
             ThemeMode.system;
@@ -322,7 +322,7 @@ class AppController extends ChangeNotifier {
     try {
       await operation();
     } catch (error) {
-      errorMessage = error.toString().replaceFirst('Exception: ', '');
+      errorMessage = friendlyError(error);
     } finally {
       busy = false;
       notifyListeners();

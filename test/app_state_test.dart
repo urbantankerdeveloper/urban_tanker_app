@@ -35,8 +35,7 @@ void main() {
     );
 
     expect(find.text('Something went wrong'), findsOneWidget);
-    expect(find.text('Exception: The server rejected the request.'),
-        findsOneWidget);
+    expect(find.text('Something went wrong. Please try again.'), findsOneWidget);
     expect(find.text('Try again'), findsNothing);
   });
 
