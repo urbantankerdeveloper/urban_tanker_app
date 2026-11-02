@@ -200,6 +200,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
     _realtimeSubscription?.cancel();
+    _realtime?.leaveBooking(widget.booking.id);
     super.dispose();
   }
 

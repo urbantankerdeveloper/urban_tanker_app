@@ -152,3 +152,16 @@ app.*.symbols
 !**/ios/**/default.perspectivev3
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
 !/dev/ci/**/Gemfile.lock
+
+# Signing material, push keys, and provisioning profiles
+*.p8
+*.p12
+*.mobileprovision
+google-services.json
+android/app/google-services.json
+GoogleService-Info.plist
+ios/Runner/GoogleService-Info.plist
+
+# Kotlin compiler logs and Java heap dumps
+android/.kotlin/
+*.hprof

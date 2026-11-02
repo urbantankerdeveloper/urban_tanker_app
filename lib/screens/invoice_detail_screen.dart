@@ -9,6 +9,17 @@ import 'package:share_plus/share_plus.dart';
 import '../app/providers.dart';
 import '../app/page_components.dart';
 import '../models/account.dart';
+import '../services/secure_screen.dart';
+
+/// Invoice fields that may leave the device through the share sheet.
+const _shareableInvoiceFields = [
+  'id',
+  'number',
+  'service',
+  'amount',
+  'status',
+  'issued_at',
+];
 
 class InvoiceDetailScreen extends ConsumerWidget {
   const InvoiceDetailScreen({required this.invoiceId, super.key});
@@ -18,15 +29,17 @@ class InvoiceDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final invoice = ref.watch(customerInvoiceProvider(invoiceId));
-    return Scaffold(
-      appBar: AppBar(title: const Text('Invoice')),
-      body: invoice.when(
-        loading: () => const AppStateView.loading(),
-        error: (error, _) => AppStateView.error(
-          error: error,
-          onRetry: () => ref.invalidate(customerInvoiceProvider(invoiceId)),
+    return SecureScope(
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Invoice')),
+        body: invoice.when(
+          loading: () => const AppStateView.loading(),
+          error: (error, _) => AppStateView.error(
+            error: error,
+            onRetry: () => ref.invalidate(customerInvoiceProvider(invoiceId)),
+          ),
+          data: (value) => _InvoiceBody(invoice: value),
         ),
-        data: (value) => _InvoiceBody(invoice: value),
       ),
     );
   }
@@ -80,14 +93,25 @@ class _InvoiceBody extends StatelessWidget {
   String get _content =>
       const JsonEncoder.withIndent('  ').convert(invoice.data);
 
+  /// Only the allow-listed fields are shared. Other fields stay on the device.
+  String get _shareContent {
+    final shared = <String, dynamic>{
+      for (final key in _shareableInvoiceFields)
+        if (invoice.data.containsKey(key)) key: invoice.data[key],
+    };
+    return const JsonEncoder.withIndent('  ').convert(shared);
+  }
+
   Future<void> _share(BuildContext context) async {
     try {
       final file = XFile.fromData(
-        utf8.encode(_content),
+        utf8.encode(_shareContent),
         name: 'invoice-${invoice.id}.json',
         mimeType: 'application/json',
       );
-      await Share.shareXFiles([file], text: 'Urban Tanker invoice');
+      await SharePlus.instance.share(
+        ShareParams(files: [file], text: 'Urban Tanker invoice'),
+      );
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -104,7 +128,11 @@ class _InvoiceBody extends StatelessWidget {
       await file.writeAsString(_content);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invoice saved to ${file.path}')),
+          const SnackBar(
+            content: Text(
+              'Invoice saved to the app. It is removed when you sign out.',
+            ),
+          ),
         );
       }
     } catch (error) {

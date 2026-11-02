@@ -39,13 +39,22 @@ class PushNotificationService {
     await OneSignal.logout();
   }
 
+  /// Removes this device from the server. Must run while the session is still valid.
+  Future<void> unregister() async {
+    if (kIsWeb || _appId.isEmpty) return;
+    final id = OneSignal.User.pushSubscription.id;
+    if (id != null && id.isNotEmpty) await _api.unregisterDevice(id);
+  }
+
   Future<void> _register(String id) async {
     final platform =
         defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
     try {
       await _api.registerDevice(token: id, platform: platform);
     } catch (error) {
-      debugPrint('OneSignal device registration failed: $error');
+      if (kDebugMode) {
+        debugPrint('OneSignal device registration failed: $error');
+      }
     }
   }
 }

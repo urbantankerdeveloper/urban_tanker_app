@@ -34,7 +34,8 @@ class SessionUser {
       role: roleFromString(json['role'] as String?),
       email: json['email'] as String?,
       themeMode: json['themeMode'] as String?,
-      selfieRequired: json['selfieRequired'] == true,
+      // A selfie is required unless the server explicitly says it is not.
+      selfieRequired: json['selfieRequired'] != false,
     );
   }
 

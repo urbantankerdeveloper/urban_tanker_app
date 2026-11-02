@@ -12,10 +12,14 @@ class RealtimeEvent {
 class RealtimeService {
   RealtimeService({required this.socketUrl, required this.readToken});
 
+  /// Reconnection stops after this many attempts; the app reconnects on resume.
+  static const maxReconnectAttempts = 10;
+
   final String socketUrl;
   final Future<String?> Function() readToken;
   final StreamController<RealtimeEvent> _events =
       StreamController<RealtimeEvent>.broadcast();
+  final Set<String> _joinedBookings = <String>{};
   io.Socket? _socket;
   bool _eventListenersRegistered = false;
   bool isConnected = false;
@@ -34,6 +38,9 @@ class RealtimeService {
                 .catchError((_) => callback({'token': ''}));
           })
           .enableReconnection()
+          .setReconnectionAttempts(maxReconnectAttempts)
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(15000)
           .build(),
     );
     if (_eventListenersRegistered) return;
@@ -41,6 +48,10 @@ class RealtimeService {
     _socket!
       ..on('connect', (_) {
         isConnected = true;
+        // Room membership is lost when the socket drops, so join again.
+        for (final bookingId in _joinedBookings) {
+          _socket?.emit('booking:join', bookingId);
+        }
       })
       ..on('disconnect', (reason) {
         isConnected = false;
@@ -61,16 +72,36 @@ class RealtimeService {
   }
 
   void joinBooking(String bookingId) {
+    _joinedBookings.add(bookingId);
     _socket?.emit('booking:join', bookingId);
+  }
+
+  void leaveBooking(String bookingId) {
+    _joinedBookings.remove(bookingId);
+    _socket?.emit('booking:leave', bookingId);
   }
 
   void joinVendor(String vendorId) {
     _socket?.emit('vendor:join', vendorId);
   }
 
+  /// Drops the connection while the app is in the background.
+  void pause() {
+    _socket?.disconnect();
+    isConnected = false;
+  }
+
+  /// Reconnects when the app returns to the foreground.
+  void resume() {
+    final socket = _socket;
+    if (socket != null && !socket.connected) socket.connect();
+  }
+
   void dispose() {
     _socket?.dispose();
     _socket = null;
+    _eventListenersRegistered = false;
+    _joinedBookings.clear();
     isConnected = false;
     unawaited(_events.close());
   }

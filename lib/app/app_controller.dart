@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
 import '../services/biometric_auth_service.dart';
+import '../services/invoice_files.dart';
 import '../services/realtime_service.dart';
 import '../services/push_notification_service.dart';
 
@@ -56,24 +57,35 @@ class AppController extends ChangeNotifier {
         preferences.getBool('biometric_enabled') ?? false;
     controller.biometricPromptOffered =
         preferences.getBool('biometric_prompt_offered') ?? false;
-    final rawUser = preferences.getString('session_user');
     final token = await controller.api.readAccessToken();
     final refreshToken = await controller.api.readRefreshToken();
-    if (rawUser != null && token != null) {
+    var rawUser = await controller.api.readSessionUser();
+    // Older builds kept the profile in SharedPreferences. Move it to secure
+    // storage once and remove the plain copy.
+    final legacyUser = preferences.getString('session_user');
+    if (legacyUser != null) {
+      await preferences.remove('session_user');
       try {
-        final decoded = jsonDecode(rawUser);
-        if (decoded is Map<String, dynamic>) {
-          controller._setSession(
-            AuthResult(
-              user: SessionUser.fromJson(decoded),
-              accessToken: token,
-              refreshToken: refreshToken,
-            ),
-          );
+        final decoded = jsonDecode(legacyUser);
+        if (rawUser == null && decoded is Map<String, dynamic>) {
+          rawUser = decoded;
+          await controller.api.saveSessionUser(decoded);
         }
       } on FormatException {
-        await preferences.remove('session_user');
-        await controller.api.clearTokens();
+        // A corrupt legacy copy is simply dropped.
+      }
+    }
+    if (rawUser != null && token != null) {
+      try {
+        controller._setSession(
+          AuthResult(
+            user: SessionUser.fromJson(rawUser),
+            accessToken: token,
+            refreshToken: refreshToken,
+          ),
+        );
+      } on FormatException {
+        await controller.api.clearSession();
       }
     }
     controller.biometricLocked =
@@ -184,13 +196,45 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  /// Signs out. Each remote step is best effort; local state is always cleared.
   Future<void> signOut() async {
-    await pushNotifications.clearIdentity();
+    String? refreshToken;
+    try {
+      refreshToken = await api.readRefreshToken();
+    } catch (_) {
+      refreshToken = null;
+    }
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      try {
+        await api.logout(refreshToken);
+      } catch (_) {
+        // The server session expires on its own if this call fails.
+      }
+    }
+    try {
+      await pushNotifications.unregister();
+    } catch (_) {
+      // The device token is replaced the next time someone signs in here.
+    }
+    try {
+      await pushNotifications.clearIdentity();
+    } catch (_) {
+      // OneSignal keeps its own state; the app session is still cleared.
+    }
     realtime?.dispose();
     realtime = null;
     user = null;
-    await _preferences.remove('session_user');
-    await api.clearTokens();
+    try {
+      await api.clearSession();
+    } catch (_) {
+      // Secure storage failed; the in-memory session is already gone.
+    }
+    try {
+      await _preferences.remove('session_user');
+    } catch (_) {
+      // Only a legacy key lives here, so a failure is harmless.
+    }
+    await deleteSavedInvoiceFiles();
     notifyListeners();
   }
 
@@ -225,22 +269,23 @@ class AppController extends ChangeNotifier {
     if (current == null) return;
     final updated = current.copyWith(selfieRequired: false);
     user = updated;
-    _persistSessionUser(updated);
+    unawaited(_persistSessionUser(updated));
     notifyListeners();
   }
 
-  void _persistSessionUser(SessionUser sessionUser) {
-    _preferences.setString(
-      'session_user',
-      jsonEncode({
+  Future<void> _persistSessionUser(SessionUser sessionUser) async {
+    try {
+      await api.saveSessionUser({
         'id': sessionUser.id,
         'name': sessionUser.name,
         'username': sessionUser.username,
         'role': sessionUser.role.name,
         'email': sessionUser.email,
         'selfieRequired': sessionUser.selfieRequired,
-      }),
-    );
+      });
+    } catch (_) {
+      // The session stays in memory and is saved again on the next change.
+    }
   }
 
   void _setSession(AuthResult result) {
@@ -254,7 +299,7 @@ class AppController extends ChangeNotifier {
     if (userId != null) {
       unawaited(pushNotifications.identify(userId));
     }
-    _persistSessionUser(result.user);
+    unawaited(_persistSessionUser(result.user));
     final socketUrl = const String.fromEnvironment('SOCKET_URL');
     realtime?.dispose();
     realtime = RealtimeService(

@@ -47,6 +47,11 @@ class _BiometricLockScreenState extends State<BiometricLockScreen> {
         setState(() =>
             _error = error.message ?? 'Biometric verification is unavailable.');
       }
+    } on Exception {
+      if (mounted) {
+        setState(() => _error =
+            'Biometric verification failed. Try again, or sign out below.');
+      }
     } finally {
       if (mounted) setState(() => _authenticating = false);
     }
@@ -105,7 +110,7 @@ class _BiometricLockScreenState extends State<BiometricLockScreen> {
                   TextButton(
                     onPressed:
                         _authenticating ? null : controller.usePhoneOtpRecovery,
-                    child: const Text('Use phone number and OTP instead'),
+                    child: const Text('Sign out and use phone number and OTP'),
                   ),
                 ],
               ),

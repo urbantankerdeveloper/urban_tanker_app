@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../app/app_controller.dart';
 import '../services/photo_permissions.dart';
+import '../services/secure_screen.dart';
 import '../services/temporary_photo.dart';
 
 class SelfieCaptureScreen extends StatefulWidget {
@@ -26,7 +27,14 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   bool _settingsNeeded = false;
 
   @override
+  void initState() {
+    super.initState();
+    unawaited(SecureScreen.enable());
+  }
+
+  @override
   void dispose() {
+    unawaited(SecureScreen.disable());
     unawaited(_discardPhoto(_photo));
     super.dispose();
   }
@@ -41,26 +49,26 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     }
   }
 
-  Future<void> _pick(ImageSource source) async {
-    final camera = source == ImageSource.camera;
+  /// The identity selfie is taken with the camera only. Gallery photos are not accepted.
+  Future<void> _pick() async {
     try {
-      final access =
-          camera ? await requestCameraAccess() : await requestPhotoAccess();
+      final access = await requestCameraAccess();
       if (access != PhotoAccess.granted) {
         if (mounted) {
           setState(() {
-            _error = photoAccessMessage(camera: camera, access: access);
+            _error = photoAccessMessage(camera: true, access: access);
             _settingsNeeded = access == PhotoAccess.permanentlyDenied;
           });
         }
         return;
       }
       final photo = await ImagePicker().pickImage(
-        source: source,
+        source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
         imageQuality: 80,
         maxWidth: 1080,
         maxHeight: 1080,
+        requestFullMetadata: pickerRequestsFullMetadata,
       );
       if (photo == null || !mounted) return;
       final previous = _photo;
@@ -73,9 +81,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     } catch (_) {
       if (mounted) {
         setState(() {
-          _error = camera
-              ? 'The camera could not be opened. Try again.'
-              : 'The photo library could not be opened. Try again.';
+          _error = 'The camera could not be opened. Try again.';
           _settingsNeeded = false;
         });
       }
@@ -159,17 +165,11 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
               ],
               const SizedBox(height: 16),
               OutlinedButton.icon(
-                onPressed: _saving ? null : () => _pick(ImageSource.camera),
+                onPressed: _saving ? null : _pick,
                 icon: const Icon(Icons.camera_alt_outlined),
                 label: Text(
                   photo == null ? 'Open front camera' : 'Retake with camera',
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: _saving ? null : () => _pick(ImageSource.gallery),
-                icon: const Icon(Icons.photo_library_outlined),
-                label: const Text('Choose from gallery'),
               ),
               const SizedBox(height: 12),
               FilledButton(

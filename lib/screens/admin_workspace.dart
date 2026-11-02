@@ -275,7 +275,9 @@ String _registeredVendorDetails(AccountRecord vendor) {
       if (vendor.data[key]?.toString().trim().isNotEmpty == true)
         vendor.data[key].toString().trim().replaceAll('_', ' '),
   ];
-  return details.isEmpty ? 'No contact or status details available.' : details.join(' • ');
+  return details.isEmpty
+      ? 'No contact or status details available.'
+      : details.join(' • ');
 }
 
 class _AdminOrdersSection extends ConsumerStatefulWidget {
@@ -1613,6 +1615,8 @@ void _showAdminRecord(BuildContext context, AccountRecord record) {
   );
 }
 
+bool _isPasswordLabel(String label) => label.toLowerCase().contains('password');
+
 Future<void> _adminForm(
   BuildContext context, {
   required String title,
@@ -1637,6 +1641,10 @@ Future<void> _adminForm(
                   TextFormField(
                     controller: field.$2,
                     decoration: InputDecoration(labelText: field.$1),
+                    // Password fields are hidden and never suggested or autocorrected.
+                    obscureText: _isPasswordLabel(field.$1),
+                    enableSuggestions: !_isPasswordLabel(field.$1),
+                    autocorrect: !_isPasswordLabel(field.$1),
                     validator: (value) => value?.trim().isNotEmpty == true
                         ? null
                         : 'Enter ${field.$1.toLowerCase()}.',
@@ -1745,10 +1753,12 @@ class _AdminReportFormState extends ConsumerState<_AdminReportForm> {
                 trailing: IconButton(
                   tooltip: 'Share report',
                   icon: const Icon(Icons.share_outlined),
-                  onPressed: () => Share.share(
-                    'Urban Tanker report\n'
-                    'Total: ₹${report!['total'] ?? 0}\n'
-                    'Rows: ${(report!['rows'] as List?)?.length ?? 0}',
+                  onPressed: () => SharePlus.instance.share(
+                    ShareParams(
+                      text: 'Urban Tanker report\n'
+                          'Total: ₹${report!['total'] ?? 0}\n'
+                          'Rows: ${(report!['rows'] as List?)?.length ?? 0}',
+                    ),
                   ),
                 ),
               ),

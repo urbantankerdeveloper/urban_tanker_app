@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -13,6 +14,17 @@ import '../models/session.dart';
 import '../models/vendor.dart';
 import '../models/booking_service_details.dart';
 
+/// A random RFC 4122 version 4 UUID for idempotent booking submits.
+String newIdempotencyKey() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+      '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+}
+
 Map<String, dynamic> buildBookingRequestBody({
   required String serviceId,
   required String capacity,
@@ -26,6 +38,7 @@ Map<String, dynamic> buildBookingRequestBody({
   String? couponCode,
   String? phone,
   String? phoneVerificationChallengeId,
+  String? idempotencyKey,
 }) {
   final normalizedServices =
       services.map((service) => service.toJson()).toList(growable: false);
@@ -35,6 +48,7 @@ Map<String, dynamic> buildBookingRequestBody({
     'services': normalizedServices,
     'location': location,
     'deliveryDate': deliveryDate,
+    if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
     if (latitude != null) 'latitude': latitude,
     if (longitude != null) 'longitude': longitude,
     if (phone != null && phone.trim().isNotEmpty)
@@ -71,19 +85,35 @@ class PhoneVerificationState {
   final bool verified;
 }
 
+class BookingPage {
+  const BookingPage({required this.rows, this.nextOffset});
+
+  final List<Booking> rows;
+  final int? nextOffset;
+}
+
+const _invalidServerResponse = 'The server sent an unexpected response.';
+
 class ApiClient {
   ApiClient({
     http.Client? client,
     FlutterSecureStorage? storage,
     String? baseUrl,
   })  : _client = client ?? http.Client(),
-        _storage = storage ?? const FlutterSecureStorage(),
+        _storage = storage ?? _defaultStorage,
         baseUrl = (baseUrl ??
                 const String.fromEnvironment(
                   'API_BASE_URL',
                   defaultValue: 'https://urban-tanker-backend.onrender.com/api',
                 ))
             .replaceFirst(RegExp(r'/$'), '');
+
+  static const _defaultStorage = FlutterSecureStorage(
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+    aOptions: AndroidOptions(resetOnError: true, migrateWithBackup: false),
+  );
 
   final http.Client _client;
   final FlutterSecureStorage _storage;
@@ -103,6 +133,39 @@ class ApiClient {
   Future<void> clearTokens() async {
     await _storage.delete(key: 'urban_tanker_access_token');
     await _storage.delete(key: 'urban_tanker_refresh_token');
+  }
+
+  /// Keeps the signed-in user profile in secure storage, not SharedPreferences.
+  Future<void> saveSessionUser(Map<String, dynamic> user) => _storage.write(
+        key: 'urban_tanker_session_user',
+        value: jsonEncode(user),
+      );
+
+  Future<Map<String, dynamic>?> readSessionUser() async {
+    final raw = await _storage.read(key: 'urban_tanker_session_user');
+    if (raw == null) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Removes the tokens and the stored user profile.
+  Future<void> clearSession() async {
+    await clearTokens();
+    await _storage.delete(key: 'urban_tanker_session_user');
+  }
+
+  /// Revokes the refresh token on the server. Callers ignore failures.
+  Future<void> logout(String refreshToken) async {
+    await request(
+      'POST',
+      '/auth/logout',
+      body: {'refreshToken': refreshToken},
+      retry: false,
+    );
   }
 
   Future<String?> readAccessToken() =>
@@ -133,7 +196,7 @@ class ApiClient {
       'role': 'customer',
       if (themeMode != null) 'themeMode': themeMode,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The registration response was invalid.');
     }
@@ -155,7 +218,7 @@ class ApiClient {
       body: {'email': email.trim()},
       retry: false,
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic> || decoded['accepted'] != true) {
       throw const FormatException(
         'The password reset response was invalid.',
@@ -174,9 +237,8 @@ class ApiClient {
       body: {'phone': normalized},
       retry: false,
     );
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic> ||
-        decoded['challengeId'] is! String) {
+    final decoded = _decodeBody(response);
+    if (decoded is! Map<String, dynamic> || decoded['challengeId'] is! String) {
       throw const FormatException('The phone sign-in response was invalid.');
     }
     return decoded['challengeId'] as String;
@@ -206,12 +268,12 @@ class ApiClient {
       },
       retry: false,
     );
-    return _saveAuthResult(jsonDecode(response.body));
+    return _saveAuthResult(_decodeBody(response));
   }
 
   Future<PhoneVerificationState> phoneVerification() async {
     final response = await request('GET', '/customer/phone-verification');
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException(
           'The phone verification response was invalid.');
@@ -233,7 +295,7 @@ class ApiClient {
       body: {'phone': normalized},
       retry: false,
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic> || decoded['challengeId'] is! String) {
       throw const FormatException('The phone OTP response was invalid.');
     }
@@ -255,7 +317,7 @@ class ApiClient {
       },
       retry: false,
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic> || decoded['verified'] != true) {
       throw const FormatException('Phone verification was not confirmed.');
     }
@@ -263,7 +325,7 @@ class ApiClient {
 
   Future<List<TankerService>> services() async {
     final response = await request('GET', '/customer/services');
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! List) {
       throw const FormatException('The services response was invalid.');
     }
@@ -287,6 +349,7 @@ class ApiClient {
     String? phoneVerificationChallengeId,
     double? latitude,
     double? longitude,
+    String? idempotencyKey,
   }) async {
     final response = await request(
       'POST',
@@ -311,9 +374,10 @@ class ApiClient {
         phoneVerificationChallengeId: phoneVerificationChallengeId,
         latitude: latitude,
         longitude: longitude,
+        idempotencyKey: idempotencyKey,
       ),
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The booking response was invalid.');
     }
@@ -359,23 +423,44 @@ class ApiClient {
         longitude: longitude,
       ),
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The booking quote response was invalid.');
     }
     return decoded;
   }
 
+  /// Loads every booking by following `nextOffset` from the server.
   Future<List<Booking>> bookings() async {
-    final response = await request('GET', '/customer/orders');
-    final decoded = jsonDecode(response.body);
-    if (decoded is! List) {
+    final all = <Booking>[];
+    var offset = 0;
+    for (var pages = 0; pages < 50; pages++) {
+      final page = await bookingsPage(offset: offset);
+      all.addAll(page.rows);
+      final next = page.nextOffset;
+      if (next == null || next <= offset) break;
+      offset = next;
+    }
+    return all;
+  }
+
+  Future<BookingPage> bookingsPage({int offset = 0, int pageSize = 100}) async {
+    final response = await request(
+      'GET',
+      '/customer/orders?offset=$offset&pageSize=${pageSize.clamp(1, 100)}',
+    );
+    final decoded = _decodeBody(response);
+    if (decoded is! Map<String, dynamic> || decoded['rows'] is! List) {
       throw const FormatException('The bookings response was invalid.');
     }
-    return decoded
-        .whereType<Map<String, dynamic>>()
-        .map(Booking.fromJson)
-        .toList();
+    final next = decoded['nextOffset'];
+    return BookingPage(
+      rows: (decoded['rows'] as List)
+          .whereType<Map<String, dynamic>>()
+          .map(Booking.fromJson)
+          .toList(),
+      nextOffset: next is num ? next.toInt() : null,
+    );
   }
 
   Future<TrackingSnapshot> bookingTracking(String bookingId) async {
@@ -383,7 +468,7 @@ class ApiClient {
       'GET',
       '/customer/orders/$bookingId/tracking',
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The tracking response was invalid.');
     }
@@ -394,7 +479,7 @@ class ApiClient {
     final response = await request(
         'GET', '/public/tracking/${Uri.encodeComponent(token)}',
         retry: false);
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The public tracking response was invalid.');
     }
@@ -427,7 +512,7 @@ class ApiClient {
       'POST',
       '/customer/orders/$bookingId/delivery-otp',
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic> || decoded['expiresAt'] is! String) {
       throw const FormatException('The delivery OTP response was invalid.');
     }
@@ -451,7 +536,7 @@ class ApiClient {
   }
 
   Booking _bookingFromResponse(http.Response response, String label) {
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw FormatException('The $label response was invalid.');
     }
@@ -460,7 +545,7 @@ class ApiClient {
 
   Future<CustomerProfile> profile() async {
     final response = await request('GET', '/customer/profile');
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The profile response was invalid.');
     }
@@ -482,7 +567,7 @@ class ApiClient {
           'phone': normalizeIndianPhone(phone),
       },
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The updated profile response was invalid.');
     }
@@ -523,7 +608,7 @@ class ApiClient {
       'capacityLitres': capacityLitres,
       'supportedServices': supportedServices,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The vehicle response was invalid.');
     }
@@ -542,7 +627,7 @@ class ApiClient {
       'mobileE164': normalizeIndianPhone(mobile),
       'licenceNumber': licenceNumber,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The driver response was invalid.');
     }
@@ -598,7 +683,7 @@ class ApiClient {
 
   Future<CustomerUsage> usage() async {
     final response = await request('GET', '/customer/usage');
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The usage response was invalid.');
     }
@@ -618,7 +703,7 @@ class ApiClient {
       'serviceCode': serviceCode,
       'amount': amount,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The coupon response was invalid.');
     }
@@ -634,7 +719,7 @@ class ApiClient {
 
   Future<AccountRecord?> membership() async {
     final response = await request('GET', '/customer/membership');
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded == null) return null;
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The membership response was invalid.');
@@ -648,7 +733,7 @@ class ApiClient {
       '/customer/membership',
       body: {'status': status},
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The membership update was invalid.');
     }
@@ -661,7 +746,7 @@ class ApiClient {
       '/customer/membership',
       body: {'planId': planId},
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The membership request was invalid.');
     }
@@ -682,7 +767,7 @@ class ApiClient {
       'address': address,
       'estimate': estimate,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The contract response was invalid.');
     }
@@ -703,7 +788,7 @@ class ApiClient {
       'pincode': pincode,
       'isDefault': isDefault,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The address response was invalid.');
     }
@@ -726,7 +811,7 @@ class ApiClient {
       if (pincode != null) 'pincode': pincode,
       if (isDefault != null) 'isDefault': isDefault,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The address update response was invalid.');
     }
@@ -745,7 +830,7 @@ class ApiClient {
       'subject': subject,
       'message': message,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The support response was invalid.');
     }
@@ -754,7 +839,7 @@ class ApiClient {
 
   Future<AccountRecord> supportRequest(String id) async {
     final response = await request('GET', '/support/requests/$id');
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The support request response was invalid.');
     }
@@ -770,7 +855,7 @@ class ApiClient {
       '/customer/subscriptions/$id/status',
       body: {'status': status},
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The subscription response was invalid.');
     }
@@ -779,7 +864,7 @@ class ApiClient {
 
   Future<AccountRecord> invoice(String id) async {
     final response = await request('GET', '/customer/invoices/$id/download');
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The invoice response was invalid.');
     }
@@ -788,7 +873,7 @@ class ApiClient {
 
   Future<List<AccountRecord>> _records(String path, String label) async {
     final response = await request('GET', path);
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! List) {
       throw FormatException('The $label response was invalid.');
     }
@@ -842,7 +927,7 @@ class ApiClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       var message = 'Request failed (${response.statusCode}).';
       try {
-        final decoded = jsonDecode(response.body);
+        final decoded = _decodeBody(response);
         if (decoded is Map<String, dynamic>) {
           if (decoded['error'] is String) {
             message = decoded['error'] as String;
@@ -893,7 +978,7 @@ class ApiClient {
         body: {'refreshToken': refreshToken},
         retry: false,
       );
-      final decoded = jsonDecode(response.body);
+      final decoded = _decodeBody(response);
       if (decoded is! Map<String, dynamic>) return null;
       final accessToken = decoded['accessToken'] as String?;
       final rotatedRefreshToken = decoded['refreshToken'] as String?;
@@ -907,7 +992,7 @@ class ApiClient {
       await saveRefreshToken(rotatedRefreshToken);
       return accessToken;
     } on Object catch (error) {
-      debugPrint('Token refresh failed: $error');
+      if (kDebugMode) debugPrint('Token refresh failed: $error');
       await clearTokens();
       return null;
     }
@@ -924,7 +1009,7 @@ class ApiClient {
         ),
     };
     final response = await request('GET', path);
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! List) {
       throw const FormatException('The notifications response was invalid.');
     }
@@ -967,7 +1052,7 @@ class ApiClient {
 
   Future<VendorDashboard> vendorDashboard() async {
     final response = await request('GET', '/vendor/dashboard');
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The vendor dashboard response was invalid.');
     }
@@ -999,7 +1084,7 @@ class ApiClient {
       'capacityLitres': capacityLitres,
       'isActive': isActive,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The vehicle response was invalid.');
     }
@@ -1017,7 +1102,7 @@ class ApiClient {
       if (capacityLitres != null) 'capacityLitres': capacityLitres,
       if (isActive != null) 'isActive': isActive,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The vehicle update was invalid.');
     }
@@ -1036,7 +1121,7 @@ class ApiClient {
       'licenceNumber': licenceNumber,
       'isActive': isActive,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The driver response was invalid.');
     }
@@ -1056,7 +1141,7 @@ class ApiClient {
       if (licenceNumber != null) 'licenceNumber': licenceNumber,
       if (isActive != null) 'isActive': isActive,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The driver update was invalid.');
     }
@@ -1075,7 +1160,7 @@ class ApiClient {
       if (periodEnd != null)
         'periodEnd': periodEnd.toIso8601String().split('T').first,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The payout request response was invalid.');
     }
@@ -1096,7 +1181,7 @@ class ApiClient {
           'proofPath': proofPath.trim(),
       },
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException(
           'The delivery verification response was invalid.');
@@ -1358,7 +1443,7 @@ class ApiClient {
         if (driverId != null) 'driverId': driverId,
       },
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The vendor order update was invalid.');
     }
@@ -1393,7 +1478,7 @@ class ApiClient {
       if (entityId != null) 'entityId': entityId,
       'payload': payload,
     });
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The offline mutation response was invalid.');
     }
@@ -1429,7 +1514,7 @@ class ApiClient {
       'POST',
       '/vendor/offline-mutations/$id/retry',
     );
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The mutation retry response was invalid.');
     }
@@ -1749,7 +1834,7 @@ class ApiClient {
     T Function(Map<String, dynamic>) parse,
     String label,
   ) async {
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! List) {
       throw FormatException('The $label response was invalid.');
     }
@@ -1761,18 +1846,28 @@ class ApiClient {
     http.Response response,
     String label,
   ) async {
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw FormatException('The $label response was invalid.');
     }
     return decoded;
   }
 
+  /// Decodes a JSON body. A non-JSON body gives a generic message, not the
+  /// parser's raw text.
+  dynamic _decodeBody(http.Response response) {
+    try {
+      return jsonDecode(response.body);
+    } on FormatException {
+      throw const FormatException(_invalidServerResponse);
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _mapList(
     http.Response response,
     String label,
   ) async {
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeBody(response);
     if (decoded is! List) {
       throw FormatException('The $label response was invalid.');
     }
@@ -1802,7 +1897,7 @@ class ApiClient {
     Map<String, dynamic> body,
   ) async {
     final response = await request('POST', path, body: body, retry: false);
-    return _saveAuthResult(jsonDecode(response.body));
+    return _saveAuthResult(_decodeBody(response));
   }
 
   Future<AuthResult> _saveAuthResult(dynamic body) async {

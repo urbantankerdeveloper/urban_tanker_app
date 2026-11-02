@@ -28,7 +28,6 @@ dependencies:
   latlong2: ^0.9.1
   local_auth: ^3.0.2
   app_links: ^7.2.2
-  google_maps_flutter: ^2.19.0
   permission_handler: ^13.0.2
 
 dev_dependencies:

@@ -8,7 +8,7 @@ the REST and Socket.IO contracts.
 
 - Flutter stable with Dart 3.4 or newer
 - Android SDK with API 30 installed for the Android target
-- macOS/Xcode for iOS builds (the iOS deployment target is 13.0)
+- macOS/Xcode for iOS builds (the iOS deployment target is 15.0)
 
 Android builds and Flutter tests can be run from a Flutter-enabled development
 machine. iOS builds, signing, and store validation require macOS and Xcode.
@@ -108,3 +108,17 @@ flutter build apk --debug --dart-define=API_BASE_URL=https://api.example.com/api
 
 iOS simulator, signing, archiving, APNs configuration, and store validation
 require macOS and Xcode and have not been claimed as verified from Windows.
+
+## Release builds
+
+Release builds are obfuscated and keep the Dart symbol files out of the app.
+Keep the `build/symbols/` folder with the release build so crash reports can be
+symbolicated, and do not ship it inside the app or the repository.
+
+```bash
+flutter build apk --release --obfuscate --split-debug-info=build/symbols/android --dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api
+flutter build appbundle --release --obfuscate --split-debug-info=build/symbols/android --dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api
+flutter build ipa --release --obfuscate --split-debug-info=build/symbols/ios --dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api
+```
+
+The `ipa` command requires macOS and Xcode.

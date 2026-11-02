@@ -5,6 +5,8 @@ import '../app/providers.dart';
 import '../app/page_components.dart';
 import '../models/account.dart';
 import '../services/api_client.dart';
+import '../services/masking.dart';
+import '../services/secure_screen.dart';
 import 'invoice_detail_screen.dart';
 import 'support_request_detail_screen.dart';
 
@@ -14,104 +16,107 @@ class CustomerAccountScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(customerProfileProvider);
-    return ListView(
-      padding: AppPageInsets.standard,
-      children: [
-        profile.when(
-          loading: () => const LinearProgressIndicator(),
-          error: (error, _) => _AccountError(
-            message: error.toString(),
-            retry: () => ref.invalidate(customerProfileProvider),
-          ),
-          data: (user) => Card(
-            child: ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-              title: Text(user.name),
-              subtitle: Text(
-                [user.email, user.phone]
-                    .where((value) => value.isNotEmpty)
-                    .join('\n'),
-              ),
-              trailing: IconButton(
-                tooltip: 'Edit profile',
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () => _editProfile(context, ref, user),
+    return SecureScope(
+      child: ListView(
+        padding: AppPageInsets.standard,
+        children: [
+          profile.when(
+            loading: () => const LinearProgressIndicator(),
+            error: (error, _) => _AccountError(
+              message: error.toString(),
+              retry: () => ref.invalidate(customerProfileProvider),
+            ),
+            data: (user) => Card(
+              child: ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+                title: Text(user.name),
+                subtitle: Text(
+                  [maskEmail(user.email), maskPhone(user.phone)]
+                      .where((value) => value.isNotEmpty)
+                      .join('\n'),
+                ),
+                trailing: IconButton(
+                  tooltip: 'Edit profile',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => _editProfile(context, ref, user),
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        _UsageCard(),
-        _AccountSection(
-          title: 'Offers',
-          icon: Icons.local_offer_outlined,
-          provider: (ref) => ref.watch(customerOffersProvider),
-          retry: (ref) => ref.invalidate(customerOffersProvider),
-          empty: 'No active offers.',
-        ),
-        _MembershipSection(),
-        _AccountSection(
-          title: 'Yearly contracts',
-          icon: Icons.description_outlined,
-          provider: (ref) => ref.watch(customerContractsProvider),
-          retry: (ref) => ref.invalidate(customerContractsProvider),
-          empty: 'No contracts yet.',
-          actionLabel: 'Request contract',
-          onAction: () => _createContract(context, ref),
-          onItemTap: (item) => _showRecord(context, item),
-        ),
-        _AccountSection(
-          title: 'Saved addresses',
-          icon: Icons.location_on_outlined,
-          provider: (ref) => ref.watch(customerAddressesProvider),
-          retry: (ref) => ref.invalidate(customerAddressesProvider),
-          empty: 'No saved addresses yet.',
-          actionLabel: 'Add address',
-          onAction: () => _addAddress(context, ref),
-          onItemTap: (item) => _manageAddress(context, ref, item),
-        ),
-        _AccountSection(
-          title: 'Wallet',
-          icon: Icons.account_balance_wallet_outlined,
-          provider: (ref) => ref.watch(customerWalletProvider),
-          retry: (ref) => ref.invalidate(customerWalletProvider),
-          empty: 'No wallet transactions yet.',
-          onItemTap: (item) => _showRecord(context, item),
-        ),
-        _AccountSection(
-          title: 'Invoices',
-          icon: Icons.receipt_long_outlined,
-          provider: (ref) => ref.watch(customerInvoicesProvider),
-          retry: (ref) => ref.invalidate(customerInvoicesProvider),
-          empty: 'No invoices available.',
-          onItemTap: (item) => _showInvoice(context, ref, item),
-        ),
-        _AccountSection(
-          title: 'Subscriptions',
-          icon: Icons.autorenew_outlined,
-          provider: (ref) => ref.watch(customerSubscriptionsProvider),
-          retry: (ref) => ref.invalidate(customerSubscriptionsProvider),
-          empty: 'No active subscriptions.',
-          onItemTap: (item) => _changeSubscription(context, ref, item),
-        ),
-        _AccountSection(
-          title: 'Support requests',
-          icon: Icons.support_agent_outlined,
-          provider: (ref) => ref.watch(customerSupportProvider),
-          retry: (ref) => ref.invalidate(customerSupportProvider),
-          empty: 'No support requests yet.',
-          actionLabel: 'New request',
-          onAction: () => _createSupport(context, ref),
-          onItemTap: (item) {
-            if (item.id.isEmpty) return;
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SupportRequestDetailScreen(requestId: item.id),
-              ),
-            );
-          },
-        ),
-      ],
+          const SizedBox(height: 12),
+          _UsageCard(),
+          _AccountSection(
+            title: 'Offers',
+            icon: Icons.local_offer_outlined,
+            provider: (ref) => ref.watch(customerOffersProvider),
+            retry: (ref) => ref.invalidate(customerOffersProvider),
+            empty: 'No active offers.',
+          ),
+          _MembershipSection(),
+          _AccountSection(
+            title: 'Yearly contracts',
+            icon: Icons.description_outlined,
+            provider: (ref) => ref.watch(customerContractsProvider),
+            retry: (ref) => ref.invalidate(customerContractsProvider),
+            empty: 'No contracts yet.',
+            actionLabel: 'Request contract',
+            onAction: () => _createContract(context, ref),
+            onItemTap: (item) => _showRecord(context, item),
+          ),
+          _AccountSection(
+            title: 'Saved addresses',
+            icon: Icons.location_on_outlined,
+            provider: (ref) => ref.watch(customerAddressesProvider),
+            retry: (ref) => ref.invalidate(customerAddressesProvider),
+            empty: 'No saved addresses yet.',
+            actionLabel: 'Add address',
+            onAction: () => _addAddress(context, ref),
+            onItemTap: (item) => _manageAddress(context, ref, item),
+          ),
+          _AccountSection(
+            title: 'Wallet',
+            icon: Icons.account_balance_wallet_outlined,
+            provider: (ref) => ref.watch(customerWalletProvider),
+            retry: (ref) => ref.invalidate(customerWalletProvider),
+            empty: 'No wallet transactions yet.',
+            onItemTap: (item) => _showRecord(context, item),
+          ),
+          _AccountSection(
+            title: 'Invoices',
+            icon: Icons.receipt_long_outlined,
+            provider: (ref) => ref.watch(customerInvoicesProvider),
+            retry: (ref) => ref.invalidate(customerInvoicesProvider),
+            empty: 'No invoices available.',
+            onItemTap: (item) => _showInvoice(context, ref, item),
+          ),
+          _AccountSection(
+            title: 'Subscriptions',
+            icon: Icons.autorenew_outlined,
+            provider: (ref) => ref.watch(customerSubscriptionsProvider),
+            retry: (ref) => ref.invalidate(customerSubscriptionsProvider),
+            empty: 'No active subscriptions.',
+            onItemTap: (item) => _changeSubscription(context, ref, item),
+          ),
+          _AccountSection(
+            title: 'Support requests',
+            icon: Icons.support_agent_outlined,
+            provider: (ref) => ref.watch(customerSupportProvider),
+            retry: (ref) => ref.invalidate(customerSupportProvider),
+            empty: 'No support requests yet.',
+            actionLabel: 'New request',
+            onAction: () => _createSupport(context, ref),
+            onItemTap: (item) {
+              if (item.id.isEmpty) return;
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      SupportRequestDetailScreen(requestId: item.id),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 

@@ -31,8 +31,13 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     final appLinks = AppLinks();
-    unawaited(appLinks.getInitialLink().then(_openTrackingLink));
-    _linkSubscription = appLinks.uriLinkStream.listen(_openTrackingLink);
+    unawaited(
+      appLinks.getInitialLink().then(_openTrackingLink).catchError((_) {}),
+    );
+    _linkSubscription = appLinks.uriLinkStream.listen(
+      _openTrackingLink,
+      onError: (_) {},
+    );
   }
 
   void _openTrackingLink(Uri? uri) {
@@ -57,8 +62,12 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final controller = ref.read(appControllerProvider);
     if (state == AppLifecycleState.paused) {
-      ref.read(appControllerProvider).lockBiometricSession();
+      controller.lockBiometricSession();
+      controller.realtime?.pause();
+    } else if (state == AppLifecycleState.resumed) {
+      controller.realtime?.resume();
     }
   }
 
@@ -79,16 +88,20 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
       theme: buildLightTheme(),
       darkTheme: buildDarkTheme(),
       themeMode: controller.themeMode,
-      builder: (context, child) => ConnectivityBanner(
-        child: child ?? const SizedBox.shrink(),
+      // The lock sits above the Navigator so that pushed routes are covered too.
+      builder: (context, child) => Stack(
+        fit: StackFit.expand,
+        children: [
+          ConnectivityBanner(child: child ?? const SizedBox.shrink()),
+          if (controller.biometricLocked)
+            BiometricLockScreen(controller: controller),
+        ],
       ),
-      home: controller.biometricLocked
-          ? BiometricLockScreen(controller: controller)
-          : controller.isSignedIn
-              ? controller.requiresSelfie
-                  ? SelfieCaptureScreen(controller: controller)
-                  : HomeShell(controller: controller)
-              : AuthScreen(controller: controller),
+      home: controller.isSignedIn
+          ? controller.requiresSelfie
+              ? SelfieCaptureScreen(controller: controller)
+              : HomeShell(controller: controller)
+          : AuthScreen(controller: controller),
     );
   }
 }

@@ -11,7 +11,9 @@ import '../app/providers.dart';
 import '../app/page_components.dart';
 import '../models/vendor.dart';
 import '../services/api_client.dart';
+import '../services/photo_permissions.dart';
 import '../services/realtime_service.dart';
+import '../services/temporary_photo.dart';
 
 class VendorOperationsScreen extends ConsumerStatefulWidget {
   const VendorOperationsScreen({super.key});
@@ -357,7 +359,8 @@ class _OrderActions extends ConsumerStatefulWidget {
   ConsumerState<_OrderActions> createState() => _OrderActionsState();
 }
 
-class _OrderActionsState extends ConsumerState<_OrderActions> {
+class _OrderActionsState extends ConsumerState<_OrderActions>
+    with WidgetsBindingObserver {
   String? selectedVehicle;
   String? selectedDriver;
   bool _saving = false;
@@ -365,9 +368,30 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
   bool _locationUpdatePending = false;
   String? _locationStatus;
   StreamSubscription<Position>? _locationSubscription;
+  Timer? _locationTimer;
+  Position? _latestPosition;
+
+  /// Location is sent at most once per interval; only the latest fix is kept.
+  static const _locationInterval = Duration(seconds: 15);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      if (_sharingLocation) _stopLocationSharing();
+    }
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _locationTimer?.cancel();
     _locationSubscription?.cancel();
     super.dispose();
   }
@@ -607,13 +631,21 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
       _sharingLocation = true;
       _locationStatus = 'Waiting for a location fix...';
     });
+    _latestPosition = null;
+    _locationTimer?.cancel();
+    _locationTimer = Timer.periodic(
+      _locationInterval,
+      (_) => unawaited(_sendLatestPosition()),
+    );
     _locationSubscription = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 20,
       ),
     ).listen(
-      _sharePosition,
+      (position) {
+        _latestPosition = position;
+      },
       onError: (Object error) {
         _stopLocationSharing();
         _showLocationMessage('Location sharing stopped: $error');
@@ -621,8 +653,12 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
     );
   }
 
-  Future<void> _sharePosition(Position position) async {
-    if (_locationUpdatePending) return;
+  Future<void> _sendLatestPosition() async {
+    final position = _latestPosition;
+    if (position == null || _locationUpdatePending || !_sharingLocation) {
+      return;
+    }
+    _latestPosition = null;
     _locationUpdatePending = true;
     try {
       await ref.read(appControllerProvider).api.updateVendorLocation(
@@ -648,6 +684,9 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
   void _stopLocationSharing() {
     unawaited(_locationSubscription?.cancel());
     _locationSubscription = null;
+    _locationTimer?.cancel();
+    _locationTimer = null;
+    _latestPosition = null;
     if (mounted) {
       setState(() {
         _sharingLocation = false;
@@ -772,6 +811,7 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
                       final image = await ImagePicker().pickImage(
                         source: ImageSource.camera,
                         imageQuality: 80,
+                        requestFullMetadata: pickerRequestsFullMetadata,
                       );
                       if (image != null && context.mounted) {
                         setDialogState(() => proofPhoto = image);
@@ -822,17 +862,25 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
     );
     final otp = otpController.text.trim();
     otpController.dispose();
-    if (confirmed != true || !context.mounted) return;
-    if (_saving) return;
+    if (confirmed != true || !context.mounted) {
+      unawaited(discardTemporaryPhotoFile(proofPhoto?.path));
+      return;
+    }
+    if (_saving) {
+      unawaited(discardTemporaryPhotoFile(proofPhoto?.path));
+      return;
+    }
     setState(() => _saving = true);
     try {
-      final proofPath = proofPhoto == null
+      final photo = proofPhoto;
+      final proofPath = photo == null
           ? null
           : await ref.read(appControllerProvider).api.uploadVendorFile(
-                fileName: proofPhoto!.name,
+                fileName: photo.name,
                 contentType: 'image/jpeg',
-                bytes: await proofPhoto!.readAsBytes(),
+                bytes: await photo.readAsBytes(),
               );
+      if (photo != null) await discardTemporaryPhotoFile(photo.path);
       await ref.read(appControllerProvider).api.verifyVendorDelivery(
             orderId: widget.order.id,
             otp: otp,
@@ -854,6 +902,7 @@ class _OrderActionsState extends ConsumerState<_OrderActions> {
         );
       }
     } finally {
+      unawaited(discardTemporaryPhotoFile(proofPhoto?.path));
       if (mounted) setState(() => _saving = false);
     }
   }
@@ -1140,6 +1189,7 @@ class VendorFleetScreen extends ConsumerWidget {
     required Future<void> Function() submit,
   }) async {
     String? error;
+    var submitting = false;
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -1167,14 +1217,23 @@ class VendorFleetScreen extends ConsumerWidget {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () async {
-                try {
-                  await submit();
-                  if (context.mounted) Navigator.pop(context, true);
-                } catch (value) {
-                  setState(() => error = value.toString());
-                }
-              },
+              onPressed: submitting
+                  ? null
+                  : () async {
+                      setState(() {
+                        submitting = true;
+                        error = null;
+                      });
+                      try {
+                        await submit();
+                        if (context.mounted) Navigator.pop(context, true);
+                      } catch (value) {
+                        setState(() {
+                          submitting = false;
+                          error = value.toString();
+                        });
+                      }
+                    },
               child: const Text('Save'),
             ),
           ],
@@ -1464,6 +1523,7 @@ class _VendorDocumentCard extends ConsumerWidget {
                             final photo = await ImagePicker().pickImage(
                               source: ImageSource.camera,
                               imageQuality: 80,
+                              requestFullMetadata: pickerRequestsFullMetadata,
                             );
                             if (photo != null && dialogContext.mounted) {
                               setDialogState(() {
@@ -1594,6 +1654,8 @@ class _VendorDocumentCard extends ConsumerWidget {
                             expiresOn: expiryText.isEmpty ? null : expiryText,
                           );
                         }
+                        // The upload and the record are saved, so the local copy is no longer needed.
+                        await discardTemporaryPhotoFile(cameraPhoto?.path);
                         if (dialogContext.mounted) {
                           Navigator.pop(dialogContext, true);
                         }
@@ -1621,6 +1683,8 @@ class _VendorDocumentCard extends ConsumerWidget {
     type.dispose();
     objectKey.dispose();
     expiry.dispose();
+    // A captured photo that was not saved is removed with the dialog.
+    unawaited(discardTemporaryPhotoFile(cameraPhoto?.path));
     if (saved == true && context.mounted) {
       _invalidateVendorFleet(ref);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1852,6 +1916,9 @@ Future<bool> _showVendorForm(
 class VendorEarningsScreen extends ConsumerWidget {
   const VendorEarningsScreen({super.key});
 
+  /// Only one payout request is sent at a time.
+  static var _payoutInFlight = false;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final payouts = ref.watch(vendorPayoutsProvider);
@@ -1937,9 +2004,11 @@ class VendorEarningsScreen extends ConsumerWidget {
   }
 
   Future<void> _requestPayout(BuildContext context, WidgetRef ref) async {
+    if (_payoutInFlight) return;
     final amountController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     DateTimeRange? period;
+    var dialogSubmitted = false;
     final submitted = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -1996,7 +2065,9 @@ class VendorEarningsScreen extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () {
+                if (dialogSubmitted) return;
                 if (formKey.currentState!.validate()) {
+                  dialogSubmitted = true;
                   Navigator.pop(context, true);
                 }
               },
@@ -2009,6 +2080,7 @@ class VendorEarningsScreen extends ConsumerWidget {
     final amount = double.tryParse(amountController.text.trim());
     amountController.dispose();
     if (submitted != true || amount == null || !context.mounted) return;
+    _payoutInFlight = true;
     try {
       await ref.read(appControllerProvider).api.requestVendorPayout(
             amount: amount,
@@ -2027,6 +2099,8 @@ class VendorEarningsScreen extends ConsumerWidget {
           SnackBar(content: Text('Payout request failed: $error')),
         );
       }
+    } finally {
+      _payoutInFlight = false;
     }
   }
 }

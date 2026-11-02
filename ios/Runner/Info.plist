@@ -31,7 +31,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to unlock your Urban Tanker session.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Share your live location with the customer while you are completing an active delivery.</string>
+	<string>Urban Tanker uses your location to fill in the delivery address when you book, and shares your live location with the customer while you are completing an active delivery.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

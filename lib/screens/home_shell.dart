@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,7 +57,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   late Future<List<NotificationItem>>? _notifications;
   StreamSubscription<RealtimeEvent>? _realtimeSubscription;
 
-  WorkspaceRole get role => widget.controller.user!.role;
+  WorkspaceRole get role =>
+      widget.controller.user?.role ?? WorkspaceRole.customer;
 
   @override
   void initState() {
@@ -279,6 +281,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     var phoneVerified = false;
     var loadingPhoneVerification = true;
     var validatingCoupon = false;
+    var submittingBooking = false;
+    String? bookingKey;
+    String? bookingKeyFingerprint;
     var paymentMethod = 'cod';
     try {
       final savedPhone = await widget.controller.api.phoneVerification();
@@ -753,6 +758,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     const SizedBox(height: 12),
                     FilledButton(
                       onPressed: loadingPhoneVerification ||
+                              submittingBooking ||
                               selectedServices.isEmpty ||
                               !phoneVerified ||
                               selectedServices.any(serviceHasMissingFields)
@@ -764,6 +770,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                 return;
                               }
                               if (!formKey.currentState!.validate()) return;
+                              setSheetState(() => submittingBooking = true);
                               try {
                                 final services = buildServiceDetails();
                                 final quotePreview = await widget.controller.api
@@ -857,6 +864,23 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                 if (confirmed != true || !context.mounted) {
                                   return;
                                 }
+                                // One key per distinct submission. A retry of the
+                                // same form reuses it, so the server can dedupe it.
+                                final keyFingerprint = jsonEncode([
+                                  for (final service in services)
+                                    service.toJson(),
+                                  notesController.text,
+                                  phoneController.text,
+                                  validatedCoupon == null
+                                      ? null
+                                      : couponController.text.trim(),
+                                  paymentMethod,
+                                  phoneChallengeId,
+                                ]);
+                                if (keyFingerprint != bookingKeyFingerprint) {
+                                  bookingKeyFingerprint = keyFingerprint;
+                                  bookingKey = newIdempotencyKey();
+                                }
                                 final booking =
                                     await widget.controller.api.createBooking(
                                   serviceId: services.first.serviceId,
@@ -875,6 +899,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                   phone: phoneController.text,
                                   phoneVerificationChallengeId:
                                       phoneChallengeId,
+                                  idempotencyKey: bookingKey,
                                 );
                                 booking['service_details'] = services
                                     .map((service) => service.toJson())
@@ -894,6 +919,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text(error.toString())),
                                   );
+                                }
+                              } finally {
+                                if (context.mounted) {
+                                  setSheetState(
+                                      () => submittingBooking = false);
                                 }
                               }
                             },
@@ -990,7 +1020,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final user = widget.controller.user!;
+    final user = widget.controller.user;
+    // The app switches to the auth screen on sign-out; render nothing until then.
+    if (user == null) return const SizedBox.shrink();
     final tabs = _tabsForRole(role);
     return Scaffold(
       appBar: AppBar(

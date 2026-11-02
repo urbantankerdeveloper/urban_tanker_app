@@ -1,6 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 enum PhotoAccess { granted, denied, permanentlyDenied }
+
+/// iOS only reads full photo metadata with photo library access, which the app
+/// does not request for camera captures.
+bool get pickerRequestsFullMetadata =>
+    defaultTargetPlatform != TargetPlatform.iOS;
 
 PhotoAccess photoAccessFor(PermissionStatus status) => switch (status) {
       PermissionStatus.granted ||

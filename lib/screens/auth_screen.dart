@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app/app_controller.dart';
 import '../app/page_components.dart';
 import '../app/theme.dart';
+import '../services/masking.dart';
 
 enum _AuthMode { register, login }
 
@@ -135,7 +136,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 ? 'Welcome back.'
                 : 'Sign in.';
     final subtitle = _otpRequested
-        ? 'Enter the 6-digit code sent to ${_phone.text}.'
+        ? 'Enter the 6-digit code sent to ${maskPhone(_phone.text)}.'
         : _isRegistration
             ? 'Create a customer account with your mobile number and a one-time code.'
             : usePhone
