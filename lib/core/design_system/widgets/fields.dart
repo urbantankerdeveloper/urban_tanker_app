@@ -17,6 +17,7 @@ class AppTextField extends StatelessWidget {
     this.label,
     this.hint,
     this.helper,
+    this.prefixText,
     this.validator,
     this.onChanged,
     this.onFieldSubmitted,
@@ -24,6 +25,7 @@ class AppTextField extends StatelessWidget {
     this.suffix,
     this.keyboardType,
     this.textInputAction,
+    this.textCapitalization = TextCapitalization.none,
     this.obscureText = false,
     this.enabled = true,
     this.autofillHints,
@@ -37,6 +39,7 @@ class AppTextField extends StatelessWidget {
   final String? label;
   final String? hint;
   final String? helper;
+  final String? prefixText;
   final FormFieldValidator<String>? validator;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onFieldSubmitted;
@@ -44,6 +47,7 @@ class AppTextField extends StatelessWidget {
   final Widget? suffix;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
+  final TextCapitalization textCapitalization;
   final bool obscureText;
   final bool enabled;
   final Iterable<String>? autofillHints;
@@ -62,6 +66,7 @@ class AppTextField extends StatelessWidget {
       onFieldSubmitted: onFieldSubmitted,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
+      textCapitalization: textCapitalization,
       obscureText: obscureText,
       enabled: enabled,
       autofillHints: autofillHints,
@@ -73,6 +78,7 @@ class AppTextField extends StatelessWidget {
         hintText: hint,
         helperText: helper,
         prefixIcon: prefix,
+        prefixText: prefixText,
         suffixIcon: suffix,
       ),
     );
@@ -81,15 +87,20 @@ class AppTextField extends StatelessWidget {
 
 /// Six-box one-time-code input. A transparent text field sits over the boxes,
 /// so the platform keyboard, paste and SMS autofill still work.
+///
+/// Pass [controller] to read or clear the code from outside. Without it, the
+/// field keeps its own controller.
 class OtpField extends StatefulWidget {
   const OtpField({
     required this.onChanged,
     super.key,
+    this.controller,
     this.length = 6,
     this.onCompleted,
     this.autofocus = false,
   });
 
+  final TextEditingController? controller;
   final int length;
   final ValueChanged<String> onChanged;
   final ValueChanged<String>? onCompleted;
@@ -100,21 +111,40 @@ class OtpField extends StatefulWidget {
 }
 
 class _OtpFieldState extends State<OtpField> {
-  final _controller = TextEditingController();
+  late TextEditingController _controller;
+  late bool _ownsController;
   final _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_rebuild);
+    _attach(widget.controller);
     _focusNode.addListener(_rebuild);
   }
 
   @override
+  void didUpdateWidget(covariant OtpField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      _detach();
+      _attach(widget.controller);
+    }
+  }
+
+  void _attach(TextEditingController? external) {
+    _ownsController = external == null;
+    _controller = external ?? TextEditingController();
+    _controller.addListener(_rebuild);
+  }
+
+  void _detach() {
+    _controller.removeListener(_rebuild);
+    if (_ownsController) _controller.dispose();
+  }
+
+  @override
   void dispose() {
-    _controller
-      ..removeListener(_rebuild)
-      ..dispose();
+    _detach();
     _focusNode
       ..removeListener(_rebuild)
       ..dispose();
@@ -187,6 +217,7 @@ class _OtpFieldState extends State<OtpField> {
                 enableInteractiveSelection: false,
                 style: const TextStyle(color: Colors.transparent),
                 cursorColor: Colors.transparent,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 onChanged: _handleChanged,
                 decoration: const InputDecoration(
                   border: InputBorder.none,

@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
-import '../app/page_components.dart';
-import '../app/pin_pad.dart';
+import '../core/design_system/design_system.dart';
 import '../services/mpin_service.dart';
 
 /// Creates or changes the MPIN. The user enters it twice, then can also turn on
@@ -22,6 +21,7 @@ class _UnlockSetupScreenState extends State<UnlockSetupScreen> {
   String? _firstPin;
   String? _error;
   bool _saving = false;
+  int _shakeSignal = 0;
 
   bool get _confirming => _firstPin != null;
 
@@ -51,6 +51,7 @@ class _UnlockSetupScreenState extends State<UnlockSetupScreen> {
       setState(() {
         _firstPin = null;
         _pin = '';
+        _shakeSignal++;
         _error = "The MPINs don't match. Start again.";
       });
       return;
@@ -65,98 +66,85 @@ class _UnlockSetupScreenState extends State<UnlockSetupScreen> {
   Future<void> _offerFingerprint() async {
     final auth = widget.controller.biometricAuth;
     if (!await auth.canAuthenticate() || !mounted) return;
-    final enable = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.fingerprint),
-        title: const Text('Also unlock with fingerprint?'),
-        content: const Text(
+    final enable = await showAppConfirmDialog(
+      context,
+      title: 'Also unlock with fingerprint?',
+      message:
           'You can still use your MPIN. You can change this later in Security.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Not now'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Enable'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Enable',
+      cancelLabel: 'Not now',
     );
-    if (enable != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    if (!enable || !mounted) return;
     try {
       final authenticated = await auth.authenticate(
         'Confirm fingerprint unlock for Urban Tanker',
       );
+      if (!mounted) return;
       if (authenticated) {
         await widget.controller.setBiometricEnabled(true);
       } else {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Fingerprint unlock was not enabled.')),
+        showAppSnack(
+          context,
+          'Fingerprint unlock was not enabled.',
         );
       }
     } on PlatformException catch (error) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            error.message ?? 'Fingerprint unlock could not be enabled.',
-          ),
-        ),
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        error.message ?? 'Fingerprint unlock could not be enabled.',
+        variant: AppSnackVariant.error,
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colors = context.colors;
     final canContinue = _pin.length >= MpinService.minLength && !_saving;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_confirming ? 'Confirm your MPIN' : 'Create your MPIN'),
-      ),
-      body: SafeArea(
+    return AppScaffold(
+      title: _confirming ? 'Confirm your MPIN' : 'Create your MPIN',
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpace.gutter),
         child: Center(
-          child: SingleChildScrollView(
-            padding: AppPageInsets.status,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 360),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  _confirming
+                      ? 'Enter the same MPIN again.'
+                      : 'Choose a ${MpinService.minLength} to '
+                          '${MpinService.maxLength} digit MPIN. You will use it to unlock the app.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: AppSpace.md),
                   Text(
-                    _confirming
-                        ? 'Enter the same MPIN again.'
-                        : 'Choose a ${MpinService.minLength} to '
-                            '${MpinService.maxLength} digit MPIN. You will use it to unlock the app.',
+                    _error!,
                     textAlign: TextAlign.center,
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: theme.colorScheme.error),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  PinPad(
-                    entered: _pin.length,
-                    canSubmit: canContinue,
-                    onDigit: _addDigit,
-                    onDelete: _deleteDigit,
-                    onSubmit: _continue,
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: canContinue ? _continue : null,
-                    child: Text(_confirming ? 'Save MPIN' : 'Continue'),
+                    style: TextStyle(color: colors.danger.fg),
                   ),
                 ],
-              ),
+                const SizedBox(height: AppSpace.xl),
+                PinPad(
+                  entered: _pin.length,
+                  canSubmit: canContinue,
+                  onDigit: _addDigit,
+                  onDelete: _deleteDigit,
+                  onSubmit: _continue,
+                  shakeSignal: _shakeSignal,
+                ),
+                const SizedBox(height: AppSpace.xl),
+                PrimaryButton(
+                  label: _confirming ? 'Save MPIN' : 'Continue',
+                  loading: _saving,
+                  onPressed: canContinue ? _continue : null,
+                ),
+              ],
             ),
           ),
         ),

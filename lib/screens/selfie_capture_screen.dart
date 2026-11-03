@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../app/app_controller.dart';
+import '../core/design_system/design_system.dart';
 import '../services/photo_permissions.dart';
 import '../services/secure_screen.dart';
 import '../services/temporary_photo.dart';
@@ -115,84 +116,165 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colors = context.colors;
     final photo = _photo;
+    final onHero = colors.onHero;
     return Scaffold(
+      backgroundColor: AppPalette.darkScaffold,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: onHero,
         title: const Text('Take your selfie'),
         actions: [
           TextButton(
+            style: TextButton.styleFrom(foregroundColor: onHero),
             onPressed: _saving ? null : () => widget.controller.signOut(),
             child: const Text('Sign out'),
           ),
         ],
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'We need a quick selfie to finish creating your account. '
-                'It is stored privately and is only visible to Urban Tanker admins for verification.',
-                style: theme.textTheme.bodyMedium,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (photo == null)
+            DecoratedBox(
+              decoration: BoxDecoration(gradient: colors.heroGradient),
+              child: Center(
+                child: Icon(
+                  Icons.face_retouching_natural,
+                  size: 96,
+                  color: onHero.withValues(alpha: 0.7),
+                ),
               ),
-              const SizedBox(height: 20),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: ColoredBox(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    child: photo == null
-                        ? Center(
-                            child: Icon(
-                              Icons.face_retouching_natural,
-                              size: 96,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          )
-                        : Image.file(
-                            File(photo.path),
-                            fit: BoxFit.cover,
-                            cacheWidth: _photoSide,
-                          ),
+            )
+          else
+            Image.file(
+              File(photo.path),
+              fit: BoxFit.cover,
+              cacheWidth: _photoSide,
+            ),
+          if (photo == null) const OvalGuide(),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpace.lg),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: _ScrimCard(
+                  child: Text(
+                    'We need a quick selfie to finish creating your account. '
+                    'It is stored privately and is only visible to Urban Tanker admins for verification.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: onHero, height: 1.4),
                   ),
                 ),
               ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
-                if (_settingsNeeded)
-                  TextButton(
-                    onPressed: () => openAppSettings(),
-                    child: const Text('Open settings'),
-                  ),
-              ],
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: _saving ? null : _pick,
-                icon: const Icon(Icons.camera_alt_outlined),
-                label: Text(
-                  photo == null ? 'Open front camera' : 'Retake with camera',
-                ),
-              ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: photo == null || _saving ? null : _save,
-                child: _saving
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save and continue'),
-              ),
-            ],
+            ),
           ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpace.lg),
+                child: _ScrimCard(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_error != null) ...[
+                        _ErrorLine(message: _error!),
+                        if (_settingsNeeded)
+                          TextButton(
+                            style:
+                                TextButton.styleFrom(foregroundColor: onHero),
+                            onPressed: () => openAppSettings(),
+                            child: const Text('Open settings'),
+                          ),
+                        const SizedBox(height: AppSpace.md),
+                      ],
+                      if (photo == null)
+                        PrimaryButton(
+                          label: 'Open front camera',
+                          icon: Icons.camera_alt_outlined,
+                          onPressed: _saving ? null : _pick,
+                        )
+                      else ...[
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: onHero,
+                            side: BorderSide(
+                                color: onHero.withValues(alpha: 0.5)),
+                            minimumSize: const Size(64, AppSize.buttonHeight),
+                          ),
+                          onPressed: _saving ? null : _pick,
+                          icon: const Icon(Icons.camera_alt_outlined),
+                          label: const Text('Retake with camera'),
+                        ),
+                        const SizedBox(height: AppSpace.md),
+                        PrimaryButton(
+                          label: 'Save and continue',
+                          loading: _saving,
+                          onPressed: _saving ? null : _save,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dark translucent card so white text reads over the camera preview.
+class _ScrimCard extends StatelessWidget {
+  const _ScrimCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: AppRadius.cardBorder,
+      child: DecoratedBox(
+        decoration: BoxDecoration(color: context.colors.scrim),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpace.lg),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorLine extends StatelessWidget {
+  const _ErrorLine({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = context.colors.danger;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tone.bg,
+        borderRadius: AppRadius.pillBorder,
+        border: Border.all(color: tone.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpace.lg,
+          vertical: AppSpace.sm,
+        ),
+        child: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: tone.fg, fontWeight: FontWeight.w600),
         ),
       ),
     );

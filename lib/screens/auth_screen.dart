@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
-import '../app/page_components.dart';
-import '../app/theme.dart';
+import '../core/design_system/design_system.dart';
 import '../services/masking.dart';
 
 enum _AuthMode { register, login }
@@ -111,6 +110,13 @@ class _AuthScreenState extends State<AuthScreen> {
     return null;
   }
 
+  String? _validateOtp(String value) {
+    if (!RegExp(r'^\d{6}$').hasMatch(value.trim())) {
+      return 'Enter the 6-digit code.';
+    }
+    return null;
+  }
+
   String? _validateName(String? value) {
     if (!_isRegistration) return null;
     if ((value ?? '').trim().length < 2) {
@@ -127,6 +133,8 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
+    final colors = context.colors;
+    final theme = Theme.of(context);
     final usePhone = _usesPhone;
     final title = _otpRequested
         ? 'Verify your number.'
@@ -143,229 +151,220 @@ class _AuthScreenState extends State<AuthScreen> {
                 ? 'Sign in with a one-time code sent to your mobile number.'
                 : 'Use your registered username and password.';
 
+    final fields = <Widget>[
+      if (!_isRegistration) ...[
+        SegmentedTabs(
+          labels: const ['Phone OTP', 'Username'],
+          selectedIndex: _loginMethod == _LoginMethod.phone ? 0 : 1,
+          onChanged: controller.busy
+              ? null
+              : (index) => _selectLoginMethod(
+                    index == 0
+                        ? _LoginMethod.phone
+                        : _LoginMethod.usernamePassword,
+                  ),
+        ),
+        const SizedBox(height: AppSpace.xl),
+      ],
+      if (usePhone) ...[
+        AppTextField(
+          controller: _phone,
+          enabled: !_otpRequested && !controller.busy,
+          label: '10-digit mobile number',
+          prefix: const Icon(Icons.phone_outlined),
+          prefixText: '+91 ',
+          keyboardType: TextInputType.phone,
+          textInputAction:
+              _otpRequested ? TextInputAction.next : TextInputAction.done,
+          suffix: _otpRequested
+              ? IconButton(
+                  tooltip: 'Change mobile number',
+                  onPressed: controller.busy ? null : _changeNumber,
+                  icon: const Icon(Icons.edit_outlined),
+                )
+              : null,
+          validator: _validatePhone,
+        ),
+        if (_otpRequested) ...[
+          const SizedBox(height: AppSpace.md),
+          FormField<String>(
+            validator: (_) => _validateOtp(_otp.text),
+            builder: (field) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Verification code', style: theme.textTheme.labelLarge),
+                const SizedBox(height: AppSpace.sm),
+                IgnorePointer(
+                  ignoring: controller.busy,
+                  child: OtpField(
+                    controller: _otp,
+                    onChanged: (_) => field.didChange(_otp.text),
+                  ),
+                ),
+                if (field.hasError) ...[
+                  const SizedBox(height: AppSpace.xs),
+                  Text(
+                    field.errorText!,
+                    style: TextStyle(color: colors.danger.fg),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (_isRegistration) ...[
+            const SizedBox(height: AppSpace.md),
+            AppTextField(
+              controller: _name,
+              enabled: !controller.busy,
+              label: 'Full name',
+              prefix: const Icon(Icons.person_outline),
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              validator: _validateName,
+            ),
+          ],
+        ],
+      ] else ...[
+        AppTextField(
+          controller: _username,
+          enabled: !controller.busy,
+          label: 'Username',
+          prefix: const Icon(Icons.person_outline),
+          keyboardType: TextInputType.text,
+          textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.username],
+          validator: (value) => _validateRequired(value, 'username'),
+        ),
+        const SizedBox(height: AppSpace.md),
+        AppTextField(
+          controller: _password,
+          enabled: !controller.busy,
+          label: 'Password',
+          prefix: const Icon(Icons.lock_outline),
+          obscureText: _obscurePassword,
+          textInputAction: TextInputAction.done,
+          autofillHints: const [AutofillHints.password],
+          suffix: IconButton(
+            tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+            onPressed: () => setState(
+              () => _obscurePassword = !_obscurePassword,
+            ),
+            icon: Icon(
+              _obscurePassword
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+            ),
+          ),
+          validator: (value) => _validateRequired(value, 'password'),
+        ),
+      ],
+      if (controller.errorMessage != null) ...[
+        const SizedBox(height: AppSpace.md),
+        Text(
+          controller.errorMessage!,
+          style: TextStyle(color: colors.danger.fg),
+        ),
+      ],
+      if (controller.successMessage != null) ...[
+        const SizedBox(height: AppSpace.md),
+        Text(
+          controller.successMessage!,
+          style: TextStyle(color: colors.success.fg),
+        ),
+      ],
+      const SizedBox(height: AppSpace.xl),
+      PrimaryButton(
+        label: !usePhone
+            ? 'Sign in'
+            : _otpRequested
+                ? _isRegistration
+                    ? 'Verify code and create account'
+                    : 'Verify code and sign in'
+                : 'Send verification code',
+        loading: controller.busy,
+        onPressed: controller.busy ? null : _submit,
+      ),
+      if (usePhone && _otpRequested)
+        GhostButton(
+          label: 'Send a new code',
+          onPressed: controller.busy
+              ? null
+              : () async {
+                  _otp.clear();
+                  await controller.requestPhoneAuthOtp(_phone.text);
+                },
+        ),
+    ];
+
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: AppPageInsets.standard,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'URBAN TANKER',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: aqua,
-                            letterSpacing: 2,
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    const SizedBox(height: 18),
-                    Text(
-                      title,
-                      style:
-                          Theme.of(context).textTheme.headlineLarge?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurface,
-                                fontWeight: FontWeight.w800,
-                              ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(subtitle),
-                    if (!_isRegistration) ...[
-                      const SizedBox(height: 20),
-                      SegmentedButton<_LoginMethod>(
-                        segments: const [
-                          ButtonSegment(
-                            value: _LoginMethod.phone,
-                            icon: Icon(Icons.phone_outlined),
-                            label: Text('Phone OTP'),
-                          ),
-                          ButtonSegment(
-                            value: _LoginMethod.usernamePassword,
-                            icon: Icon(Icons.person_outline),
-                            label: Text('Username'),
-                          ),
-                        ],
-                        selected: {_loginMethod},
-                        onSelectionChanged: controller.busy
-                            ? null
-                            : (selection) =>
-                                _selectLoginMethod(selection.first),
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    if (usePhone) ...[
-                      TextFormField(
-                        controller: _phone,
-                        enabled: !_otpRequested && !controller.busy,
-                        keyboardType: TextInputType.phone,
-                        textInputAction: _otpRequested
-                            ? TextInputAction.next
-                            : TextInputAction.done,
-                        decoration: InputDecoration(
-                          labelText: '10-digit mobile number',
-                          prefixIcon: const Icon(Icons.phone_outlined),
-                          prefixText: '+91 ',
-                          suffixIcon: _otpRequested
-                              ? IconButton(
-                                  tooltip: 'Change mobile number',
-                                  onPressed:
-                                      controller.busy ? null : _changeNumber,
-                                  icon: const Icon(Icons.edit_outlined),
-                                )
-                              : null,
-                        ),
-                        validator: _validatePhone,
-                      ),
-                      if (_otpRequested) ...[
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _otp,
-                          enabled: !controller.busy,
-                          keyboardType: TextInputType.number,
-                          textInputAction: _isRegistration
-                              ? TextInputAction.next
-                              : TextInputAction.done,
-                          maxLength: 6,
-                          decoration: const InputDecoration(
-                            labelText: 'Verification code',
-                            prefixIcon: Icon(Icons.password_outlined),
-                            counterText: '',
-                          ),
-                          validator: (value) => value == null ||
-                                  !RegExp(r'^\d{6}$').hasMatch(value.trim())
-                              ? 'Enter the 6-digit code.'
-                              : null,
-                        ),
-                        if (_isRegistration) ...[
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _name,
-                            enabled: !controller.busy,
-                            textCapitalization: TextCapitalization.words,
-                            textInputAction: TextInputAction.done,
-                            decoration: const InputDecoration(
-                              labelText: 'Full name',
-                              prefixIcon: Icon(Icons.person_outline),
-                            ),
-                            validator: _validateName,
-                          ),
-                        ],
-                      ],
-                    ] else ...[
-                      TextFormField(
-                        controller: _username,
-                        enabled: !controller.busy,
-                        keyboardType: TextInputType.text,
-                        textInputAction: TextInputAction.next,
-                        autofillHints: const [AutofillHints.username],
-                        decoration: const InputDecoration(
-                          labelText: 'Username',
-                          prefixIcon: Icon(Icons.person_outline),
-                        ),
-                        validator: (value) =>
-                            _validateRequired(value, 'username'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _password,
-                        enabled: !controller.busy,
-                        obscureText: _obscurePassword,
-                        textInputAction: TextInputAction.done,
-                        autofillHints: const [AutofillHints.password],
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          suffixIcon: IconButton(
-                            tooltip: _obscurePassword
-                                ? 'Show password'
-                                : 'Hide password',
-                            onPressed: () => setState(
-                              () => _obscurePassword = !_obscurePassword,
-                            ),
-                            icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                            ),
-                          ),
-                        ),
-                        validator: (value) =>
-                            _validateRequired(value, 'password'),
-                      ),
-                    ],
-                    if (controller.errorMessage != null) ...[
-                      const SizedBox(height: 12),
+      body: BrandBackdrop(
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.gutter,
+                AppSpace.xxl,
+                AppSpace.gutter,
+                AppSpace.xxl,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Center(child: BrandLogo()),
+                      const SizedBox(height: AppSpace.lg),
                       Text(
-                        controller.errorMessage!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                        'URBAN TANKER',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: colors.primary,
+                          letterSpacing: 2,
                         ),
                       ),
-                    ],
-                    if (controller.successMessage != null) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: AppSpace.sm),
                       Text(
-                        controller.successMessage!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.primary,
+                        title,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.headlineMedium,
+                      ),
+                      const SizedBox(height: AppSpace.sm),
+                      Text(
+                        subtitle,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                      const SizedBox(height: AppSpace.xl),
+                      GlassCard(
+                        padding: const EdgeInsets.all(AppSpace.xl),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: fields,
                         ),
                       ),
-                    ],
-                    const SizedBox(height: 20),
-                    FilledButton(
-                      onPressed: controller.busy ? null : _submit,
-                      child: controller.busy
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(
-                              !usePhone
-                                  ? 'Sign in'
-                                  : _otpRequested
-                                      ? _isRegistration
-                                          ? 'Verify code and create account'
-                                          : 'Verify code and sign in'
-                                      : 'Send verification code',
-                            ),
-                    ),
-                    if (usePhone && _otpRequested)
-                      TextButton(
-                        onPressed: controller.busy
-                            ? null
-                            : () async {
-                                _otp.clear();
-                                await controller
-                                    .requestPhoneAuthOtp(_phone.text);
-                              },
-                        child: const Text('Send a new code'),
-                      ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: controller.busy
-                          ? null
-                          : () => _selectMode(
-                                _isRegistration
-                                    ? _AuthMode.login
-                                    : _AuthMode.register,
-                              ),
-                      child: Text(
-                        _isRegistration
+                      const SizedBox(height: AppSpace.md),
+                      GhostButton(
+                        label: _isRegistration
                             ? 'Already a user? Log in'
                             : 'New to Urban Tanker? Create an account',
+                        onPressed: controller.busy
+                            ? null
+                            : () => _selectMode(
+                                  _isRegistration
+                                      ? _AuthMode.login
+                                      : _AuthMode.register,
+                                ),
                       ),
-                    ),
-                    Text(
-                      'Public registration is for customer accounts. Existing vendor and admin accounts can sign in with their registered phone number or credentials.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+                      const SizedBox(height: AppSpace.sm),
+                      Text(
+                        'Public registration is for customer accounts. Existing vendor and admin accounts can sign in with their registered phone number or credentials.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

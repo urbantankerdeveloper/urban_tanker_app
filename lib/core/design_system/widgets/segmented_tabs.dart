@@ -10,13 +10,15 @@ class SegmentedTabs extends StatelessWidget {
   const SegmentedTabs({
     required this.labels,
     required this.selectedIndex,
-    required this.onChanged,
+    this.onChanged,
     super.key,
   });
 
   final List<String> labels;
   final int selectedIndex;
-  final ValueChanged<int> onChanged;
+
+  /// Null disables the control (taps are ignored).
+  final ValueChanged<int>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +64,7 @@ class SegmentedTabs extends StatelessWidget {
                       type: MaterialType.transparency,
                       child: InkWell(
                         borderRadius: AppRadius.pillBorder,
-                        onTap: () => onChanged(i),
+                        onTap: onChanged == null ? null : () => onChanged!(i),
                         child: Center(
                           child: AnimatedDefaultTextStyle(
                             duration: AppMotion.duration(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:urban_tanker_app/app/app_controller.dart';
+import 'package:urban_tanker_app/core/design_system/design_system.dart';
 import 'package:urban_tanker_app/models/session.dart';
 import 'package:urban_tanker_app/screens/auth_screen.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
@@ -57,6 +58,12 @@ class _FakeApiClient extends ApiClient {
   }
 }
 
+/// The one-time-code boxes are backed by a single TextField inside OtpField.
+Finder _otpInput() => find.descendant(
+      of: find.byType(OtpField),
+      matching: find.byType(TextField),
+    );
+
 void main() {
   late _FakeApiClient api;
   late AppController controller;
@@ -73,6 +80,9 @@ void main() {
   tearDown(() => controller.dispose());
 
   Future<void> showAuthScreen(WidgetTester tester) async {
+    // The form is taller now, so give the test surface room for the buttons.
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(home: AuthScreen(controller: controller)),
     );
@@ -132,8 +142,8 @@ void main() {
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
     await tester.tap(find.text('Send verification code'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(1), '123456');
-    await tester.enterText(find.byType(TextFormField).at(2), 'Asha Kumar');
+    await tester.enterText(_otpInput(), '123456');
+    await tester.enterText(find.byType(TextFormField).at(1), 'Asha Kumar');
     await tester.tap(find.text('Verify code and create account'));
     await tester.pumpAndSettle();
 
@@ -153,7 +163,7 @@ void main() {
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
     await tester.tap(find.text('Send verification code'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(1), '123456');
+    await tester.enterText(_otpInput(), '123456');
     await tester.tap(find.text('Verify code and sign in'));
     await tester.pumpAndSettle();
 
