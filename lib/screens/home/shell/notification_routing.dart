@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/design_system/design_system.dart';
+
 import '../../../app/app_controller.dart';
 import '../../../models/notification.dart';
 import '../../../models/session.dart';
@@ -52,9 +54,7 @@ Future<void> openNotificationTarget(
 ) async {
   if (role != WorkspaceRole.customer) {
     final target = item.bookingId != null ? 'Operations' : 'this section';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$target selected.')),
-    );
+    showAppSnack(context, '$target selected.');
     return;
   }
   try {
@@ -78,8 +78,10 @@ Future<void> openNotificationTarget(
         .push(MaterialPageRoute<void>(builder: (_) => page));
   } catch (error) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(error))),
+      showAppSnack(
+        context,
+        friendlyError(error),
+        variant: AppSnackVariant.error,
       );
     }
   }

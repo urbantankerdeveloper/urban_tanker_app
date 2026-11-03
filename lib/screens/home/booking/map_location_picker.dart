@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../core/design_system/design_system.dart';
 import '../../../services/service_area.dart';
+import '../../common/brand_map.dart';
 
 class MapLocationPicker extends StatefulWidget {
   const MapLocationPicker({super.key, this.latitude, this.longitude});
@@ -30,8 +32,8 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Choose delivery location'),
+  Widget build(BuildContext context) => AppDialog(
+        title: 'Choose delivery location',
         content: Semantics(
           label: 'Map to choose the delivery location',
           child: SizedBox(
@@ -46,11 +48,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                     latitude: point.latitude,
                     longitude: point.longitude,
                   )) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Choose a location inside Chennai.'),
-                      ),
-                    );
+                    showAppSnack(context, 'Choose a location inside Chennai.');
                     return;
                   }
                   setState(() => _selected = point);
@@ -68,10 +66,9 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                         point: _selected!,
                         width: 48,
                         height: 48,
-                        child: const Icon(
-                          Icons.location_pin,
-                          color: Colors.red,
-                          size: 42,
+                        child: BrandPin(
+                          color: context.colors.primary,
+                          foreground: context.colors.onHero,
                         ),
                       ),
                     ],

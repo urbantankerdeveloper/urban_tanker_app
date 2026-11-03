@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../../core/design_system/design_system.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-
-import '../../../app/page_components.dart';
 
 import '../../../services/friendly_error.dart';
 import '../../../services/service_area.dart';
@@ -169,13 +169,8 @@ class DeliveryLocationField extends StatelessWidget {
                 }
                 if (permission == LocationPermission.denied) {
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Location permission is needed to use your current location.',
-                        ),
-                      ),
-                    );
+                    showAppSnack(context,
+                        'Location permission is needed to use your current location.');
                   }
                   return;
                 }
@@ -193,8 +188,10 @@ class DeliveryLocationField extends StatelessWidget {
                 onChanged();
               } catch (error) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(friendlyError(error))),
+                  showAppSnack(
+                    context,
+                    friendlyError(error),
+                    variant: AppSnackVariant.error,
                   );
                 }
               }

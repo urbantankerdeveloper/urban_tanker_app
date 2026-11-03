@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app_controller.dart';
+import '../../../core/design_system/design_system.dart';
 import '../../unlock_setup_screen.dart';
 
 /// After the first sign-in, offers to set up an MPIN (and fingerprint).
@@ -11,27 +12,15 @@ Future<void> offerUnlockSetup(
   if (!controller.pendingUnlockSetup) return;
   await controller.markBiometricPromptOffered();
   if (!context.mounted) return;
-  final setUp = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      icon: const Icon(Icons.lock_outline),
-      title: const Text('Set up quick unlock?'),
-      content: const Text(
+  final setUp = await showAppConfirmDialog(
+    context,
+    title: 'Set up quick unlock?',
+    message:
         'Create an MPIN so you can unlock the app without your password. You can also use your fingerprint if your device supports it.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext, false),
-          child: const Text('Not now'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(dialogContext, true),
-          child: const Text('Set up'),
-        ),
-      ],
-    ),
+    confirmLabel: 'Set up',
+    cancelLabel: 'Not now',
   );
-  if (setUp != true || !context.mounted) return;
+  if (!setUp || !context.mounted) return;
   await Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => UnlockSetupScreen(controller: controller),

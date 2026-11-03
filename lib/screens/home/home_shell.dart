@@ -147,11 +147,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   void _selectNotification(NotificationItem item) {
     if (!hasNotificationTarget(item)) {
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This notification has no valid destination.'),
-        ),
-      );
+      showAppSnack(context, 'This notification has no valid destination.');
       return;
     }
     setState(() => _index = notificationTabIndex(role, item));
