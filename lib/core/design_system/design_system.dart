@@ -26,6 +26,7 @@ export 'widgets/segmented_tabs.dart';
 export 'widgets/skeleton.dart';
 export 'widgets/stat_card.dart';
 export 'widgets/state_views.dart';
+export 'widgets/status_dot.dart';
 export 'widgets/status_banners.dart';
 export 'widgets/status_chip.dart';
 export 'widgets/surfaces.dart';

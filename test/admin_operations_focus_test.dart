@@ -9,7 +9,7 @@ import 'package:urban_tanker_app/screens/admin/admin_operations_screen.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
 
 void main() {
-  testWidgets('a focus request expands only the matching operations group',
+  testWidgets('a focus request opens the matching operations section',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await tester.runAsync(SharedPreferences.getInstance);
@@ -28,25 +28,18 @@ void main() {
     );
     await tester.pump();
 
-    ExpansionTile tile(String title) => tester.widget<ExpansionTile>(
-          find.byWidgetPredicate(
-            (widget) =>
-                widget is ExpansionTile &&
-                widget.title is Text &&
-                (widget.title as Text).data == title,
-          ),
-        );
-    bool expanded(String title) => tile(title).controller!.isExpanded;
+    int shownSection() =>
+        tester.widget<IndexedStack>(find.byType(IndexedStack)).index!;
 
-    expect(expanded('Reports & setup'), isFalse);
+    expect(shownSection(), 0);
 
     focus.value = const OperationsFocus(OperationsSection.setup);
     await tester.pump();
-    await tester.pump();
+    expect(shownSection(), 3);
 
-    expect(expanded('Reports & setup'), isTrue);
-    expect(expanded('People & fleet'), isFalse);
-    expect(expanded('Bookings & dispatch'), isFalse);
+    focus.value = const OperationsFocus(OperationsSection.finance);
+    await tester.pump();
+    expect(shownSection(), 2);
     expect(tester.takeException(), isNull);
 
     // The sections start real requests, which leave timers behind. Dispose the
