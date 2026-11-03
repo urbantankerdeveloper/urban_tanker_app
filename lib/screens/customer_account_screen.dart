@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
-import '../app/page_components.dart';
+import '../core/design_system/design_system.dart';
 import '../models/account.dart';
 import '../services/api_client.dart';
 import '../services/masking.dart';
 import '../services/secure_screen.dart';
 import '../services/friendly_error.dart';
+import 'home/shell/appearance.dart';
 import 'invoice_detail_screen.dart';
+import 'security_settings_screen.dart';
 import 'support_request_detail_screen.dart';
 
+/// Customer Account tab: profile, usage, memberships, offers, payments and
+/// billing, addresses, help, and settings (security, appearance, sign out).
 class CustomerAccountScreen extends ConsumerWidget {
   const CustomerAccountScreen({super.key});
 
@@ -19,33 +23,31 @@ class CustomerAccountScreen extends ConsumerWidget {
     final profile = ref.watch(customerProfileProvider);
     return SecureScope(
       child: ListView(
-        padding: AppPageInsets.standard,
+        padding: const EdgeInsets.fromLTRB(
+          AppSpace.gutter,
+          AppSpace.lg,
+          AppSpace.gutter,
+          AppSpace.xxxl,
+        ),
         children: [
           profile.when(
-            loading: () => const LinearProgressIndicator(),
+            loading: () =>
+                const SkeletonBox(height: 88, radius: AppRadius.card),
             error: (error, _) => _AccountError(
               message: friendlyError(error),
               retry: () => ref.invalidate(customerProfileProvider),
             ),
-            data: (user) => Card(
-              child: ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-                title: Text(user.name),
-                subtitle: Text(
-                  [maskEmail(user.email), maskPhone(user.phone)]
-                      .where((value) => value.isNotEmpty)
-                      .join('\n'),
-                ),
-                trailing: IconButton(
-                  tooltip: 'Edit profile',
-                  icon: const Icon(Icons.edit_outlined),
-                  onPressed: () => _editProfile(context, ref, user),
-                ),
-              ),
+            data: (user) => _ProfileCard(
+              profile: user,
+              onEdit: () => _editProfile(context, ref, user),
             ),
           ),
-          const SizedBox(height: 12),
-          _UsageCard(),
+          const SizedBox(height: AppSpace.md),
+          const _UsageCard(),
+          const SizedBox(height: AppSpace.xl),
+          const _GroupLabel('Membership and offers'),
+          _MembershipSection(),
+          const SizedBox(height: AppSpace.md),
           _AccountSection(
             title: 'Offers',
             icon: Icons.local_offer_outlined,
@@ -53,7 +55,35 @@ class CustomerAccountScreen extends ConsumerWidget {
             retry: (ref) => ref.invalidate(customerOffersProvider),
             empty: 'No active offers.',
           ),
-          _MembershipSection(),
+          const SizedBox(height: AppSpace.xl),
+          const _GroupLabel('Payments and billing'),
+          _AccountSection(
+            title: 'Wallet',
+            icon: Icons.account_balance_wallet_outlined,
+            provider: (ref) => ref.watch(customerWalletProvider),
+            retry: (ref) => ref.invalidate(customerWalletProvider),
+            empty: 'No wallet transactions yet.',
+            onItemTap: (item) => _showRecord(context, item),
+          ),
+          const SizedBox(height: AppSpace.md),
+          _AccountSection(
+            title: 'Invoices',
+            icon: Icons.receipt_long_outlined,
+            provider: (ref) => ref.watch(customerInvoicesProvider),
+            retry: (ref) => ref.invalidate(customerInvoicesProvider),
+            empty: 'No invoices available.',
+            onItemTap: (item) => _showInvoice(context, ref, item),
+          ),
+          const SizedBox(height: AppSpace.md),
+          _AccountSection(
+            title: 'Subscriptions',
+            icon: Icons.autorenew_outlined,
+            provider: (ref) => ref.watch(customerSubscriptionsProvider),
+            retry: (ref) => ref.invalidate(customerSubscriptionsProvider),
+            empty: 'No active subscriptions.',
+            onItemTap: (item) => _changeSubscription(context, ref, item),
+          ),
+          const SizedBox(height: AppSpace.md),
           _AccountSection(
             title: 'Yearly contracts',
             icon: Icons.description_outlined,
@@ -64,6 +94,8 @@ class CustomerAccountScreen extends ConsumerWidget {
             onAction: () => _createContract(context, ref),
             onItemTap: (item) => _showRecord(context, item),
           ),
+          const SizedBox(height: AppSpace.xl),
+          const _GroupLabel('Addresses'),
           _AccountSection(
             title: 'Saved addresses',
             icon: Icons.location_on_outlined,
@@ -74,30 +106,8 @@ class CustomerAccountScreen extends ConsumerWidget {
             onAction: () => _addAddress(context, ref),
             onItemTap: (item) => _manageAddress(context, ref, item),
           ),
-          _AccountSection(
-            title: 'Wallet',
-            icon: Icons.account_balance_wallet_outlined,
-            provider: (ref) => ref.watch(customerWalletProvider),
-            retry: (ref) => ref.invalidate(customerWalletProvider),
-            empty: 'No wallet transactions yet.',
-            onItemTap: (item) => _showRecord(context, item),
-          ),
-          _AccountSection(
-            title: 'Invoices',
-            icon: Icons.receipt_long_outlined,
-            provider: (ref) => ref.watch(customerInvoicesProvider),
-            retry: (ref) => ref.invalidate(customerInvoicesProvider),
-            empty: 'No invoices available.',
-            onItemTap: (item) => _showInvoice(context, ref, item),
-          ),
-          _AccountSection(
-            title: 'Subscriptions',
-            icon: Icons.autorenew_outlined,
-            provider: (ref) => ref.watch(customerSubscriptionsProvider),
-            retry: (ref) => ref.invalidate(customerSubscriptionsProvider),
-            empty: 'No active subscriptions.',
-            onItemTap: (item) => _changeSubscription(context, ref, item),
-          ),
+          const SizedBox(height: AppSpace.xl),
+          const _GroupLabel('Help'),
           _AccountSection(
             title: 'Support requests',
             icon: Icons.support_agent_outlined,
@@ -116,9 +126,56 @@ class CustomerAccountScreen extends ConsumerWidget {
               );
             },
           ),
+          const SizedBox(height: AppSpace.xl),
+          const _GroupLabel('Settings'),
+          SurfaceCard(
+            padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
+            child: AppListRow(
+              leading: const Icon(Icons.lock_outline),
+              title: 'Security settings',
+              subtitle: 'MPIN and fingerprint',
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SecuritySettingsScreen(
+                    controller: ref.read(appControllerProvider),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpace.md),
+          SurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Appearance',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: AppSpace.md),
+                AppearanceControl(controller: ref.watch(appControllerProvider)),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpace.xxl),
+          SecondaryButton(
+            label: 'Sign out',
+            icon: Icons.logout,
+            onPressed: () => _confirmSignOut(context, ref),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: 'Sign out?',
+      message: 'You will need your password or MPIN to sign back in.',
+      confirmLabel: 'Sign out',
+      destructive: true,
+    );
+    if (confirmed) await ref.read(appControllerProvider).signOut();
   }
 
   Future<void> _createContract(BuildContext context, WidgetRef ref) async {
@@ -160,19 +217,16 @@ class CustomerAccountScreen extends ConsumerWidget {
         .join('\n');
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(item.title),
-        content: SingleChildScrollView(
-          child: Text(
-            details.isEmpty
-                ? (item.detail.isEmpty ? 'No additional details.' : item.detail)
-                : details,
-          ),
-        ),
+      builder: (context) => AppDialog(
+        title: item.title,
+        message: details.isEmpty
+            ? (item.detail.isEmpty ? 'No additional details.' : item.detail)
+            : details,
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );
@@ -217,8 +271,8 @@ class CustomerAccountScreen extends ConsumerWidget {
           final dirty = name.text != initialName ||
               email.text != initialEmail ||
               phone.text != initialPhone;
-          return AlertDialog(
-            title: const Text('Edit profile'),
+          return AppDialog(
+            title: 'Edit profile',
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -245,11 +299,11 @@ class CustomerAccountScreen extends ConsumerWidget {
                   ),
                   if (error != null)
                     Padding(
-                      padding: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.only(top: AppSpace.sm),
                       child: Text(
                         error!,
                         style: TextStyle(
-                          color: Theme.of(dialogContext).colorScheme.error,
+                          color: dialogContext.colors.danger.fg,
                         ),
                       ),
                     ),
@@ -297,10 +351,10 @@ class CustomerAccountScreen extends ConsumerWidget {
                           ref.invalidate(customerProfileProvider);
                           if (dialogContext.mounted) {
                             Navigator.pop(dialogContext);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Profile saved successfully.'),
-                              ),
+                            showAppSnack(
+                              context,
+                              'Profile saved successfully.',
+                              variant: AppSnackVariant.success,
                             );
                           }
                         } catch (value) {
@@ -376,27 +430,27 @@ class CustomerAccountScreen extends ConsumerWidget {
     AccountRecord item,
   ) async {
     if (item.id.isEmpty) return;
-    final action = await showModalBottomSheet<String>(
-      context: context,
+    final action = await showAppBottomSheet<String>(
+      context,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
+            AppListRow(
               leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit address'),
+              title: 'Edit address',
               onTap: () => Navigator.pop(context, 'edit'),
             ),
-            ListTile(
+            AppListRow(
               leading: const Icon(Icons.star_outline),
-              title: Text(item.isDefault ? 'Default address' : 'Make default'),
+              title: item.isDefault ? 'Default address' : 'Make default',
               onTap: item.isDefault
                   ? null
                   : () => Navigator.pop(context, 'default'),
             ),
-            ListTile(
+            AppListRow(
               leading: const Icon(Icons.delete_outline),
-              title: const Text('Delete address'),
+              title: 'Delete address',
               onTap: () => Navigator.pop(context, 'delete'),
             ),
           ],
@@ -462,15 +516,13 @@ class CustomerAccountScreen extends ConsumerWidget {
           );
       ref.invalidate(customerAddressesProvider);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Default address updated.')),
-        );
+        showAppSnack(context, 'Default address updated.',
+            variant: AppSnackVariant.success);
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(error))),
-        );
+        showAppSnack(context, friendlyError(error),
+            variant: AppSnackVariant.error);
       }
     }
   }
@@ -481,37 +533,25 @@ class CustomerAccountScreen extends ConsumerWidget {
     AccountRecord item,
   ) async {
     if (item.id.isEmpty) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete address?'),
-        content: Text('Remove ${item.title} from saved addresses?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: 'Delete address?',
+      message: 'Remove ${item.title} from saved addresses?',
+      confirmLabel: 'Delete',
+      destructive: true,
     );
-    if (confirmed == true) {
+    if (confirmed) {
       try {
         await ref.read(appControllerProvider).api.deleteAddress(item.id);
         ref.invalidate(customerAddressesProvider);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Address deleted.')),
-          );
+          showAppSnack(context, 'Address deleted.',
+              variant: AppSnackVariant.success);
         }
       } catch (error) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(friendlyError(error))),
-          );
+          showAppSnack(context, friendlyError(error),
+              variant: AppSnackVariant.error);
         }
       }
     }
@@ -542,15 +582,15 @@ class CustomerAccountScreen extends ConsumerWidget {
     AccountRecord item,
   ) async {
     if (item.id.isEmpty) return;
-    final status = await showModalBottomSheet<String>(
-      context: context,
+    final status = await showAppBottomSheet<String>(
+      context,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: ['active', 'paused', 'cancelled']
               .map(
-                (value) => ListTile(
-                  title: Text(value[0].toUpperCase() + value.substring(1)),
+                (value) => AppListRow(
+                  title: value[0].toUpperCase() + value.substring(1),
                   onTap: () => Navigator.pop(context, value),
                 ),
               )
@@ -566,15 +606,13 @@ class CustomerAccountScreen extends ConsumerWidget {
             );
         ref.invalidate(customerSubscriptionsProvider);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Subscription marked $status.')),
-          );
+          showAppSnack(context, 'Subscription marked $status.',
+              variant: AppSnackVariant.success);
         }
       } catch (error) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(friendlyError(error))),
-          );
+          showAppSnack(context, friendlyError(error),
+              variant: AppSnackVariant.error);
         }
       }
     }
@@ -610,12 +648,72 @@ class CustomerAccountScreen extends ConsumerWidget {
       ),
     ).then((saved) {
       if (saved == true && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$title completed successfully.')),
+        showAppSnack(
+          context,
+          '$title completed successfully.',
+          variant: AppSnackVariant.success,
         );
       }
     });
   }
+}
+
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({required this.profile, required this.onEdit});
+
+  final CustomerProfile profile;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final contact = [maskEmail(profile.email), maskPhone(profile.phone)]
+        .where((value) => value.isNotEmpty)
+        .join('\n');
+    return SurfaceCard(
+      child: Row(
+        children: [
+          AppAvatar(name: profile.name, size: 56),
+          const SizedBox(width: AppSpace.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  profile.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge,
+                ),
+                if (contact.isNotEmpty)
+                  Text(contact, style: theme.textTheme.bodyMedium),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Edit profile',
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_outlined),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupLabel extends StatelessWidget {
+  const _GroupLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpace.sm),
+        child: Text(
+          text.toUpperCase(),
+          style: Theme.of(context).textTheme.labelSmall,
+        ),
+      );
 }
 
 class _UsageCard extends ConsumerWidget {
@@ -624,32 +722,26 @@ class _UsageCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final usage = ref.watch(customerUsageProvider);
-    return Card(
-      child: usage.when(
-        loading: () => const Padding(
-          padding: EdgeInsets.all(20),
-          child: LinearProgressIndicator(),
-        ),
-        error: (error, _) => _AccountError(
-          message: friendlyError(error),
-          retry: () => ref.invalidate(customerUsageProvider),
-        ),
-        data: (value) => Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _UsageMetric(label: 'Deliveries', value: '${value.deliveries}'),
-              _UsageMetric(
-                label: 'Total spend',
-                value: '₹${value.totalSpend.toStringAsFixed(0)}',
-              ),
-              _UsageMetric(
-                label: 'Average',
-                value: '₹${value.averageAmount.toStringAsFixed(0)}',
-              ),
-            ],
-          ),
+    return usage.when(
+      loading: () => const SkeletonBox(height: 84, radius: AppRadius.card),
+      error: (error, _) => _AccountError(
+        message: friendlyError(error),
+        retry: () => ref.invalidate(customerUsageProvider),
+      ),
+      data: (value) => SurfaceCard(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _UsageMetric(label: 'Deliveries', value: '${value.deliveries}'),
+            _UsageMetric(
+              label: 'Total spend',
+              value: '₹${value.totalSpend.toStringAsFixed(0)}',
+            ),
+            _UsageMetric(
+              label: 'Average',
+              value: '₹${value.averageAmount.toStringAsFixed(0)}',
+            ),
+          ],
         ),
       ),
     );
@@ -663,12 +755,45 @@ class _UsageMetric extends StatelessWidget {
   final String value;
 
   @override
-  Widget build(BuildContext context) => Column(
-        children: [
-          Text(value, style: Theme.of(context).textTheme.titleMedium),
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      );
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        AmountText(value, style: theme.textTheme.titleMedium),
+        Text(label, style: theme.textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+/// A collapsible card for one account list. Rows are the same as before.
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.title,
+    required this.icon,
+    required this.children,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return SurfaceCard(
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: AppRadius.cardBorder,
+        child: ExpansionTile(
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: Icon(icon, color: context.colors.primary),
+          title: Text(title, style: Theme.of(context).textTheme.titleMedium),
+          children: children,
+        ),
+      ),
+    );
+  }
 }
 
 class _MembershipSection extends ConsumerWidget {
@@ -677,70 +802,70 @@ class _MembershipSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final membership = ref.watch(customerMembershipProvider);
-    return Card(
-      child: ExpansionTile(
-        leading: const Icon(Icons.workspace_premium_outlined),
-        title: const Text('Membership'),
-        children: [
-          membership.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
-            error: (error, _) => _AccountError(
-              message: friendlyError(error),
-              retry: () => ref.invalidate(customerMembershipProvider),
-            ),
-            data: (value) => value == null
-                ? ListTile(
-                    title: const Text('No membership yet.'),
-                    trailing: TextButton(
-                      onPressed: () => _showPlans(context, ref),
-                      child: const Text('View plans'),
-                    ),
-                  )
-                : ListTile(
-                    title: Text(value.title),
-                    subtitle: Text(value.detail),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (status) async {
-                        final confirmed = await _confirmMembershipChange(
-                          context,
-                          status,
-                        );
-                        if (!confirmed || !context.mounted) return;
-                        try {
-                          await ref
-                              .read(appControllerProvider)
-                              .api
-                              .updateMembership(status);
-                          ref.invalidate(customerMembershipProvider);
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Membership marked $status.'),
-                            ),
-                          );
-                        } catch (error) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(friendlyError(error))),
-                          );
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'active', child: Text('Active')),
-                        PopupMenuItem(value: 'paused', child: Text('Paused')),
-                        PopupMenuItem(
-                          value: 'cancelled',
-                          child: Text('Cancelled'),
-                        ),
-                      ],
-                    ),
-                  ),
+    return _SectionCard(
+      title: 'Membership',
+      icon: Icons.workspace_premium_outlined,
+      children: [
+        membership.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.all(AppSpace.lg),
+            child: SkeletonBox(height: 48),
           ),
-        ],
-      ),
+          error: (error, _) => _AccountError(
+            message: friendlyError(error),
+            retry: () => ref.invalidate(customerMembershipProvider),
+          ),
+          data: (value) => value == null
+              ? AppListRow(
+                  title: 'No membership yet.',
+                  trailing: TextButton(
+                    onPressed: () => _showPlans(context, ref),
+                    child: const Text('View plans'),
+                  ),
+                )
+              : AppListRow(
+                  title: value.title,
+                  subtitle: value.detail,
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (status) async {
+                      final confirmed = await _confirmMembershipChange(
+                        context,
+                        status,
+                      );
+                      if (!confirmed || !context.mounted) return;
+                      try {
+                        await ref
+                            .read(appControllerProvider)
+                            .api
+                            .updateMembership(status);
+                        ref.invalidate(customerMembershipProvider);
+                        if (!context.mounted) return;
+                        showAppSnack(
+                          context,
+                          'Membership marked $status.',
+                          variant: AppSnackVariant.success,
+                        );
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        showAppSnack(
+                          context,
+                          friendlyError(error),
+                          variant: AppSnackVariant.error,
+                        );
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'active', child: Text('Active')),
+                      PopupMenuItem(value: 'paused', child: Text('Paused')),
+                      PopupMenuItem(
+                        value: 'cancelled',
+                        child: Text('Cancelled'),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
@@ -750,19 +875,18 @@ class _MembershipSection extends ConsumerWidget {
       plans = await ref.read(customerMembershipPlansProvider.future);
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(error))),
-        );
+        showAppSnack(context, friendlyError(error),
+            variant: AppSnackVariant.error);
       }
       return;
     }
     if (!context.mounted) return;
-    showModalBottomSheet<void>(
-      context: context,
+    showAppBottomSheet<void>(
+      context,
       builder: (context) => SafeArea(
         child: plans.isEmpty
             ? const Padding(
-                padding: EdgeInsets.all(20),
+                padding: EdgeInsets.all(AppSpace.xl),
                 child: Text('No membership plans are currently available.'),
               )
             : ListView.builder(
@@ -770,9 +894,9 @@ class _MembershipSection extends ConsumerWidget {
                 itemCount: plans.length,
                 itemBuilder: (_, index) {
                   final plan = plans[index];
-                  return ListTile(
-                    title: Text(plan.title),
-                    subtitle: Text(plan.detail),
+                  return AppListRow(
+                    title: plan.title,
+                    subtitle: plan.detail,
                     onTap: plan.id.isEmpty
                         ? null
                         : () async {
@@ -784,18 +908,18 @@ class _MembershipSection extends ConsumerWidget {
                               ref.invalidate(customerMembershipProvider);
                               if (context.mounted) {
                                 Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Membership request submitted.',
-                                    ),
-                                  ),
+                                showAppSnack(
+                                  context,
+                                  'Membership request submitted.',
+                                  variant: AppSnackVariant.success,
                                 );
                               }
                             } catch (error) {
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(friendlyError(error))),
+                                showAppSnack(
+                                  context,
+                                  friendlyError(error),
+                                  variant: AppSnackVariant.error,
                                 );
                               }
                             }
@@ -812,29 +936,17 @@ class _MembershipSection extends ConsumerWidget {
     String status,
   ) async {
     if (status == 'active') return true;
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(
-                '${status[0].toUpperCase()}${status.substring(1)} membership?'),
-            content: Text(
-              status == 'cancelled'
-                  ? 'This will cancel your current membership.'
-                  : 'Your membership benefits may be paused until it is active again.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Keep membership'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text(status[0].toUpperCase() + status.substring(1)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final label = status[0].toUpperCase() + status.substring(1);
+    return showAppConfirmDialog(
+      context,
+      title: '$label membership?',
+      message: status == 'cancelled'
+          ? 'This will cancel your current membership.'
+          : 'Your membership benefits may be paused until it is active again.',
+      confirmLabel: label,
+      cancelLabel: 'Keep membership',
+      destructive: status == 'cancelled',
+    );
   }
 }
 
@@ -862,53 +974,51 @@ class _AccountSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final records = provider(ref);
-    return Card(
-      child: ExpansionTile(
-        leading: Icon(icon),
-        title: Text(title),
-        children: [
-          records.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
-            error: (error, _) => _AccountError(
-              message: friendlyError(error),
-              retry: () => retry(ref),
-            ),
-            data: (items) => items.isEmpty
-                ? ListTile(
-                    title: Text(empty),
-                    trailing: actionLabel == null
-                        ? null
-                        : TextButton(
-                            onPressed: onAction,
-                            child: Text(actionLabel!),
-                          ),
-                  )
-                : Column(
-                    children: items
-                        .take(10)
-                        .map(
-                          (item) => ListTile(
-                            title: Text(item.title),
-                            subtitle: Text(
-                              title == 'Offers' && item.offerDetail.isNotEmpty
-                                  ? item.offerDetail
-                                  : item.detail,
-                            ),
-                            trailing:
-                                item.status.isEmpty ? null : Text(item.status),
-                            onTap: onItemTap == null
-                                ? null
-                                : () => onItemTap!(item),
-                          ),
-                        )
-                        .toList(),
-                  ),
+    return _SectionCard(
+      title: title,
+      icon: icon,
+      children: [
+        records.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.all(AppSpace.lg),
+            child: SkeletonBox(height: 48),
           ),
-        ],
-      ),
+          error: (error, _) => _AccountError(
+            message: friendlyError(error),
+            retry: () => retry(ref),
+          ),
+          data: (items) => items.isEmpty
+              ? AppListRow(
+                  title: empty,
+                  trailing: actionLabel == null
+                      ? null
+                      : TextButton(
+                          onPressed: onAction,
+                          child: Text(actionLabel!),
+                        ),
+                )
+              : Column(
+                  children: [
+                    for (final item in items.take(10))
+                      AppListRow(
+                        title: item.title,
+                        subtitle:
+                            title == 'Offers' && item.offerDetail.isNotEmpty
+                                ? item.offerDetail
+                                : item.detail,
+                        trailing: item.status.isEmpty
+                            ? null
+                            : Text(
+                                item.status,
+                                style: Theme.of(context).textTheme.labelLarge,
+                              ),
+                        onTap:
+                            onItemTap == null ? null : () => onItemTap!(item),
+                      ),
+                  ],
+                ),
+        ),
+      ],
     );
   }
 }
@@ -958,27 +1068,27 @@ class _FormDialogState extends State<_FormDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
+    return AppDialog(
+      title: widget.title,
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ...widget.fields.map(
-              (field) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+            for (final field in widget.fields)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpace.md),
                 child: TextField(
                   controller: field.$2,
                   maxLines: field.$1 == 'Message' ? 4 : 1,
                   decoration: InputDecoration(labelText: field.$1),
                 ),
               ),
-            ),
             if (widget.extraContent != null) widget.extraContent!,
             if (error != null)
               Text(
                 error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: context.colors.danger.fg),
               ),
           ],
         ),

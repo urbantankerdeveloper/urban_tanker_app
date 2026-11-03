@@ -22,13 +22,11 @@ import '../bookings_screen.dart';
 import '../customer_account_screen.dart';
 import '../dispatcher_workspace.dart';
 import '../notification_inbox.dart';
-import '../security_settings_screen.dart';
 import '../vendor/vendor_earnings_screen.dart';
 import '../vendor/vendor_fleet_screen.dart';
 import '../vendor/vendor_operations_screen.dart';
 import 'booking/booking_form_sheet.dart';
 import 'customer/customer_overview.dart';
-import 'shell/appearance.dart';
 import 'shell/menu_screen.dart';
 import 'shell/notification_routing.dart';
 import 'shell/role_tabs.dart';
@@ -196,31 +194,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               icon: const Icon(Icons.palette_outlined),
             ),
           _notificationBell(),
-          // Customers keep these here until the Account redesign (Phase 4).
-          // Other roles reach them from the Menu tab.
-          if (isCustomer) ...[
-            IconButton(
-              tooltip: 'Security',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => SecuritySettingsScreen(
-                    controller: widget.controller,
-                  ),
-                ),
-              ),
-              icon: const Icon(Icons.lock_outline),
-            ),
-            IconButton(
-              tooltip: 'Theme',
-              onPressed: () => showThemePickerSheet(context, widget.controller),
-              icon: const Icon(Icons.brightness_6_outlined),
-            ),
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: widget.controller.signOut,
-              icon: const Icon(Icons.logout),
-            ),
-          ],
         ],
       ),
       body: IndexedStack(
