@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
@@ -61,10 +60,6 @@ class ApiClient implements ApiTransport {
   late final NotificationApi _notificationApi = NotificationApi(this);
 
   String get baseUrl => _core.baseUrl;
-
-  /// True while a request has taken longer than 3 seconds. The UI uses it to
-  /// show that the server is waking up.
-  ValueNotifier<bool> get slowRequest => _core.slowRequest;
 
   // Transport and session storage.
 

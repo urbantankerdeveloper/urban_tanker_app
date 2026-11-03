@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
@@ -101,63 +100,17 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
   }
 }
 
-/// Shows a notice while a request has taken longer than 3 seconds. The server
-/// on the free tier can take a while to wake up.
-class SlowServerBanner extends StatelessWidget {
-  const SlowServerBanner({
-    required this.slow,
-    required this.child,
-    super.key,
-  });
-
-  final ValueListenable<bool> slow;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ValueListenableBuilder<bool>(
-      valueListenable: slow,
-      child: child,
-      builder: (context, isSlow, child) => Column(
-        children: [
-          AnimatedSwitcher(
-            duration: AppMotion.duration(context, AppMotion.base),
-            switchInCurve: AppMotion.curve,
-            transitionBuilder: (child, animation) => SizeTransition(
-              sizeFactor: animation,
-              child: FadeTransition(opacity: animation, child: child),
-            ),
-            child: isSlow
-                ? _BannerPill(
-                    key: const ValueKey('slow'),
-                    icon: null,
-                    loading: true,
-                    tone: colors.info,
-                    message: 'Waking up the server, please wait...',
-                  )
-                : const SizedBox.shrink(key: ValueKey('fast')),
-          ),
-          Expanded(child: child!),
-        ],
-      ),
-    );
-  }
-}
-
 class _BannerPill extends StatelessWidget {
   const _BannerPill({
     required this.message,
     required this.tone,
     super.key,
     this.icon,
-    this.loading = false,
   });
 
   final String message;
   final AppTone tone;
   final IconData? icon;
-  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -174,16 +127,7 @@ class _BannerPill extends StatelessWidget {
           ),
           child: Row(
             children: [
-              if (loading)
-                SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: tone.fg,
-                  ),
-                )
-              else if (icon != null)
-                Icon(icon, size: 18, color: tone.fg),
+              if (icon != null) Icon(icon, size: 18, color: tone.fg),
               const SizedBox(width: AppSpace.md),
               Expanded(
                 child: Text(

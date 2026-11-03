@@ -37,8 +37,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('inline errors and the slow-server notice do not overflow',
-      (tester) async {
+  testWidgets('inline errors do not overflow at 1.5x text', (tester) async {
     await tester.pumpWidget(
       _scaled(
         AppStateInline.error(
@@ -48,16 +47,5 @@ void main() {
       ),
     );
     expect(tester.takeException(), isNull);
-
-    await tester.pumpWidget(
-      _scaled(
-        SlowServerBanner(
-          slow: ValueNotifier<bool>(true),
-          child: const SizedBox.shrink(),
-        ),
-      ),
-    );
-    expect(tester.takeException(), isNull);
-    expect(find.text('Waking up the server, please wait...'), findsOneWidget);
   });
 }

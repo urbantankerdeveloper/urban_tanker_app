@@ -21,7 +21,6 @@ class ApiCore {
         _storage = storage,
         _tokenReader = tokenReader;
 
-  static const _slowRequestAfter = Duration(seconds: 3);
   static const _retryDelays = [
     Duration(milliseconds: 500),
     Duration(seconds: 1),
@@ -34,11 +33,6 @@ class ApiCore {
   final Future<String?> Function() _tokenReader;
   final String baseUrl;
   Future<String?>? _refreshOperation;
-
-  /// True while a request has taken longer than 3 seconds. The UI uses it to
-  /// show that the server is waking up.
-  final ValueNotifier<bool> slowRequest = ValueNotifier<bool>(false);
-  int _slowRequestCount = 0;
 
   Future<void> saveAccessToken(String token) => _storage.write(
         key: 'urban_tanker_access_token',
@@ -92,15 +86,13 @@ class ApiCore {
     String contentType = 'application/json',
     bool retry = true,
   }) =>
-      _trackSlowRequest(
-        _requestOnce(
-          method,
-          path,
-          body: body,
-          bodyBytes: bodyBytes,
-          contentType: contentType,
-          retry: retry,
-        ),
+      _requestOnce(
+        method,
+        path,
+        body: body,
+        bodyBytes: bodyBytes,
+        contentType: contentType,
+        retry: retry,
       );
 
   Future<http.Response> sendRequest(
@@ -108,22 +100,6 @@ class ApiCore {
     Duration timeout = const Duration(seconds: 20),
   }) =>
       _client.send(request).then(http.Response.fromStream).timeout(timeout);
-
-  Future<T> _trackSlowRequest<T>(Future<T> operation) {
-    var slow = false;
-    final timer = Timer(_slowRequestAfter, () {
-      slow = true;
-      _slowRequestCount++;
-      slowRequest.value = true;
-    });
-    return operation.whenComplete(() {
-      timer.cancel();
-      if (slow) {
-        _slowRequestCount--;
-        slowRequest.value = _slowRequestCount > 0;
-      }
-    });
-  }
 
   Future<http.Response> _requestOnce(
     String method,

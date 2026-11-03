@@ -93,10 +93,7 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
         fit: StackFit.expand,
         children: [
           ConnectivityBanner(
-            child: SlowServerBanner(
-              slow: controller.api.slowRequest,
-              child: child ?? const SizedBox.shrink(),
-            ),
+            child: child ?? const SizedBox.shrink(),
           ),
           if (controller.sessionLocked) AppLockScreen(controller: controller),
         ],
