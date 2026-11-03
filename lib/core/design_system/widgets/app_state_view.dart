@@ -1,11 +1,9 @@
-import 'dart:async';
-
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../services/friendly_error.dart';
+import '../../../services/friendly_error.dart';
+import '../tokens.dart';
 
+/// Shared page padding. Kept under this name so existing screens keep working.
 class AppPageInsets {
   const AppPageInsets._();
 
@@ -109,16 +107,16 @@ class AppStateView extends StatelessWidget {
                 )
               else
                 Icon(icon, size: 44, color: colors.primary),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpace.lg),
               Text(
                 title,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpace.sm),
               Text(message, textAlign: TextAlign.center),
               if (action != null) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpace.lg),
                 action!,
               ],
             ],
@@ -127,6 +125,9 @@ class AppStateView extends StatelessWidget {
       ),
     );
   }
+
+  /// User-facing text for [error]. Never the raw exception text.
+  static String messageFor(Object error) => friendlyError(error);
 
   static bool isNetworkError(Object error) {
     final text = error.toString().toLowerCase();
@@ -172,7 +173,8 @@ class AppStateInline extends StatelessWidget {
         offline ? Icons.wifi_off_outlined : Icons.error_outline,
         color: Theme.of(context).colorScheme.error,
       ),
-      title: Text(offline ? 'No network connection' : 'Could not load this section'),
+      title: Text(
+          offline ? 'No network connection' : 'Could not load this section'),
       subtitle: Text(message ?? friendlyError(error)),
       trailing: onRetry == null
           ? null
@@ -209,162 +211,4 @@ Future<void> showAppPermissionDialog(
       ],
     ),
   );
-}
-
-class ConnectivityBanner extends StatefulWidget {
-  const ConnectivityBanner({required this.child, super.key});
-
-  final Widget child;
-
-  @override
-  State<ConnectivityBanner> createState() => _ConnectivityBannerState();
-}
-
-class _ConnectivityBannerState extends State<ConnectivityBanner> {
-  final Connectivity _connectivity = Connectivity();
-  StreamSubscription<List<ConnectivityResult>>? _subscription;
-  bool _offline = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _subscription = _connectivity.onConnectivityChanged.listen(
-      _updateConnectivity,
-      onError: (Object error, StackTrace stackTrace) {
-        FlutterError.reportError(
-          FlutterErrorDetails(
-            exception: error,
-            stack: stackTrace,
-            library: 'connectivity',
-            context: ErrorDescription('while listening for network changes'),
-          ),
-        );
-      },
-    );
-    _loadConnectivity();
-  }
-
-  Future<void> _loadConnectivity() async {
-    try {
-      _updateConnectivity(await _connectivity.checkConnectivity());
-    } catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'connectivity',
-          context: ErrorDescription('while checking network status'),
-        ),
-      );
-    }
-  }
-
-  void _updateConnectivity(List<ConnectivityResult> results) {
-    final offline = results.contains(ConnectivityResult.none);
-    if (mounted && offline != _offline) {
-      setState(() => _offline = offline);
-    }
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        if (_offline)
-          Material(
-            color: Theme.of(context).colorScheme.errorContainer,
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.wifi_off_outlined),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'No network connection. Some features may be unavailable.',
-                        style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onErrorContainer,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        Expanded(child: widget.child),
-      ],
-    );
-  }
-}
-
-/// Shows a notice while a request has taken longer than 3 seconds. The server
-/// on the free tier can take a while to wake up.
-class SlowServerBanner extends StatelessWidget {
-  const SlowServerBanner({
-    required this.slow,
-    required this.child,
-    super.key,
-  });
-
-  final ValueListenable<bool> slow;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: slow,
-      child: child,
-      builder: (context, isSlow, child) => Column(
-        children: [
-          if (isSlow)
-            Material(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              child: SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Waking up the server, please wait...',
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSecondaryContainer,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          Expanded(child: child!),
-        ],
-      ),
-    );
-  }
 }

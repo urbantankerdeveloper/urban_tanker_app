@@ -1,13 +1,28 @@
 import 'session.dart';
 
+/// Sections of the admin operations screen, one per drawer group.
+enum OperationsSection { orders, people, finance, setup }
+
+/// A request to open [section] on the operations screen. A new instance is
+/// created for every request, so repeating the same request still notifies.
+class OperationsFocus {
+  const OperationsFocus(this.section);
+
+  final OperationsSection section;
+}
+
 class WorkspaceNavigationDestination {
   const WorkspaceNavigationDestination({
     required this.label,
     required this.index,
+    this.operationsSection,
   });
 
   final String label;
   final int index;
+
+  /// Set for admin items that open a section of the operations tab.
+  final OperationsSection? operationsSection;
 }
 
 class WorkspaceNavigationGroup {
@@ -23,27 +38,53 @@ class WorkspaceNavigationGroup {
 List<WorkspaceNavigationGroup> workspaceNavigationForRole(
   WorkspaceRole role,
 ) {
-  WorkspaceNavigationDestination destination(String label, int index) =>
-      WorkspaceNavigationDestination(label: label, index: index);
+  WorkspaceNavigationDestination destination(
+    String label,
+    int index, [
+    OperationsSection? section,
+  ]) =>
+      WorkspaceNavigationDestination(
+        label: label,
+        index: index,
+        operationsSection: section,
+      );
 
   return switch (role) {
     WorkspaceRole.admin => [
         WorkspaceNavigationGroup(
           title: 'Bookings & dispatch',
-          destinations: [destination('Orders', 1)],
+          destinations: [
+            destination('Orders', 1, OperationsSection.orders),
+          ],
         ),
         WorkspaceNavigationGroup(
           title: 'People & fleet',
-          destinations: [destination('Vendors, customers & fleet', 1)],
+          destinations: [
+            destination(
+              'Vendors, customers & fleet',
+              1,
+              OperationsSection.people,
+            ),
+          ],
         ),
         WorkspaceNavigationGroup(
           title: 'Finance & promos',
-          destinations: [destination('Coupons, payouts & partners', 1)],
+          destinations: [
+            destination(
+              'Coupons, payouts & partners',
+              1,
+              OperationsSection.finance,
+            ),
+          ],
         ),
         WorkspaceNavigationGroup(
           title: 'Reports & setup',
           destinations: [
-            destination('Services, notifications & audit', 1),
+            destination(
+              'Services, notifications & audit',
+              1,
+              OperationsSection.setup,
+            ),
             destination('Reports', 2),
             destination('System health', 0),
           ],

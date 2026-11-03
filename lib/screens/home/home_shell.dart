@@ -1,42 +1,38 @@
 import 'dart:async';
-import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../../app/app_controller.dart';
-import '../../app/page_components.dart';
 import '../../app/providers.dart';
-import '../../app/theme.dart';
-import '../../models/service.dart';
-import '../../models/booking_service_details.dart';
-import '../../models/booking_service_form.dart';
-import '../../services/api_client.dart';
-import '../../services/realtime_service.dart';
+import '../../core/design_system/design_system.dart';
+import '../../core/design_system/gallery/design_system_gallery.dart';
 import '../../models/booking.dart';
-import '../../models/session.dart';
-import '../../models/account.dart';
 import '../../models/notification.dart';
+import '../../models/service.dart';
+import '../../models/session.dart';
 import '../../models/workspace_navigation.dart';
-import '../notification_inbox.dart';
-import '../bookings_screen.dart';
-import '../invoice_detail_screen.dart';
-import '../support_request_detail_screen.dart';
-import '../customer_account_screen.dart';
-import '../vendor/vendor_operations_screen.dart';
-import '../vendor/vendor_fleet_screen.dart';
-import '../vendor/vendor_earnings_screen.dart';
-import '../admin/admin_pulse_screen.dart';
-import '../admin/admin_operations_screen.dart';
-import '../admin/admin_reports_screen.dart';
-import '../dispatcher_workspace.dart';
-import '../../services/service_area.dart';
 import '../../services/friendly_error.dart';
-import '../unlock_setup_screen.dart';
-import '../security_settings_screen.dart';
+import '../../services/realtime_service.dart';
+import '../admin/admin_operations_screen.dart';
+import '../admin/admin_pulse_screen.dart';
+import '../admin/admin_reports_screen.dart';
+import '../bookings_screen.dart';
+import '../customer_account_screen.dart';
+import '../dispatcher/alerts_screen.dart';
+import '../dispatcher/dispatch_screen.dart';
+import '../dispatcher/live_screen.dart';
+import '../notification_inbox.dart';
+import '../vendor/vendor_earnings_screen.dart';
+import '../vendor/fleet/vendor_fleet_screen.dart';
+import '../vendor/operations/vendor_operations_screen.dart';
+import 'booking/booking_form_sheet.dart';
+import 'customer/customer_overview.dart';
+import 'shell/menu_screen.dart';
+import 'shell/notification_routing.dart';
+import 'shell/role_tabs.dart';
+import 'shell/unlock_offer.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({required this.controller, super.key});
@@ -47,21 +43,15 @@ class HomeShell extends ConsumerStatefulWidget {
   ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-String _dateOnly(DateTime date) {
-  final month = date.month.toString().padLeft(2, '0');
-  final day = date.day.toString().padLeft(2, '0');
-  return '${date.year}-$month-$day';
-}
-
 class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 0;
-  String? _activeNavigationItem;
   List<TankerService> _services = const [];
   bool _loadingServices = false;
   bool _bookingFormOpening = false;
   String? _serviceError;
   late Future<List<NotificationItem>>? _notifications;
   StreamSubscription<RealtimeEvent>? _realtimeSubscription;
+  final _operationsFocus = ValueNotifier<OperationsFocus?>(null);
 
   WorkspaceRole get role =>
       widget.controller.user?.role ?? WorkspaceRole.customer;
@@ -90,47 +80,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _offerUnlockSetup();
+      if (mounted) offerUnlockSetup(context, widget.controller);
     });
-  }
-
-  /// After the first sign-in, offers to set up an MPIN (and fingerprint).
-  Future<void> _offerUnlockSetup() async {
-    final controller = widget.controller;
-    if (!controller.pendingUnlockSetup) return;
-    await controller.markBiometricPromptOffered();
-    if (!mounted) return;
-    final setUp = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.lock_outline),
-        title: const Text('Set up quick unlock?'),
-        content: const Text(
-          'Create an MPIN so you can unlock the app without your password. You can also use your fingerprint if your device supports it.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Not now'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Set up'),
-          ),
-        ],
-      ),
-    );
-    if (setUp != true || !mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => UnlockSetupScreen(controller: controller),
-      ),
-    );
   }
 
   @override
   void dispose() {
     _realtimeSubscription?.cancel();
+    _operationsFocus.dispose();
     super.dispose();
   }
 
@@ -164,839 +121,53 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     if (_bookingFormOpening || _services.isEmpty) return;
     setState(() => _bookingFormOpening = true);
     try {
-      await _openBookingForm(previousBooking: previousBooking);
+      await openBookingForm(
+        context,
+        controller: widget.controller,
+        serviceCatalog: _services,
+        previousBooking: previousBooking,
+      );
     } finally {
       if (mounted) setState(() => _bookingFormOpening = false);
     }
   }
 
-  Future<void> _openBookingForm({Booking? previousBooking}) async {
-    if (_services.isEmpty) return;
-    List<AccountRecord> addresses = const [];
-    try {
-      addresses = await widget.controller.api.addresses();
-    } catch (_) {
-      // Saved addresses are optional; manual entry remains available.
-    }
-    final couponController = TextEditingController();
-    final notesController =
-        TextEditingController(text: previousBooking?.notes ?? '');
-    final phoneController = TextEditingController();
-    final otpController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    String? selectedAddress;
-    final previousDetails = {
-      for (final detail
-          in previousBooking?.services ?? <BookingServiceDetails>[])
-        detail.serviceId: detail,
-    };
-    final serviceFields = {
-      for (final service in _services)
-        service.id: _BookingServiceFields(
-          quantity: previousDetails[service.id]?.quantity ??
-              (previousBooking == null && service.capacityOptions.isNotEmpty
-                  ? service.capacityOptions.first
-                  : ''),
-          details: previousDetails[service.id]?.details ?? '',
-          location: previousDetails[service.id]?.location ??
-              (previousBooking?.location ?? selectedAddress ?? ''),
-          deliveryDate: previousDetails[service.id]?.deliveryDate ??
-              _dateOnly(previousBooking?.deliveryDate ??
-                  DateTime.now().add(const Duration(days: 1))),
-          latitude: previousDetails[service.id]?.latitude,
-          longitude: previousDetails[service.id]?.longitude,
-          waterType: previousDetails[service.id]?.waterType ?? '',
-          tankerCount: previousDetails[service.id]?.tankerCount ?? '',
-        ),
-    };
-    final previousServiceIds = previousDetails.keys
-        .where((id) => _services.any((service) => service.id == id))
-        .toSet();
-    if (previousServiceIds.isEmpty &&
-        previousBooking?.serviceId != null &&
-        _services.any((service) => service.id == previousBooking!.serviceId)) {
-      previousServiceIds.add(previousBooking!.serviceId!);
-      final previousService = previousDetails[previousBooking.serviceId];
-      if (previousService != null) {
-        serviceFields[previousBooking.serviceId]!
-          ..quantity.text = previousService.quantity
-          ..details.text = previousService.details;
-      } else if (previousBooking.capacity.isNotEmpty) {
-        serviceFields[previousBooking.serviceId]!.quantity.text =
-            previousBooking.capacity;
-      }
-    }
-    final selectedServices =
-        previousServiceIds.isNotEmpty ? previousServiceIds : <String>{};
-    for (final address in addresses) {
-      if (address.detail == previousBooking?.location) {
-        selectedAddress = address.detail;
-        break;
-      }
-    }
-    selectedAddress ??= previousBooking == null && addresses.isNotEmpty
-        ? addresses.first.detail
-        : null;
-    AccountRecord? selectedAddressRecord;
-    for (final address in addresses) {
-      if (address.detail == selectedAddress) {
-        selectedAddressRecord = address;
-        break;
-      }
-    }
-    for (final fields in serviceFields.values) {
-      if (fields.location.text.trim().isEmpty && selectedAddress != null) {
-        fields.location.text = selectedAddress;
-      }
-      if (fields.latitude == null && selectedAddressRecord != null) {
-        fields.latitude = selectedAddressRecord.latitude;
-        fields.longitude = selectedAddressRecord.longitude;
-      }
-    }
-    Map<String, dynamic>? validatedCoupon;
-    String? couponMessage;
-    String? bookingFormError;
-    String? phoneChallengeId;
-    String? verifiedPhone;
-    var phoneVerified = false;
-    var loadingPhoneVerification = true;
-    var validatingCoupon = false;
-    var submittingBooking = false;
-    String? bookingKey;
-    String? bookingKeyFingerprint;
-    var paymentMethod = 'cod';
-    try {
-      final savedPhone = await widget.controller.api.phoneVerification();
-      phoneController.text = savedPhone.phone;
-      verifiedPhone = savedPhone.verified ? savedPhone.phone : null;
-      phoneVerified = savedPhone.verified && savedPhone.phone.isNotEmpty;
-    } catch (_) {
-      // The booking form still permits verification when the number is changed.
-    } finally {
-      loadingPhoneVerification = false;
-    }
-    if (!mounted) {
-      couponController.dispose();
-      notesController.dispose();
-      phoneController.dispose();
-      otpController.dispose();
-      for (final fields in serviceFields.values) {
-        fields.dispose();
-      }
-      return;
-    }
-    bool serviceHasMissingFields(String id) {
-      final fields = serviceFields[id]!;
-      final service = _services.firstWhere((item) => item.id == id);
-      final serviceSpecificMissing = id == 'water_tanker'
-          ? fields.waterType.text.trim().isEmpty ||
-              fields.tankerCount.text.trim().isEmpty
-          : fields.details.text.trim().isEmpty;
-      return fields.quantity.text.trim().isEmpty ||
-          serviceSpecificMissing ||
-          fields.location.text.trim().isEmpty ||
-          !isChennaiLocation(
-            address: fields.location.text,
-            latitude: fields.latitude,
-            longitude: fields.longitude,
-          ) ||
-          DateTime.tryParse(fields.deliveryDate.text.trim()) == null ||
-          service.capacityOptions.contains(fields.quantity.text) == false ||
-          (id == 'water_tanker' &&
-              (!service.waterTypeOptions.contains(fields.waterType.text) ||
-                  !service.tankerCountOptions
-                      .contains(fields.tankerCount.text)));
-    }
-
-    List<BookingServiceDetails> buildServiceDetails() =>
-        selectedServices.map((serviceId) {
-          final fields = serviceFields[serviceId]!;
-          return BookingServiceDetails(
-            serviceId: serviceId,
-            quantity: fields.quantity.text,
-            waterType: fields.waterType.text,
-            tankerCount: fields.tankerCount.text,
-            details: fields.details.text,
-            deliveryDate: fields.deliveryDate.text.trim(),
-            location: fields.location.text.trim(),
-            latitude: fields.latitude,
-            longitude: fields.longitude,
-          );
-        }).toList(growable: false);
-
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (didPop, _) async {
-            if (didPop) return;
-            final leave = await showDialog<bool>(
-              context: context,
-              builder: (dialogContext) => AlertDialog(
-                title: const Text('Leave booking?'),
-                content: const Text(
-                    'Your booking draft will be cleared if you leave.'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext, false),
-                    child: const Text('Stay'),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(dialogContext, true),
-                    child: const Text('Leave'),
-                  ),
-                ],
-              ),
-            );
-            if (leave == true && context.mounted) Navigator.pop(context);
-          },
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              12,
-              20,
-              MediaQuery.viewInsetsOf(context).bottom + 12,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-              ),
-              child: Form(
-                key: formKey,
-                child: ListView(
-                  children: [
-                    Text('Book a delivery',
-                        style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 16),
-                    Text('Select services',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: phoneController,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'Booking phone number',
-                        helperText: 'Shared across all selected services',
-                      ),
-                      onChanged: (_) => setSheetState(() {
-                        final normalized =
-                            normalizeIndianPhone(phoneController.text);
-                        phoneVerified = verifiedPhone != null &&
-                            normalized == verifiedPhone;
-                        if (!phoneVerified) phoneChallengeId = null;
-                        bookingFormError = null;
-                      }),
-                      validator: (value) {
-                        final normalized = normalizeIndianPhone(value ?? '');
-                        return RegExp(r'^\d{10}$').hasMatch(normalized)
-                            ? null
-                            : 'Enter a valid 10-digit mobile number.';
-                      },
-                    ),
-                    if (!phoneVerified && !loadingPhoneVerification) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: otpController,
-                              keyboardType: TextInputType.number,
-                              decoration:
-                                  const InputDecoration(labelText: 'OTP'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton(
-                            onPressed: () async {
-                              try {
-                                final normalized =
-                                    normalizeIndianPhone(phoneController.text);
-                                final challenge = await widget.controller.api
-                                    .requestPhoneOtp(normalized);
-                                setSheetState(() {
-                                  phoneChallengeId = challenge;
-                                  bookingFormError =
-                                      'OTP sent. Enter it to verify this number.';
-                                });
-                              } catch (error) {
-                                setSheetState(
-                                    () => bookingFormError = friendlyError(error));
-                              }
-                            },
-                            child: const Text('Send OTP'),
-                          ),
-                        ],
-                      ),
-                      if (!phoneVerified && !loadingPhoneVerification)
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                              'Verify this shared number before reviewing your booking.'),
-                        ),
-                      if (phoneChallengeId != null)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () async {
-                              try {
-                                await widget.controller.api.verifyPhoneOtp(
-                                  challengeId: phoneChallengeId!,
-                                  phone: phoneController.text,
-                                  otp: otpController.text,
-                                );
-                                setSheetState(() {
-                                  phoneVerified = true;
-                                  verifiedPhone = normalizeIndianPhone(
-                                      phoneController.text);
-                                  bookingFormError = null;
-                                });
-                              } catch (error) {
-                                setSheetState(
-                                    () => bookingFormError = friendlyError(error));
-                              }
-                            },
-                            child: const Text('Verify OTP'),
-                          ),
-                        ),
-                    ],
-                    const SizedBox(height: 12),
-                    for (final service in _services.where(
-                        (service) => selectedServices.contains(service.id)))
-                      Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(service.name,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleSmall),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Remove ${service.name}',
-                                    onPressed: () {
-                                      setSheetState(() {
-                                        selectedServices.remove(service.id);
-                                        validatedCoupon = null;
-                                        couponMessage = null;
-                                        bookingFormError = null;
-                                      });
-                                    },
-                                    icon: const Icon(Icons.close),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              _ServiceDropdownField(
-                                controller: serviceFields[service.id]!.quantity,
-                                label: BookingServiceForm.forService(service.id)
-                                    .quantityLabel,
-                                options: service.capacityOptions,
-                                emptyMessage:
-                                    'No capacity options are configured.',
-                                onChanged: (_) => setSheetState(() {}),
-                              ),
-                              if (service.id == 'water_tanker') ...[
-                                const SizedBox(height: 8),
-                                _ServiceDropdownField(
-                                  controller:
-                                      serviceFields[service.id]!.waterType,
-                                  label: 'Water type',
-                                  options: service.waterTypeOptions,
-                                  emptyMessage:
-                                      'No water type options are configured.',
-                                  onChanged: (_) => setSheetState(() {}),
-                                ),
-                              ],
-                              if (service.id == 'water_tanker') ...[
-                                const SizedBox(height: 8),
-                                _ServiceDropdownField(
-                                  controller:
-                                      serviceFields[service.id]!.tankerCount,
-                                  label: 'Tanker count',
-                                  options: service.tankerCountOptions,
-                                  emptyMessage:
-                                      'No tanker count options are configured.',
-                                  onChanged: (_) => setSheetState(() {}),
-                                ),
-                              ],
-                              const SizedBox(height: 8),
-                              if (service.id != 'water_tanker')
-                                _ServiceDropdownField(
-                                  controller:
-                                      serviceFields[service.id]!.details,
-                                  label:
-                                      BookingServiceForm.forService(service.id)
-                                          .detailsLabel,
-                                  options: service.detailOptions,
-                                  emptyMessage:
-                                      'No service detail options are configured.',
-                                  onChanged: (_) => setSheetState(() {}),
-                                ),
-                              const SizedBox(height: 8),
-                              _DeliveryLocationField(
-                                fields: serviceFields[service.id]!,
-                                onChanged: () => setSheetState(() {}),
-                              ),
-                              const SizedBox(height: 8),
-                              _DeliveryDateField(
-                                controller:
-                                    serviceFields[service.id]!.deliveryDate,
-                                onChanged: () => setSheetState(() {}),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 4),
-                    Builder(
-                      builder: (context) {
-                        final availableServices = _services
-                            .where((service) =>
-                                !selectedServices.contains(service.id))
-                            .toList();
-                        if (availableServices.isEmpty) {
-                          return const SizedBox.shrink();
-                        }
-                        return OutlinedButton.icon(
-                          onPressed: () async {
-                            final pickedId = await showModalBottomSheet<String>(
-                              context: context,
-                              showDragHandle: true,
-                              builder: (pickerContext) => SafeArea(
-                                child: ListView.builder(
-                                  shrinkWrap: true,
-                                  itemCount: availableServices.length,
-                                  itemBuilder: (_, index) {
-                                    final service = availableServices[index];
-                                    return ListTile(
-                                      title: Text(service.name),
-                                      subtitle: Text(service.description),
-                                      onTap: () => Navigator.of(pickerContext)
-                                          .pop(service.id),
-                                    );
-                                  },
-                                ),
-                              ),
-                            );
-                            if (pickedId == null) return;
-                            setSheetState(() {
-                              selectedServices.add(pickedId);
-                              validatedCoupon = null;
-                              couponMessage = null;
-                              bookingFormError = null;
-                            });
-                          },
-                          icon: const Icon(Icons.add),
-                          label: Text(selectedServices.isEmpty
-                              ? 'Add service'
-                              : 'Add another service'),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: notesController,
-                      maxLength: 500,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Delivery access notes (optional)',
-                        hintText:
-                            'Gate, parking, timing, or access instructions',
-                        alignLabelWithHint: true,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: paymentMethod,
-                      decoration:
-                          const InputDecoration(labelText: 'Payment method'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'wallet',
-                          child: Text('Wallet'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'gateway',
-                          child: Text('Online payment'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'cod',
-                          child: Text('Cash on delivery'),
-                        ),
-                      ],
-                      onChanged: (value) => setSheetState(
-                        () => paymentMethod = value ?? 'cod',
-                      ),
-                    ),
-                    if (bookingFormError != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Text(
-                          bookingFormError!,
-                          style: TextStyle(
-                              color: Theme.of(context).colorScheme.error),
-                        ),
-                      ),
-                    const SizedBox(height: 12),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: couponController,
-                      textCapitalization: TextCapitalization.characters,
-                      decoration: InputDecoration(
-                        labelText: 'Coupon code (optional)',
-                        suffixIcon: TextButton(
-                          onPressed: validatingCoupon
-                              ? null
-                              : () async {
-                                  final code = couponController.text.trim();
-                                  if (code.isEmpty) {
-                                    setSheetState(() {
-                                      validatedCoupon = null;
-                                      couponMessage =
-                                          'Enter a coupon code first.';
-                                    });
-                                    return;
-                                  }
-                                  if (selectedServices.isEmpty) {
-                                    setSheetState(() => couponMessage =
-                                        'Add a service before applying a coupon.');
-                                    return;
-                                  }
-                                  setSheetState(() {
-                                    validatingCoupon = true;
-                                    couponMessage = null;
-                                  });
-                                  try {
-                                    final serviceId = selectedServices.first;
-                                    final coupon = await widget.controller.api
-                                        .validateCoupon(
-                                      code: code,
-                                      serviceCode: serviceId,
-                                      amount: 0,
-                                    );
-                                    setSheetState(() {
-                                      validatedCoupon = coupon;
-                                      couponMessage =
-                                          '${coupon['title'] ?? coupon['code'] ?? code} is valid.';
-                                    });
-                                  } catch (error) {
-                                    setSheetState(() {
-                                      validatedCoupon = null;
-                                      couponMessage = friendlyError(error);
-                                    });
-                                  } finally {
-                                    if (context.mounted) {
-                                      setSheetState(
-                                          () => validatingCoupon = false);
-                                    }
-                                  }
-                                },
-                          child: validatingCoupon
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Text('Apply'),
-                        ),
-                      ),
-                    ),
-                    if (couponMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          couponMessage!,
-                          style: TextStyle(
-                            color: validatedCoupon == null
-                                ? Theme.of(context).colorScheme.error
-                                : Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 18),
-                    _LiveQuoteSummary(
-                      api: widget.controller.api,
-                      services: phoneVerified &&
-                              selectedServices.isNotEmpty &&
-                              !selectedServices.any(serviceHasMissingFields)
-                          ? buildServiceDetails()
-                          : const [],
-                      phone: normalizeIndianPhone(phoneController.text),
-                      paymentMethod: paymentMethod,
-                      couponCode: validatedCoupon == null
-                          ? null
-                          : couponController.text.trim(),
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: loadingPhoneVerification ||
-                              submittingBooking ||
-                              selectedServices.isEmpty ||
-                              !phoneVerified ||
-                              selectedServices.any(serviceHasMissingFields)
-                          ? null
-                          : () async {
-                              if (selectedServices.isEmpty) {
-                                setSheetState(() => bookingFormError =
-                                    'Select at least one service.');
-                                return;
-                              }
-                              if (!formKey.currentState!.validate()) return;
-                              setSheetState(() => submittingBooking = true);
-                              try {
-                                final services = buildServiceDetails();
-                                final quotePreview = await widget.controller.api
-                                    .previewBookingQuote(
-                                  serviceId: services.first.serviceId,
-                                  capacity: services.first.quantity,
-                                  services: services,
-                                  location: services.first.location ?? '',
-                                  deliveryDate:
-                                      services.first.deliveryDate ?? '',
-                                  notes: notesController.text,
-                                  paymentMethod: paymentMethod,
-                                  latitude: services.first.latitude,
-                                  longitude: services.first.longitude,
-                                  couponCode: validatedCoupon == null
-                                      ? null
-                                      : couponController.text.trim(),
-                                  phone: phoneController.text,
-                                  phoneVerificationChallengeId:
-                                      phoneChallengeId,
-                                );
-                                if (!context.mounted) return;
-                                final quote = quotePreview['quote'];
-                                final selectedServiceNames =
-                                    selectedServices.map(
-                                  (id) => _services
-                                      .firstWhere((service) => service.id == id)
-                                      .name,
-                                );
-                                final confirmed = await showDialog<bool>(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: const Text('Confirm booking quote'),
-                                    content: SingleChildScrollView(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          for (var index = 0;
-                                              index < services.length;
-                                              index++) ...[
-                                            Text(
-                                                selectedServiceNames
-                                                    .elementAt(index),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .titleSmall),
-                                            if (services[index]
-                                                .quantity
-                                                .trim()
-                                                .isNotEmpty)
-                                              Text(
-                                                  'Quantity/capacity: ${services[index].quantity.trim()}'),
-                                            if (services[index]
-                                                    .waterType
-                                                    ?.trim()
-                                                    .isNotEmpty ==
-                                                true)
-                                              Text(
-                                                  'Water type: ${services[index].waterType}'),
-                                            if (services[index]
-                                                    .tankerCount
-                                                    ?.trim()
-                                                    .isNotEmpty ==
-                                                true)
-                                              Text(
-                                                  'Tanker count: ${services[index].tankerCount}'),
-                                            Text(
-                                                'Details: ${services[index].details.trim()}'),
-                                            const SizedBox(height: 8),
-                                          ],
-                                          Text(formatQuoteSummary(quote)),
-                                        ],
-                                      ),
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(context, false),
-                                        child: const Text('Review'),
-                                      ),
-                                      FilledButton(
-                                        onPressed: () =>
-                                            Navigator.pop(context, true),
-                                        child: const Text('Confirm booking'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (confirmed != true || !context.mounted) {
-                                  return;
-                                }
-                                // One key per distinct submission. A retry of the
-                                // same form reuses it, so the server can dedupe it.
-                                final keyFingerprint = jsonEncode([
-                                  for (final service in services)
-                                    service.toJson(),
-                                  notesController.text,
-                                  phoneController.text,
-                                  validatedCoupon == null
-                                      ? null
-                                      : couponController.text.trim(),
-                                  paymentMethod,
-                                  phoneChallengeId,
-                                ]);
-                                if (keyFingerprint != bookingKeyFingerprint) {
-                                  bookingKeyFingerprint = keyFingerprint;
-                                  bookingKey = newIdempotencyKey();
-                                }
-                                final booking =
-                                    await widget.controller.api.createBooking(
-                                  serviceId: services.first.serviceId,
-                                  capacity: services.first.quantity,
-                                  services: services,
-                                  location: services.first.location ?? '',
-                                  deliveryDate:
-                                      services.first.deliveryDate ?? '',
-                                  notes: notesController.text,
-                                  paymentMethod: paymentMethod,
-                                  latitude: services.first.latitude,
-                                  longitude: services.first.longitude,
-                                  couponCode: validatedCoupon == null
-                                      ? null
-                                      : couponController.text.trim(),
-                                  phone: phoneController.text,
-                                  phoneVerificationChallengeId:
-                                      phoneChallengeId,
-                                  idempotencyKey: bookingKey,
-                                );
-                                booking['service_details'] = services
-                                    .map((service) => service.toJson())
-                                    .toList();
-                                booking['service_names'] = {
-                                  for (final serviceId in selectedServices)
-                                    serviceId: _services
-                                        .firstWhere((service) =>
-                                            service.id == serviceId)
-                                        .name,
-                                };
-                                if (context.mounted) {
-                                  Navigator.pop(context, booking);
-                                }
-                              } catch (error) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(friendlyError(error))),
-                                  );
-                                }
-                              } finally {
-                                if (context.mounted) {
-                                  setSheetState(
-                                      () => submittingBooking = false);
-                                }
-                              }
-                            },
-                      child: const Text('Submit booking'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    couponController.dispose();
-    notesController.dispose();
-    phoneController.dispose();
-    otpController.dispose();
-    for (final fields in serviceFields.values) {
-      fields.dispose();
-    }
-    if (result != null && mounted) {
-      final quote = result['quote'];
-      await _showBookingConfirmation(
-        result,
-        quote is Map<String, dynamic> ? quote : null,
-        paymentMethod,
-      );
-    }
+  /// Menu items switch to their tab; admin items also ask the operations
+  /// screen to open their section.
+  /// Switches to [page] if the current role has a tab for it.
+  void _selectPage(ShellPage page) {
+    final index = tabsForRole(role).indexWhere((tab) => tab.page == page);
+    if (index >= 0) setState(() => _index = index);
   }
 
-  Future<void> _showBookingConfirmation(
-    Map<String, dynamic> booking,
-    Map<String, dynamic>? quote,
-    String paymentMethod,
-  ) async {
-    String? money(Object? value) {
-      if (value is! num) return null;
-      return '₹${(value / 100).toStringAsFixed(2)}';
-    }
+  void _openDestination(WorkspaceNavigationDestination destination) {
+    final section = destination.operationsSection;
+    setState(() => _index = destination.index);
+    if (section != null) _operationsFocus.value = OperationsFocus(section);
+  }
 
-    final serviceDetails = (booking['service_details'] as List<dynamic>? ?? [])
-        .whereType<Map<String, dynamic>>()
-        .map(BookingServiceDetails.fromJson)
-        .toList();
-    final serviceNames =
-        booking['service_names'] as Map<String, dynamic>? ?? const {};
-    final lines = [
-      if (booking['reference'] != null) 'Reference: ${booking['reference']}',
-      if (quote?['subtotalPaise'] != null)
-        'Subtotal: ${money(quote!['subtotalPaise'])}',
-      if (quote?['gstPaise'] != null) 'GST: ${money(quote!['gstPaise'])}',
-      if (quote?['discountPaise'] != null)
-        'Discount: ${money(quote!['discountPaise'])}',
-      if (quote?['totalPaise'] != null) 'Total: ${money(quote!['totalPaise'])}',
-    ];
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Booking submitted'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final service in serviceDetails) ...[
-                Text(
-                  (serviceNames[service.serviceId] ?? service.serviceId)
-                      .toString(),
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                if (service.quantity.trim().isNotEmpty)
-                  Text('Quantity/capacity: ${service.quantity}'),
-                if (service.waterType?.trim().isNotEmpty == true)
-                  Text('Water type: ${service.waterType}'),
-                if (service.tankerCount?.trim().isNotEmpty == true)
-                  Text('Tanker count: ${service.tankerCount}'),
-                Text('Details: ${service.details}'),
-                const SizedBox(height: 8),
-              ],
-              for (final line in lines) Text(line),
-              Text('Payment: ${_paymentMethodLabel(paymentMethod)}'),
-            ],
-          ),
+  void _selectNotification(NotificationItem item) {
+    if (!hasNotificationTarget(item)) {
+      Navigator.of(context).pop();
+      showAppSnack(context, 'This notification has no valid destination.');
+      return;
+    }
+    setState(() => _index = notificationTabIndex(role, item));
+    Navigator.of(context).pop();
+    unawaited(openNotificationTarget(context, widget.controller, role, item));
+  }
+
+  Future<void> _openNotificationInbox() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NotificationInbox(
+          controller: widget.controller,
+          role: role.name,
+          onNotificationSelected: _selectNotification,
         ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Done'),
-          ),
-        ],
       ),
     );
+    _reloadNotifications();
   }
 
   @override
@@ -1004,121 +175,30 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final user = widget.controller.user;
     // The app switches to the auth screen on sign-out; render nothing until then.
     if (user == null) return const SizedBox.shrink();
-    final tabs = _tabsForRole(role);
+    final isCustomer = role == WorkspaceRole.customer;
+    final tabs = tabsForRole(role);
     return Scaffold(
       appBar: AppBar(
-        title: Text(_titleForRole(role)),
+        title: Text(titleForRole(role)),
         actions: [
-          FutureBuilder<List<NotificationItem>>(
-            future: _notifications,
-            builder: (context, snapshot) {
-              final unread = snapshot.data
-                      ?.where((notification) => !notification.read)
-                      .length ??
-                  0;
-              return IconButton(
-                tooltip: 'Notifications',
-                onPressed: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => NotificationInbox(
-                        controller: widget.controller,
-                        role: role.name,
-                        onNotificationSelected: _selectNotification,
-                      ),
-                    ),
-                  );
-                  if (mounted &&
-                      (role == WorkspaceRole.customer ||
-                          role == WorkspaceRole.vendor ||
-                          role == WorkspaceRole.admin)) {
-                    setState(() {
-                      _notifications =
-                          widget.controller.api.notifications(role.name);
-                    });
-                  }
-                },
-                icon: Badge(
-                  isLabelVisible: unread > 0,
-                  label: Text(unread > 99 ? '99+' : '$unread'),
-                  child: const Icon(Icons.notifications_none_outlined),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            tooltip: 'Security',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => SecuritySettingsScreen(
-                  controller: widget.controller,
+          if (kDebugMode)
+            IconButton(
+              tooltip: 'Design system',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const DesignSystemGallery(),
                 ),
               ),
+              icon: const Icon(Icons.palette_outlined),
             ),
-            icon: const Icon(Icons.lock_outline),
-          ),
-          IconButton(
-            tooltip: 'Theme',
-            onPressed: () => _showThemePicker(context),
-            icon: const Icon(Icons.brightness_6_outlined),
-          ),
-          IconButton(
-            tooltip: 'Sign out',
-            onPressed: widget.controller.signOut,
-            icon: const Icon(Icons.logout),
-          ),
+          _notificationBell(),
         ],
       ),
       body: IndexedStack(
         index: _index,
-        children: tabs.map((tab) => _pageFor(tab, user)).toList(),
+        children: [for (final tab in tabs) _pageFor(tab.page, user)],
       ),
-      drawer: role == WorkspaceRole.customer
-          ? null
-          : Drawer(
-              child: SafeArea(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        _titleForRole(role),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                    ),
-                    for (final group in workspaceNavigationForRole(role))
-                      ExpansionTile(
-                        title: Text(
-                          group.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        children: [
-                          for (final destination in group.destinations)
-                            ListTile(
-                              contentPadding:
-                                  const EdgeInsets.only(left: 32, right: 16),
-                              selected:
-                                  _activeNavigationItem == destination.label,
-                              title: Text(destination.label),
-                              onTap: () {
-                                setState(() {
-                                  _index = destination.index;
-                                  _activeNavigationItem = destination.label;
-                                });
-                                Navigator.pop(context);
-                              },
-                            ),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
-            ),
-      floatingActionButton: role == WorkspaceRole.customer && _index == 0
+      floatingActionButton: isCustomer && _index == 0
           ? FloatingActionButton.extended(
               onPressed:
                   _loadingServices || _services.isEmpty || _bookingFormOpening
@@ -1128,864 +208,70 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               label: const Text('Book service'),
             )
           : null,
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: AppBottomNav(
+        items: [
+          for (final tab in tabs)
+            AppNavItem(
+              label: tab.label,
+              icon: tab.icon,
+              selectedIcon: tab.selectedIcon,
+            ),
+        ],
         selectedIndex: _index,
-        onDestinationSelected: (index) => setState(() {
-          _index = index;
-          _activeNavigationItem = null;
-        }),
-        destinations: tabs
-            .map((tab) => NavigationDestination(
-                  icon: Icon(tab.icon),
-                  label: tab.label,
-                ))
-            .toList(),
+        onSelected: (index) => setState(() => _index = index),
       ),
     );
   }
 
-  List<_Tab> _tabsForRole(WorkspaceRole role) {
-    return switch (role) {
-      WorkspaceRole.customer => const [
-          _Tab('Overview', Icons.home_outlined),
-          _Tab('Bookings', Icons.receipt_long_outlined),
-          _Tab('Account', Icons.person_outline),
-        ],
-      WorkspaceRole.vendor => const [
-          _Tab('Operations', Icons.dashboard_outlined),
-          _Tab('Fleet', Icons.local_shipping_outlined),
-          _Tab('Earnings', Icons.payments_outlined),
-        ],
-      WorkspaceRole.dispatcher => const [
-          _Tab('Dispatch', Icons.alt_route_outlined),
-          _Tab('Live', Icons.radar_outlined),
-          _Tab('Alerts', Icons.warning_amber_outlined),
-        ],
-      WorkspaceRole.admin => const [
-          _Tab('Pulse', Icons.dashboard_outlined),
-          _Tab('Operations', Icons.monitor_outlined),
-          _Tab('Reports', Icons.analytics_outlined),
-        ],
-    };
-  }
-
-  Widget _pageFor(_Tab tab, SessionUser user) {
-    if (role == WorkspaceRole.customer && tab.label == 'Overview') {
-      return _customerOverview(user);
-    }
-    if (role == WorkspaceRole.customer && tab.label == 'Bookings') {
-      return BookingsScreen(
-        onBookAgain: (booking) => _createBooking(previousBooking: booking),
-      );
-    }
-    if (role == WorkspaceRole.customer && tab.label == 'Account') {
-      return const CustomerAccountScreen();
-    }
-    if (role == WorkspaceRole.vendor && tab.label == 'Operations') {
-      return const VendorOperationsScreen();
-    }
-    if (role == WorkspaceRole.vendor && tab.label == 'Fleet') {
-      return const VendorFleetScreen();
-    }
-    if (role == WorkspaceRole.vendor && tab.label == 'Earnings') {
-      return const VendorEarningsScreen();
-    }
-    if (role == WorkspaceRole.admin && tab.label == 'Pulse') {
-      return const AdminPulseScreen();
-    }
-    if (role == WorkspaceRole.admin && tab.label == 'Operations') {
-      return const AdminOperationsScreen();
-    }
-    if (role == WorkspaceRole.admin && tab.label == 'Reports') {
-      return const AdminReportsScreen();
-    }
-    if (role == WorkspaceRole.dispatcher && tab.label == 'Dispatch') {
-      return const DispatcherDispatchScreen();
-    }
-    if (role == WorkspaceRole.dispatcher && tab.label == 'Live') {
-      return const DispatcherLiveScreen();
-    }
-    if (role == WorkspaceRole.dispatcher && tab.label == 'Alerts') {
-      return const DispatcherAlertsScreen();
-    }
-    return _workspacePage(tab, user);
-  }
-
-  Widget _customerOverview(SessionUser user) {
-    // The loading, error, or empty state is shown in place of the service cards.
-    final Widget? statusCard = _loadingServices
-        ? const AppStateInline.loading()
-        : _serviceError != null
-            ? _ErrorCard(message: _serviceError!, onRetry: _loadServices)
-            : _services.isEmpty
-                ? const _EmptyCard(
-                    message: 'No services are available right now.',
-                  )
-                : null;
-    // Fixed intro above the service cards. Only the service cards are lazy.
-    final header = <Widget>[
-      Text('Good to see you, ${user.name.split(' ').first}.',
-          style: Theme.of(context).textTheme.headlineSmall),
-      const SizedBox(height: 6),
-      const Text('Reliable water delivery, without the runaround.'),
-      const SizedBox(height: 22),
-      Card(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF17454D)
-            : ink,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('NEXT DELIVERY',
-                  style: TextStyle(color: mint, letterSpacing: 1.5)),
-              const SizedBox(height: 8),
-              Text('Book a tanker when you need it.',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(color: Colors.white)),
-              const SizedBox(height: 16),
-              TextButton.icon(
-                onPressed: _services.isEmpty ? null : _createBooking,
-                icon: const Icon(Icons.arrow_forward),
-                label: const Text('Start a booking'),
-                style: TextButton.styleFrom(foregroundColor: Colors.white),
-              ),
-            ],
-          ),
-        ),
-      ),
-      const SizedBox(height: 24),
-      Text('Available services', style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 12),
-    ];
-    return RefreshIndicator(
-      onRefresh: _loadServices,
-      child: ListView.builder(
-        padding: AppPageInsets.standard,
-        itemCount: header.length + (statusCard == null ? _services.length : 1),
-        itemBuilder: (_, index) {
-          if (index < header.length) return header[index];
-          if (statusCard != null) return statusCard;
-          return _ServiceCard(service: _services[index - header.length]);
-        },
-      ),
-    );
-  }
-
-  Widget _workspacePage(_Tab tab, SessionUser user) {
-    final copy = switch (role) {
-      WorkspaceRole.vendor =>
-        'Manage assigned work, fleet, drivers, and payouts.',
-      WorkspaceRole.dispatcher =>
-        'Coordinate active deliveries and resolve operational exceptions.',
-      WorkspaceRole.admin =>
-        'Review platform operations, records, finance, and system health.',
-      WorkspaceRole.customer => 'Your account activity and saved details.',
-    };
-    return ListView(
-      padding: AppPageInsets.standard,
-      children: [
-        Text(tab.label, style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 8),
-        Text(copy),
-        const SizedBox(height: 22),
-        _MetricCard(label: 'Signed in as', value: user.role.name),
-        const SizedBox(height: 12),
-        _MetricCard(label: 'Realtime', value: 'Connected'),
-        const SizedBox(height: 20),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('Native workspace ready'),
-            subtitle: Text(
-              'This role can only access server-authorized ${user.role.name} operations.',
+  Widget _notificationBell() => FutureBuilder<List<NotificationItem>>(
+        future: _notifications,
+        builder: (context, snapshot) {
+          final unread = snapshot.data?.where((item) => !item.read).length ?? 0;
+          return IconButton(
+            tooltip: 'Notifications',
+            onPressed: _openNotificationInbox,
+            icon: Badge(
+              isLabelVisible: unread > 0,
+              label: Text(unread > 99 ? '99+' : '$unread'),
+              child: const Icon(Icons.notifications_none_outlined),
             ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _showThemePicker(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: RadioGroup<ThemeMode>(
-          groupValue: widget.controller.themeMode,
-          onChanged: (value) {
-            if (value != null) widget.controller.setThemeMode(value);
-            Navigator.pop(context);
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: ThemeMode.values
-                .map(
-                  (mode) => RadioListTile<ThemeMode>(
-                    title: Text(
-                      mode.name[0].toUpperCase() + mode.name.substring(1),
-                    ),
-                    value: mode,
-                  ),
-                )
-                .toList(),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _selectNotification(NotificationItem item) {
-    final hasTarget = item.bookingId != null ||
-        item.invoiceId != null ||
-        item.supportRequestId != null;
-    if (!hasTarget) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This notification has no valid destination.'),
-        ),
-      );
-      return;
-    }
-    setState(() {
-      _index = role == WorkspaceRole.vendor
-          ? (item.bookingId != null ? 0 : 2)
-          : (item.bookingId != null ? 1 : 2);
-    });
-    Navigator.of(context).pop();
-    unawaited(_openNotificationTarget(item));
-  }
-
-  Future<void> _openNotificationTarget(NotificationItem item) async {
-    if (role != WorkspaceRole.customer) {
-      final target = item.bookingId != null ? 'Operations' : 'this section';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$target selected.')),
-      );
-      return;
-    }
-    try {
-      final Widget page;
-      if (item.bookingId != null) {
-        final bookings = await widget.controller.api.bookings();
-        final matches =
-            bookings.where((booking) => booking.id == item.bookingId);
-        if (matches.isEmpty) {
-          throw StateError('This booking is no longer available.');
-        }
-        page = BookingDetailsScreen(booking: matches.first);
-      } else if (item.invoiceId != null) {
-        page = InvoiceDetailScreen(invoiceId: item.invoiceId!);
-      } else if (item.supportRequestId != null) {
-        page = SupportRequestDetailScreen(
-          requestId: item.supportRequestId!,
-        );
-      } else {
-        throw StateError('This notification has no valid destination.');
-      }
-      if (!mounted) return;
-      await Navigator.of(context)
-          .push(MaterialPageRoute<void>(builder: (_) => page));
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(error))),
-        );
-      }
-    }
-  }
-}
-
-String _paymentMethodLabel(String method) => switch (method) {
-      'wallet' => 'Wallet',
-      'gateway' => 'Online payment',
-      _ => 'Cash on delivery',
-    };
-
-class _Tab {
-  const _Tab(this.label, this.icon);
-
-  final String label;
-  final IconData icon;
-}
-
-class _BookingServiceFields {
-  _BookingServiceFields({
-    required String quantity,
-    String details = '',
-    String location = '',
-    String deliveryDate = '',
-    String waterType = '',
-    String tankerCount = '',
-    this.latitude,
-    this.longitude,
-  })  : quantity = TextEditingController(text: quantity),
-        waterType = TextEditingController(text: waterType),
-        tankerCount = TextEditingController(text: tankerCount),
-        details = TextEditingController(text: details),
-        location = TextEditingController(text: location),
-        deliveryDate = TextEditingController(text: deliveryDate);
-
-  final TextEditingController quantity;
-  final TextEditingController waterType;
-  final TextEditingController tankerCount;
-  final TextEditingController details;
-  final TextEditingController location;
-  final TextEditingController deliveryDate;
-  double? latitude;
-  double? longitude;
-
-  void dispose() {
-    quantity.dispose();
-    waterType.dispose();
-    tankerCount.dispose();
-    details.dispose();
-    location.dispose();
-    deliveryDate.dispose();
-  }
-}
-
-class _ServiceDropdownField extends StatelessWidget {
-  const _ServiceDropdownField({
-    required this.controller,
-    required this.label,
-    required this.options,
-    required this.emptyMessage,
-    required this.onChanged,
-  });
-
-  final TextEditingController controller;
-  final String label;
-  final List<String> options;
-  final String emptyMessage;
-  final ValueChanged<String?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = options.contains(controller.text) ? controller.text : null;
-    return DropdownButtonFormField<String>(
-      initialValue: selected,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: label,
-        helperText: options.isEmpty ? emptyMessage : null,
-      ),
-      items: options
-          .map((option) => DropdownMenuItem<String>(
-                value: option,
-                child: Text(option),
-              ))
-          .toList(growable: false),
-      onChanged: options.isEmpty
-          ? null
-          : (value) {
-              controller.text = value ?? '';
-              onChanged(value);
-            },
-      validator: (value) => options.isEmpty
-          ? emptyMessage
-          : value == null || value.trim().isEmpty
-              ? 'Select $label.'
-              : null,
-    );
-  }
-}
-
-class _DeliveryLocationField extends StatelessWidget {
-  const _DeliveryLocationField({
-    required this.fields,
-    required this.onChanged,
-  });
-
-  final _BookingServiceFields fields;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) => TextFormField(
-        controller: fields.location,
-        maxLength: 200,
-        decoration: InputDecoration(
-          labelText: 'Delivery location',
-          helperText: fields.latitude == null
-              ? 'Chennai addresses only'
-              : 'Chennai location selected',
-          prefixIcon: IconButton(
-            tooltip: 'Choose delivery location',
-            onPressed: () async {
-              final coordinate = await showDialog<LatLng>(
-                context: context,
-                builder: (context) => _MapLocationPicker(
-                  latitude: fields.latitude,
-                  longitude: fields.longitude,
-                ),
-              );
-              if (coordinate == null) return;
-              fields.latitude = coordinate.latitude;
-              fields.longitude = coordinate.longitude;
-              onChanged();
-            },
-            icon: const Icon(Icons.map_outlined),
-          ),
-          suffixIcon: IconButton(
-            tooltip: 'Use current location',
-            onPressed: () async {
-              try {
-                if (!await Geolocator.isLocationServiceEnabled()) {
-                  if (!context.mounted) return;
-                  await showAppPermissionDialog(
-                    context,
-                    message:
-                        'Turn on location services to use your current location.',
-                    onOpenSettings: () {
-                      unawaited(Geolocator.openLocationSettings());
-                    },
-                  );
-                  return;
-                }
-                var permission = await Geolocator.checkPermission();
-                if (permission == LocationPermission.denied) {
-                  permission = await Geolocator.requestPermission();
-                }
-                if (permission == LocationPermission.deniedForever) {
-                  if (!context.mounted) return;
-                  await showAppPermissionDialog(
-                    context,
-                    message:
-                        'Allow location access in device settings to use your current location.',
-                    onOpenSettings: () {
-                      unawaited(Geolocator.openAppSettings());
-                    },
-                  );
-                  return;
-                }
-                if (permission == LocationPermission.denied) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Location permission is needed to use your current location.',
-                        ),
-                      ),
-                    );
-                  }
-                  return;
-                }
-                final position = await Geolocator.getCurrentPosition();
-                if (!isChennaiLocation(
-                  latitude: position.latitude,
-                  longitude: position.longitude,
-                )) {
-                  throw const FormatException(
-                    'This location is undeliverable. Select a location inside Chennai.',
-                  );
-                }
-                fields.latitude = position.latitude;
-                fields.longitude = position.longitude;
-                onChanged();
-              } catch (error) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(friendlyError(error))),
-                  );
-                }
-              }
-            },
-            icon: const Icon(Icons.my_location_outlined),
-          ),
-          errorMaxLines: 2,
-        ),
-        validator: (value) {
-          final text = value?.trim() ?? '';
-          if (text.length < 3) return 'Enter a delivery location.';
-          if (!isChennaiLocation(
-            address: text,
-            latitude: fields.latitude,
-            longitude: fields.longitude,
-          )) {
-            return 'This location is undeliverable. Choose Chennai.';
-          }
-          return null;
-        },
-        onChanged: (_) {
-          fields.latitude = null;
-          fields.longitude = null;
-          onChanged();
-        },
-      );
-}
-
-class _MapLocationPicker extends StatefulWidget {
-  const _MapLocationPicker({this.latitude, this.longitude});
-
-  final double? latitude;
-  final double? longitude;
-
-  @override
-  State<_MapLocationPicker> createState() => _MapLocationPickerState();
-}
-
-class _MapLocationPickerState extends State<_MapLocationPicker> {
-  static const _chennai = LatLng(13.0827, 80.2707);
-  late LatLng _center;
-  LatLng? _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _center = widget.latitude != null && widget.longitude != null
-        ? LatLng(widget.latitude!, widget.longitude!)
-        : _chennai;
-    _selected =
-        widget.latitude != null && widget.longitude != null ? _center : null;
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Choose delivery location'),
-        content: Semantics(
-          label: 'Map to choose the delivery location',
-          child: SizedBox(
-            width: double.maxFinite,
-            height: 360,
-            child: FlutterMap(
-            options: MapOptions(
-              initialCenter: _center,
-              initialZoom: 11,
-              onTap: (_, point) {
-                if (!isChennaiLocation(
-                  latitude: point.latitude,
-                  longitude: point.longitude,
-                )) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Choose a location inside Chennai.'),
-                    ),
-                  );
-                  return;
-                }
-                setState(() => _selected = point);
-              },
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.urbantanker.app',
-              ),
-              if (_selected != null)
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: _selected!,
-                      width: 48,
-                      height: 48,
-                      child: const Icon(
-                        Icons.location_pin,
-                        color: Colors.red,
-                        size: 42,
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: _selected == null
-                ? null
-                : () => Navigator.pop(context, _selected),
-            child: const Text('Use coordinates'),
-          ),
-        ],
-      );
-}
-
-class _DeliveryDateField extends StatelessWidget {
-  const _DeliveryDateField({
-    required this.controller,
-    required this.onChanged,
-  });
-
-  final TextEditingController controller;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) => TextFormField(
-        controller: controller,
-        readOnly: true,
-        onTap: () async {
-          final now = DateTime.now();
-          final firstDate = DateTime(now.year, now.month, now.day)
-              .add(const Duration(days: 1));
-          final picked = await showDatePicker(
-            context: context,
-            initialDate: DateTime.tryParse(controller.text) ?? firstDate,
-            firstDate: firstDate,
-            lastDate: firstDate.add(const Duration(days: 365)),
           );
-          if (picked != null) {
-            controller.text = _dateOnly(picked);
-            onChanged();
-          }
-        },
-        decoration: const InputDecoration(
-          labelText: 'Delivery date',
-          suffixIcon: Icon(Icons.calendar_today_outlined),
-        ),
-        validator: (value) {
-          final selected = DateTime.tryParse(value?.trim() ?? '');
-          final today = DateTime.now();
-          final firstDate = DateTime(today.year, today.month, today.day)
-              .add(const Duration(days: 1));
-          return selected == null || selected.isBefore(firstDate)
-              ? 'Choose a future delivery date.'
-              : null;
         },
       );
-}
 
-String _titleForRole(WorkspaceRole role) => switch (role) {
-      WorkspaceRole.customer => 'Urban Tanker',
-      WorkspaceRole.vendor => 'Vendor workspace',
-      WorkspaceRole.dispatcher => 'Dispatch workspace',
-      WorkspaceRole.admin => 'Admin workspace',
-    };
-
-class _ServiceCard extends StatelessWidget {
-  const _ServiceCard({required this.service});
-  final TankerService service;
-
-  @override
-  Widget build(BuildContext context) => Card(
-        child: ListTile(
-          leading: const CircleAvatar(
-            backgroundColor: mint,
-            child: Icon(Icons.water_drop_outlined, color: ink),
+  Widget _pageFor(ShellPage page, SessionUser user) => switch (page) {
+        ShellPage.overview => CustomerOverview(
+            user: user,
+            services: _services,
+            loading: _loadingServices,
+            error: _serviceError,
+            onRetry: _loadServices,
+            onBook: _services.isEmpty ? null : _createBooking,
+            onBookAgain: (booking) => _createBooking(previousBooking: booking),
+            onOpenBookings: () => _selectPage(ShellPage.bookings),
+            onOpenAccount: () => _selectPage(ShellPage.account),
           ),
-          title: Text(service.name),
-          subtitle: Text(service.description.isEmpty
-              ? service.category
-              : service.description),
-        ),
-      );
-}
-
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => Card(
-        child: ListTile(
-          title: Text(label),
-          trailing: Text(value,
-              style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w700)),
-        ),
-      );
-}
-
-class _EmptyCard extends StatelessWidget {
-  const _EmptyCard({required this.message});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(message),
-        ),
-      );
-}
-
-class _ErrorCard extends StatelessWidget {
-  const _ErrorCard({required this.message, required this.onRetry});
-  final String message;
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) => AppStateInline.error(
-        error: message,
-        onRetry: () => onRetry(),
-      );
-}
-
-String formatQuoteSummary(Object? quote) {
-  if (quote is! Map<String, dynamic>) return 'Quote unavailable.';
-  String money(Object? value) =>
-      value is num ? '₹${(value / 100).toStringAsFixed(2)}' : 'Unavailable';
-  return [
-    'Subtotal: ${money(quote['subtotalPaise'])}',
-    'Discount: ${money(quote['discountPaise'])}',
-    'GST: ${money(quote['gstPaise'])}',
-    'Total: ${money(quote['totalPaise'])}',
-  ].join('\n');
-}
-
-class _LiveQuoteSummary extends StatefulWidget {
-  const _LiveQuoteSummary({
-    required this.api,
-    required this.services,
-    required this.phone,
-    required this.paymentMethod,
-    this.couponCode,
-  });
-
-  final ApiClient api;
-  final List<BookingServiceDetails> services;
-  final String phone;
-  final String paymentMethod;
-  final String? couponCode;
-
-  @override
-  State<_LiveQuoteSummary> createState() => _LiveQuoteSummaryState();
-}
-
-class _LiveQuoteSummaryState extends State<_LiveQuoteSummary> {
-  static const _debounceDelay = Duration(milliseconds: 400);
-
-  Timer? _debounce;
-  String _lastKey = '';
-  int _requestCount = 0;
-  bool _loading = false;
-  Object? _quote;
-  String? _error;
-
-  String get _inputKey => [
-        for (final service in widget.services)
-          [
-            service.serviceId,
-            service.quantity,
-            service.waterType,
-            service.tankerCount,
-            service.details,
-            service.deliveryDate,
-            service.location,
-            service.latitude,
-            service.longitude,
-          ].join('|'),
-        widget.phone,
-        widget.paymentMethod,
-        widget.couponCode ?? '',
-      ].join('\n');
-
-  @override
-  void initState() {
-    super.initState();
-    _schedule();
-  }
-
-  @override
-  void didUpdateWidget(covariant _LiveQuoteSummary oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_inputKey != _lastKey) setState(_schedule);
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  void _schedule() {
-    final key = _inputKey;
-    _lastKey = key;
-    _debounce?.cancel();
-    _error = null;
-    if (widget.services.isEmpty) {
-      _loading = false;
-      _quote = null;
-      return;
-    }
-    _loading = true;
-    _debounce = Timer(_debounceDelay, () => _fetch(key));
-  }
-
-  Future<void> _fetch(String key) async {
-    final requestId = ++_requestCount;
-    final first = widget.services.first;
-    try {
-      final response = await widget.api.previewBookingQuote(
-        serviceId: first.serviceId,
-        capacity: first.quantity,
-        services: widget.services,
-        location: first.location ?? '',
-        deliveryDate: first.deliveryDate ?? '',
-        paymentMethod: widget.paymentMethod,
-        latitude: first.latitude,
-        longitude: first.longitude,
-        couponCode: widget.couponCode,
-        phone: widget.phone,
-      );
-      if (!mounted || requestId != _requestCount || key != _lastKey) return;
-      setState(() {
-        _loading = false;
-        _quote = response['quote'];
-        _error = null;
-      });
-    } catch (error) {
-      if (!mounted || requestId != _requestCount || key != _lastKey) return;
-      setState(() {
-        _loading = false;
-        _quote = null;
-        _error = friendlyError(error);
-      });
-    }
-  }
-
-  void _retry() => setState(_schedule);
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    if (widget.services.isEmpty) {
-      return Text(
-        'Complete the service details to see the price.',
-        style: theme.textTheme.bodyMedium,
-      );
-    }
-    if (_loading) {
-      return const Row(
-        children: [
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
+        ShellPage.bookings => BookingsScreen(
+            onBookAgain: (booking) => _createBooking(previousBooking: booking),
           ),
-          SizedBox(width: 12),
-          Expanded(child: Text('Calculating price…')),
-        ],
-      );
-    }
-    if (_error != null) {
-      return Row(
-        children: [
-          Expanded(
-            child: Text(
-              'Price unavailable: $_error',
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
+        ShellPage.account => const CustomerAccountScreen(),
+        ShellPage.vendorOperations => const VendorOperationsScreen(),
+        ShellPage.vendorFleet => const VendorFleetScreen(),
+        ShellPage.vendorEarnings => const VendorEarningsScreen(),
+        ShellPage.dispatchDispatch => const DispatcherDispatchScreen(),
+        ShellPage.dispatchLive => const DispatcherLiveScreen(),
+        ShellPage.dispatchAlerts => const DispatcherAlertsScreen(),
+        ShellPage.adminPulse => const AdminPulseScreen(),
+        ShellPage.adminOperations => AdminOperationsScreen(
+            focus: _operationsFocus,
           ),
-          TextButton(onPressed: _retry, child: const Text('Retry')),
-        ],
-      );
-    }
-    return Semantics(
-      liveRegion: true,
-      child: Text(
-        formatQuoteSummary(_quote),
-        style: theme.textTheme.bodyMedium,
-      ),
-    );
-  }
+        ShellPage.adminReports => const AdminReportsScreen(),
+        ShellPage.menu => MenuScreen(
+            controller: widget.controller,
+            role: role,
+            notifications: _notifications,
+            onDestination: _openDestination,
+            onNotifications: _openNotificationInbox,
+          ),
+      };
 }

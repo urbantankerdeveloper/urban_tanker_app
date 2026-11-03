@@ -27,7 +27,8 @@ void main() {
     );
 
     expect(find.text('Create your account.'), findsOneWidget);
-    expect(find.text('Already a user? Log in'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
     expect(find.text('Send verification code'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });

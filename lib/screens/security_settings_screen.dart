@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
-import '../app/page_components.dart';
+import '../core/design_system/design_system.dart';
 import 'unlock_setup_screen.dart';
 
 /// Turns the MPIN and fingerprint unlock on or off. Shown to every role.
@@ -20,7 +20,6 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       widget.controller.biometricAuth.canAuthenticate();
 
   Future<void> _setFingerprint(bool enable) async {
-    final messenger = ScaffoldMessenger.of(context);
     if (!enable) {
       await widget.controller.setBiometricEnabled(false);
       return;
@@ -29,112 +28,103 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       final authenticated = await widget.controller.biometricAuth.authenticate(
         'Confirm fingerprint unlock for Urban Tanker',
       );
+      if (!mounted) return;
       if (authenticated) {
         await widget.controller.setBiometricEnabled(true);
       } else {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Fingerprint unlock was not enabled.')),
-        );
+        showAppSnack(context, 'Fingerprint unlock was not enabled.');
       }
     } on PlatformException catch (error) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            error.message ?? 'Fingerprint unlock could not be enabled.',
-          ),
-        ),
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        error.message ?? 'Fingerprint unlock could not be enabled.',
+        variant: AppSnackVariant.error,
       );
     }
   }
 
   Future<void> _confirmTurnOffMpin() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Turn off MPIN?'),
-        content: const Text(
-          'The app will no longer ask for an MPIN when you reopen it.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Turn off'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: 'Turn off MPIN?',
+      message: 'The app will no longer ask for an MPIN when you reopen it.',
+      confirmLabel: 'Turn off',
+      cancelLabel: 'Cancel',
+      destructive: true,
     );
-    if (confirmed == true) await widget.controller.disableMpin();
+    if (confirmed) await widget.controller.disableMpin();
   }
 
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Security')),
+    final theme = Theme.of(context);
+    return AppScaffold(
+      title: 'Security',
       body: ListenableBuilder(
         listenable: controller,
         builder: (context, _) => ListView(
-          padding: AppPageInsets.standard,
+          padding: const EdgeInsets.all(AppSpace.gutter),
           children: [
-            Card(
+            SurfaceCard(
+              padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
               child: Column(
                 children: [
-                  ListTile(
+                  AppListRow(
                     leading: const Icon(Icons.pin_outlined),
-                    title: const Text('MPIN'),
-                    subtitle: Text(
-                      controller.mpinEnabled
-                          ? 'On. Use it to unlock the app.'
-                          : 'Not set. Create a 4 to 6 digit MPIN.',
-                    ),
+                    title: 'MPIN',
+                    subtitle: controller.mpinEnabled
+                        ? 'On. Use it to unlock the app.'
+                        : 'Not set. Create a 4 to 6 digit MPIN.',
                   ),
-                  ListTile(
-                    title: Text(
-                      controller.mpinEnabled ? 'Change MPIN' : 'Set up MPIN',
-                    ),
+                  const Divider(height: 1),
+                  AppListRow(
+                    title:
+                        controller.mpinEnabled ? 'Change MPIN' : 'Set up MPIN',
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => UnlockSetupScreen(controller: controller),
+                        builder: (_) =>
+                            UnlockSetupScreen(controller: controller),
                       ),
                     ),
                   ),
-                  if (controller.mpinEnabled)
-                    ListTile(
-                      title: const Text('Turn off MPIN'),
+                  if (controller.mpinEnabled) ...[
+                    const Divider(height: 1),
+                    AppListRow(
+                      title: 'Turn off MPIN',
                       onTap: _confirmTurnOffMpin,
                     ),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            Card(
+            const SizedBox(height: AppSpace.md),
+            SurfaceCard(
+              padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
               child: FutureBuilder<bool>(
                 future: _fingerprintAvailable,
                 builder: (context, snapshot) {
                   final available = snapshot.data ?? false;
-                  return SwitchListTile(
-                    secondary: const Icon(Icons.fingerprint),
-                    title: const Text('Fingerprint unlock'),
-                    subtitle: Text(
-                      available
-                          ? 'Unlock with your fingerprint or device biometric.'
-                          : 'No fingerprint or device biometric is set up on this device.',
+                  return AppListRow(
+                    leading: const Icon(Icons.fingerprint),
+                    title: 'Fingerprint unlock',
+                    subtitle: available
+                        ? 'Unlock with your fingerprint or device biometric.'
+                        : 'No fingerprint or device biometric is set up on this device.',
+                    trailing: Switch(
+                      value: controller.biometricEnabled,
+                      onChanged: available ? _setFingerprint : null,
                     ),
-                    value: controller.biometricEnabled,
-                    onChanged: available ? _setFingerprint : null,
                   );
                 },
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpace.lg),
             Text(
               'The app locks when you leave it. Turn on an MPIN or fingerprint to unlock it again.',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: theme.textTheme.bodyMedium,
             ),
           ],
         ),

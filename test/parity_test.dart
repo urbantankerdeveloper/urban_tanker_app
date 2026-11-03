@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:urban_tanker_app/models/vendor.dart';
-import 'package:urban_tanker_app/screens/home/home_shell.dart';
+import 'package:urban_tanker_app/screens/home/booking/live_quote_summary.dart';
 
 void main() {
   group('VendorOrder parity', () {
@@ -43,12 +43,14 @@ void main() {
         'totalPaise': 99750,
       });
 
-      expect(summary, [
-        'Subtotal: ₹1000.00',
-        'Discount: ₹50.00',
-        'GST: ₹47.50',
-        'Total: ₹997.50',
-      ].join('\n'));
+      expect(
+          summary,
+          [
+            'Subtotal: ₹1000.00',
+            'Discount: ₹50.00',
+            'GST: ₹47.50',
+            'Total: ₹997.50',
+          ].join('\n'));
     });
 
     test('reports unavailable when the quote is missing', () {

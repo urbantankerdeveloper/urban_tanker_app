@@ -4,9 +4,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'auth_feature_flags.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
 import '../services/biometric_auth_service.dart';
+import '../services/email_rules.dart';
 import '../services/friendly_error.dart';
 import '../services/invoice_files.dart';
 import '../services/mpin_service.dart';
@@ -37,6 +39,19 @@ class AppController extends ChangeNotifier {
   bool biometricPromptOffered = false;
   bool pendingUnlockSetup = false;
   String? phoneOtpChallengeId;
+  String? emailOtpChallengeId;
+
+  /// Set after an email sign-up that needs the confirmation link. The sign-in
+  /// screen shows a "check your inbox" state while it is set.
+  String? pendingEmailVerification;
+
+  /// False once the server has said the email code endpoints do not exist.
+  /// Password sign-in keeps working, and the code option is hidden.
+  bool emailOtpAvailable = true;
+
+  /// HTTP status of the last failed operation, so screens can tell a taken
+  /// email (409) from other failures.
+  int? errorStatusCode;
   String? errorMessage;
   String? successMessage;
   late final PushNotificationService pushNotifications =
@@ -128,6 +143,61 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  /// The last sign-in method the user chose, so the sign-in screen opens on it.
+  String? get lastAuthMethod => _preferences.getString('last_auth_method');
+
+  void rememberAuthMethod(String method) {
+    unawaited(_preferences.setString('last_auth_method', method));
+  }
+
+  static const emailCodesUnavailableMessage =
+      "Email codes aren't available yet, use your password instead.";
+
+  Future<void> requestEmailAuthOtp(String email) async {
+    await _run(() async {
+      if (!AuthFeatureFlags.emailOtp || !emailOtpAvailable) {
+        throw StateError(emailCodesUnavailableMessage);
+      }
+      try {
+        emailOtpChallengeId = await api.requestEmailAuthOtp(email);
+      } on ApiException catch (error) {
+        // 404 or 501 means the endpoint is not deployed yet. Switch the option
+        // off for this run instead of showing a raw error every time.
+        if (error.statusCode == 404 || error.statusCode == 501) {
+          emailOtpAvailable = false;
+          emailOtpChallengeId = null;
+          throw StateError(emailCodesUnavailableMessage);
+        }
+        rethrow;
+      }
+      successMessage = 'Verification code sent. It expires in 10 minutes.';
+    });
+  }
+
+  Future<void> signInWithEmailAuthOtp({
+    required String email,
+    required String otp,
+    String? name,
+    String? phone,
+  }) async {
+    await _run(() async {
+      final challengeId = emailOtpChallengeId;
+      if (challengeId == null) {
+        throw StateError('Request a verification code before signing in.');
+      }
+      final result = await api.verifyEmailAuthOtp(
+        email: email,
+        challengeId: challengeId,
+        otp: otp,
+        name: name,
+        phone: phone,
+      );
+      emailOtpChallengeId = null;
+      _setSession(result);
+      pendingUnlockSetup = !quickUnlockEnabled && !biometricPromptOffered;
+    });
+  }
+
   Future<void> markBiometricPromptOffered() async {
     biometricPromptOffered = true;
     await _preferences.setBool('biometric_prompt_offered', true);
@@ -209,19 +279,26 @@ class AppController extends ChangeNotifier {
   }) async {
     await _run(() async {
       final result = await api.signup(
-        email: email.trim(),
+        email: normalizeEmail(email),
         password: password,
         name: name.trim(),
         phone: phone.trim(),
         themeMode: themeMode.name,
       );
       if (result == null) {
+        pendingEmailVerification = normalizeEmail(email);
         successMessage =
             'Account created. Check your email for the confirmation link, then sign in.';
         return;
       }
       _setSession(result);
     });
+  }
+
+  void clearPendingEmailVerification() {
+    pendingEmailVerification = null;
+    successMessage = null;
+    notifyListeners();
   }
 
   Future<void> requestPasswordReset(String email) async {
@@ -354,12 +431,14 @@ class AppController extends ChangeNotifier {
   Future<void> _run(Future<void> Function() operation) async {
     busy = true;
     errorMessage = null;
+    errorStatusCode = null;
     successMessage = null;
     notifyListeners();
     try {
       await operation();
     } catch (error) {
       errorMessage = friendlyError(error);
+      errorStatusCode = error is ApiException ? error.statusCode : null;
     } finally {
       busy = false;
       notifyListeners();

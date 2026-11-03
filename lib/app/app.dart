@@ -4,11 +4,11 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/design_system/widgets/status_banners.dart';
 import '../screens/app_lock_screen.dart';
 import '../screens/public_tracking_screen.dart';
 import '../services/tracking_link.dart';
 import 'providers.dart';
-import 'page_components.dart';
 import 'theme.dart';
 import '../screens/auth_screen.dart';
 import '../screens/home/home_shell.dart';
@@ -98,8 +98,7 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
               child: child ?? const SizedBox.shrink(),
             ),
           ),
-          if (controller.sessionLocked)
-            AppLockScreen(controller: controller),
+          if (controller.sessionLocked) AppLockScreen(controller: controller),
         ],
       ),
       home: controller.isSignedIn

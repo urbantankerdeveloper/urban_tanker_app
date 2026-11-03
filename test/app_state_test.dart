@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:urban_tanker_app/app/page_components.dart';
+import 'package:urban_tanker_app/core/design_system/design_system.dart';
 
 void main() {
   testWidgets('network errors show an offline state with a retry action',
@@ -35,7 +35,8 @@ void main() {
     );
 
     expect(find.text('Something went wrong'), findsOneWidget);
-    expect(find.text('Something went wrong. Please try again.'), findsOneWidget);
+    expect(
+        find.text('Something went wrong. Please try again.'), findsOneWidget);
     expect(find.text('Try again'), findsNothing);
   });
 
