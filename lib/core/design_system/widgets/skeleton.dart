@@ -31,10 +31,12 @@ class SkeletonBox extends StatelessWidget {
       ),
     );
     if (AppMotion.reduced(context)) return box;
-    return Shimmer.fromColors(
-      baseColor: colors.hairline,
-      highlightColor: colors.surface,
-      child: box,
+    return RepaintBoundary(
+      child: Shimmer.fromColors(
+        baseColor: colors.hairline,
+        highlightColor: colors.surface,
+        child: box,
+      ),
     );
   }
 }

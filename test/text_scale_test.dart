@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:urban_tanker_app/app/page_components.dart';
-import 'package:urban_tanker_app/app/theme.dart';
+import 'package:urban_tanker_app/core/design_system/design_system.dart';
 
 Widget _scaled(Widget child) => MaterialApp(
       theme: buildLightTheme(),

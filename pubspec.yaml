@@ -31,9 +31,7 @@ dependencies:
   permission_handler: ^13.0.2
   flutter_animate: ^4.5.2
   shimmer: ^4.0.0
-  lucide_icons_flutter: ^4.0.1
   lottie: ^3.8.2
-  smooth_page_indicator: ^3.0.0
   cached_network_image: ^4.0.6
 
 dev_dependencies:

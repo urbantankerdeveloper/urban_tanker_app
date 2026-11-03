@@ -133,7 +133,7 @@ class _Bubble extends StatelessWidget {
         padding: const EdgeInsets.all(AppSpace.md),
         decoration: BoxDecoration(
           color: fill,
-          borderRadius: BorderRadius.circular(AppRadius.card),
+          borderRadius: AppRadius.cardBorder,
           border: Border.all(color: colors.hairline),
         ),
         child: Column(

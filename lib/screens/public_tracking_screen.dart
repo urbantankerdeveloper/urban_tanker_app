@@ -376,15 +376,17 @@ class _VehicleMarkerState extends State<_VehicleMarker>
     return Stack(
       alignment: Alignment.center,
       children: [
-        AnimatedBuilder(
-          animation: _pulse,
-          builder: (context, _) => Container(
-            width: 30 + 40 * _pulse.value,
-            height: 30 + 40 * _pulse.value,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color:
-                  colors.primary.withValues(alpha: 0.35 * (1 - _pulse.value)),
+        RepaintBoundary(
+          child: AnimatedBuilder(
+            animation: _pulse,
+            builder: (context, _) => Container(
+              width: 30 + 40 * _pulse.value,
+              height: 30 + 40 * _pulse.value,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color:
+                    colors.primary.withValues(alpha: 0.35 * (1 - _pulse.value)),
+              ),
             ),
           ),
         ),

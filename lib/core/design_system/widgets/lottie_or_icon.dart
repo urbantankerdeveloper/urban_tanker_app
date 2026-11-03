@@ -30,12 +30,14 @@ class LottieOrIcon extends StatelessWidget {
     if (AppMotion.reduced(context)) return still;
     return SizedBox.square(
       dimension: size,
-      child: Lottie.asset(
-        asset,
-        width: size,
-        height: size,
-        repeat: repeat,
-        errorBuilder: (context, error, stackTrace) => still,
+      child: RepaintBoundary(
+        child: Lottie.asset(
+          asset,
+          width: size,
+          height: size,
+          repeat: repeat,
+          errorBuilder: (context, error, stackTrace) => still,
+        ),
       ),
     );
   }
