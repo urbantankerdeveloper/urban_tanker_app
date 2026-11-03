@@ -1,9 +1,11 @@
 import '../../models/session.dart';
+import '../email_rules.dart';
 import 'api_decode.dart';
 import 'api_transport.dart';
 import 'api_types.dart';
 
-/// Sign-in, sign-up, phone verification, password reset and preferences.
+/// Sign-in, sign-up, phone and email verification, password reset and
+/// preferences.
 class AuthApi {
   AuthApi(this._api);
 
@@ -165,6 +167,56 @@ class AuthApi {
     if (decoded is! Map<String, dynamic> || decoded['verified'] != true) {
       throw const FormatException('Phone verification was not confirmed.');
     }
+  }
+
+  /// Sends a one-time code to [email]. Returns the challenge the code belongs to.
+  Future<String> requestEmailAuthOtp(String email) async {
+    final normalized = normalizeEmail(email);
+    if (!isValidEmail(normalized)) {
+      throw const FormatException('Enter a valid email address.');
+    }
+    final response = await _api.request(
+      'POST',
+      '/auth/email/request-otp',
+      body: {'email': normalized},
+      retry: false,
+    );
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic> || decoded['challengeId'] is! String) {
+      throw const FormatException('The email code response was invalid.');
+    }
+    return decoded['challengeId'] as String;
+  }
+
+  /// Checks the code and signs in. New accounts also send [name] and [phone].
+  Future<AuthResult> verifyEmailAuthOtp({
+    required String email,
+    required String challengeId,
+    required String otp,
+    String? name,
+    String? phone,
+  }) async {
+    final normalized = normalizeEmail(email);
+    if (!isValidEmail(normalized)) {
+      throw const FormatException('Enter a valid email address.');
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(otp.trim())) {
+      throw const FormatException('Enter the 6-digit verification code.');
+    }
+    final response = await _api.request(
+      'POST',
+      '/auth/email/verify-otp',
+      body: {
+        'email': normalized,
+        'challengeId': challengeId,
+        'otp': otp.trim(),
+        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+        if (phone != null && phone.trim().isNotEmpty)
+          'phone': normalizeIndianPhone(phone),
+      },
+      retry: false,
+    );
+    return _saveAuthResult(decodeBody(response));
   }
 
   Future<void> updateThemePreference(String themeMode) async {

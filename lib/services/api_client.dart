@@ -168,6 +168,24 @@ class ApiClient implements ApiTransport {
   }) =>
       _auth.verifyPhoneOtp(challengeId: challengeId, phone: phone, otp: otp);
 
+  Future<String> requestEmailAuthOtp(String email) =>
+      _auth.requestEmailAuthOtp(email);
+
+  Future<AuthResult> verifyEmailAuthOtp({
+    required String email,
+    required String challengeId,
+    required String otp,
+    String? name,
+    String? phone,
+  }) =>
+      _auth.verifyEmailAuthOtp(
+        email: email,
+        challengeId: challengeId,
+        otp: otp,
+        name: name,
+        phone: phone,
+      );
+
   Future<void> updateThemePreference(String themeMode) =>
       _auth.updateThemePreference(themeMode);
 
