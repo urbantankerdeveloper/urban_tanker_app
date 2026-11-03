@@ -366,7 +366,7 @@ class _NotificationsPanel extends ConsumerWidget {
             onRetry: () => ref.invalidate(adminNotificationsProvider),
           ),
           data: (items) {
-            final groups = groupNotifications(items);
+            final groups = groupNotificationsByDay(items);
             if (groups.isEmpty) {
               return const EmptyState(
                 icon: Icons.notifications_none_outlined,

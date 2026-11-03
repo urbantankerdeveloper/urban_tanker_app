@@ -64,7 +64,7 @@ class _NotificationInboxState extends State<NotificationInbox> {
           if (snapshot.hasError) {
             return ErrorState(error: snapshot.error!, onRetry: _reload);
           }
-          final groups = groupNotifications(snapshot.data ?? const []);
+          final groups = groupNotificationsByDay(snapshot.data ?? const []);
           if (groups.isEmpty) {
             return const EmptyState(
               icon: Icons.notifications_none_outlined,
@@ -133,8 +133,7 @@ class _NotificationInboxState extends State<NotificationInbox> {
   }
 }
 
-/// One group of notifications for a booking, invoice or support request.
-/// Expands to show its items.
+/// One day's notifications. Expands to show its items.
 class _GroupCard extends StatelessWidget {
   const _GroupCard({
     required this.group,
@@ -159,9 +158,7 @@ class _GroupCard extends StatelessWidget {
           shape: const Border(),
           collapsedShape: const Border(),
           leading: _TypeIcon(
-            icon: group.isBookingGroup
-                ? Icons.local_shipping_outlined
-                : Icons.notifications_none_outlined,
+            icon: Icons.calendar_today_outlined,
             unread: unread > 0,
           ),
           title: Text(

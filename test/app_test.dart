@@ -230,41 +230,35 @@ void main() {
     expect(workspaceNavigationForRole(WorkspaceRole.customer), isEmpty);
   });
 
-  test('notifications group booking events and separate unrelated events', () {
-    final events = [
-      NotificationItem.fromJson({
-        'id': 'event-1',
-        'title': 'Booking accepted',
-        'payload': {
-          'bookingId': 'booking-1',
-          'bookingReference': 'UT-1001',
-          'status': 'accepted',
-        },
-      }),
-      NotificationItem.fromJson({
-        'id': 'event-2',
-        'title': 'Driver en route',
-        'read_at': '2026-10-27T09:00:00Z',
-        'payload': {'bookingReference': 'UT-1001', 'status': 'en_route'},
-      }),
-      NotificationItem.fromJson({
-        'id': 'other-1',
-        'title': 'Account update',
-      }),
-      NotificationItem.fromJson({
-        'id': 'other-2',
-        'title': 'Account update',
-      }),
-    ];
+  test('notifications group by local day, newest first, undated last', () {
+    final now = DateTime(2026, 11, 3, 10);
+    NotificationItem item(String id, DateTime? createdAt,
+            {bool read = false}) =>
+        NotificationItem.fromJson({
+          'id': id,
+          'title': 'Update $id',
+          'created_at': createdAt?.toUtc().toIso8601String(),
+          if (read) 'read_at': '2026-11-03T00:00:00Z',
+        });
 
-    final groups = groupNotifications(events);
-    expect(groups, hasLength(3));
-    final bookingGroup = groups.firstWhere(
-      (group) => group.title == 'UT-1001',
+    final groups = groupNotificationsByDay(
+      [
+        item('today-1', DateTime(2026, 11, 3, 9)),
+        item('yesterday-1', DateTime(2026, 11, 2, 22), read: true),
+        item('today-2', DateTime(2026, 11, 3, 7)),
+        item('older-1', DateTime(2026, 10, 27, 12)),
+        item('undated-1', null),
+      ],
+      now: now,
     );
-    expect(bookingGroup.items, hasLength(2));
-    expect(bookingGroup.unreadItems.map((item) => item.id), ['event-1']);
-    expect(groups.where((group) => !group.isBookingGroup), hasLength(2));
+
+    expect(
+      groups.map((group) => group.title),
+      ['Today', 'Yesterday', '27 Oct 2026', 'Earlier'],
+    );
+    expect(groups.first.items.map((item) => item.id), ['today-1', 'today-2']);
+    expect(groups[1].unreadItems, isEmpty);
+    expect(groups.last.items.map((item) => item.id), ['undated-1']);
   });
 
   test('admin and vendor cancellation require a useful reason', () async {

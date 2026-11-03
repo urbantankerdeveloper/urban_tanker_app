@@ -48,44 +48,69 @@ class NotificationGroup {
     required this.key,
     required this.title,
     required this.items,
-    required this.isBookingGroup,
   });
 
   final String key;
   final String title;
   final List<NotificationItem> items;
-  final bool isBookingGroup;
 
   List<NotificationItem> get unreadItems =>
       items.where((item) => !item.read).toList(growable: false);
 }
 
-List<NotificationGroup> groupNotifications(
-  List<NotificationItem> notifications,
-) {
-  final groups = <String, List<NotificationItem>>{};
-  final titles = <String, String>{};
-  final bookingGroups = <String, bool>{};
+const _monthNames = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/// Groups notifications by the local calendar day they arrived on, newest day
+/// first. Items keep the order the server sent them in. Items without a time
+/// go in a last group called Earlier.
+List<NotificationGroup> groupNotificationsByDay(
+  List<NotificationItem> notifications, {
+  DateTime? now,
+}) {
+  final today = _dayOf(now ?? DateTime.now());
+  final yesterday = today.subtract(const Duration(days: 1));
+  final byDay = <DateTime?, List<NotificationItem>>{};
   for (final item in notifications) {
-    final reference = item.bookingReference;
-    final bookingId = item.bookingId;
-    final groupKey = reference != null
-        ? 'booking-reference:$reference'
-        : bookingId != null
-            ? 'booking-id:$bookingId'
-            : 'notification:${item.id}';
-    groups.putIfAbsent(groupKey, () => []).add(item);
-    titles[groupKey] = reference ??
-        (bookingId == null ? item.title : 'Booking $bookingId');
-    bookingGroups[groupKey] = reference != null || bookingId != null;
+    final created = item.createdAt;
+    final day = created == null ? null : _dayOf(created.toLocal());
+    byDay.putIfAbsent(day, () => []).add(item);
   }
+  final days = byDay.keys.whereType<DateTime>().toList()
+    ..sort((a, b) => b.compareTo(a));
   return [
-    for (final entry in groups.entries)
+    for (final day in days)
       NotificationGroup(
-        key: entry.key,
-        title: titles[entry.key]!,
-        items: entry.value,
-        isBookingGroup: bookingGroups[entry.key]!,
+        key: day.toIso8601String(),
+        title: _dayTitle(day, today, yesterday),
+        items: byDay[day]!,
+      ),
+    if (byDay.containsKey(null))
+      NotificationGroup(
+        key: 'undated',
+        title: 'Earlier',
+        items: byDay[null]!,
       ),
   ];
+}
+
+DateTime _dayOf(DateTime moment) =>
+    DateTime(moment.year, moment.month, moment.day);
+
+String _dayTitle(DateTime day, DateTime today, DateTime yesterday) {
+  if (day == today) return 'Today';
+  if (day == yesterday) return 'Yesterday';
+  return '${day.day} ${_monthNames[day.month - 1]} ${day.year}';
 }
