@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
@@ -29,6 +31,12 @@ class _AuthScreenState extends State<AuthScreen> {
   _LoginMethod _loginMethod = _LoginMethod.phone;
   bool _obscurePassword = true;
 
+  /// After each code is sent, "Send a new code" waits this long.
+  static const _resendCooldownSeconds = 30;
+  Timer? _resendTimer;
+  int _resendIn = 0;
+  String? _lastChallengeId;
+
   bool get _otpRequested => widget.controller.phoneOtpChallengeId != null;
   bool get _isRegistration => _mode == _AuthMode.register;
   bool get _usesPhone => _isRegistration || _loginMethod == _LoginMethod.phone;
@@ -49,12 +57,27 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   void _onControllerChanged() {
+    final challengeId = widget.controller.phoneOtpChallengeId;
+    if (challengeId != null && challengeId != _lastChallengeId) {
+      _startResendCooldown();
+    }
+    _lastChallengeId = challengeId;
     if (mounted) setState(() {});
+  }
+
+  void _startResendCooldown() {
+    _resendTimer?.cancel();
+    _resendIn = _resendCooldownSeconds;
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() => _resendIn--);
+      if (_resendIn <= 0) timer.cancel();
+    });
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
+    _resendTimer?.cancel();
     _phone.dispose();
     _otp.dispose();
     _name.dispose();
@@ -82,6 +105,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
   void _changeNumber() {
     _otp.clear();
+    _resendTimer?.cancel();
+    _resendIn = 0;
     widget.controller.phoneOtpChallengeId = null;
     widget.controller.clearError();
   }
@@ -286,8 +311,10 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
       if (usePhone && _otpRequested)
         GhostButton(
-          label: 'Send a new code',
-          onPressed: controller.busy
+          label: _resendIn > 0
+              ? 'Send a new code in ${_resendIn}s'
+              : 'Send a new code',
+          onPressed: controller.busy || _resendIn > 0
               ? null
               : () async {
                   _otp.clear();

@@ -184,4 +184,22 @@ void main() {
     expect(find.text(api.requestError!), findsOneWidget);
     expect(find.text('Send verification code'), findsOneWidget);
   });
+
+  testWidgets('a new code waits 30 seconds after each code is sent',
+      (tester) async {
+    await showAuthScreen(tester);
+    await tester.enterText(find.byType(TextFormField).first, '9876543210');
+    await tester.tap(find.text('Send verification code'));
+    // A plain pump, not pumpAndSettle: settling would run the countdown out.
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Send a new code in 30s'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 10));
+    expect(find.text('Send a new code in 20s'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 20));
+    expect(find.text('Send a new code'), findsOneWidget);
+  });
 }
