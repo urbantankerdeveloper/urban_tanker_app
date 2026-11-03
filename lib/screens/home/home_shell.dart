@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../../app/app_controller.dart';
 import '../../app/page_components.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
+import '../../core/design_system/gallery/design_system_gallery.dart';
 import '../../models/service.dart';
 import '../../models/booking_service_details.dart';
 import '../../models/booking_service_form.dart';
@@ -1009,6 +1011,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       appBar: AppBar(
         title: Text(_titleForRole(role)),
         actions: [
+          if (kDebugMode)
+            IconButton(
+              tooltip: 'Design system',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const DesignSystemGallery(),
+                ),
+              ),
+              icon: const Icon(Icons.palette_outlined),
+            ),
           FutureBuilder<List<NotificationItem>>(
             future: _notifications,
             builder: (context, snapshot) {
