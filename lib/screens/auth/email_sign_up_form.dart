@@ -6,7 +6,6 @@ import '../../core/design_system/design_system.dart';
 import '../../services/api/api_types.dart';
 import '../../services/email_rules.dart';
 import 'password_rules.dart';
-import 'password_strength_meter.dart';
 import 'resend_cooldown.dart';
 
 /// Email sign-up for customer accounts. Password mode is the default. Code mode
@@ -84,7 +83,7 @@ class _EmailSignUpFormState extends State<EmailSignUpForm> {
 
   String? _validatePassword(String? value) => isStrongPassword(value ?? '')
       ? null
-      : 'Choose a password that meets every rule below.';
+      : 'Use at least 8 characters, including uppercase, lowercase, and a number.';
 
   String? _validateConfirm(String? value) =>
       (value ?? '').isEmpty || value == _password.text
@@ -198,7 +197,6 @@ class _EmailSignUpFormState extends State<EmailSignUpForm> {
                     obscureText: _obscurePassword,
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.newPassword],
-                    onChanged: (_) => setState(() {}),
                     suffix: IconButton(
                       tooltip:
                           _obscurePassword ? 'Show password' : 'Hide password',
@@ -213,8 +211,6 @@ class _EmailSignUpFormState extends State<EmailSignUpForm> {
                     ),
                     validator: _validatePassword,
                   ),
-                  const SizedBox(height: AppSpace.sm),
-                  PasswordStrengthMeter(password: _password.text),
                   const SizedBox(height: AppSpace.md),
                   AppTextField(
                     controller: _confirm,

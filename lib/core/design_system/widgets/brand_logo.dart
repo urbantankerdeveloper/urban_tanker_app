@@ -29,7 +29,7 @@ class BrandLogo extends StatelessWidget {
         ],
       ),
       child: Image.asset(
-        'assets/images/logo.png',
+        'assets/images/logo_white.png',
         fit: BoxFit.contain,
         semanticLabel: 'Urban Tanker logo',
       ),

@@ -370,9 +370,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Choose a password that meets every rule below.'),
+      find.text(
+        'Use at least 8 characters, including uppercase, lowercase, and a number.',
+      ),
       findsOneWidget,
     );
+    expect(find.text('At least 8 characters'), findsNothing);
     expect(api.signupCalls, 0);
   });
 

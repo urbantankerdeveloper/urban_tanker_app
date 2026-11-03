@@ -19,6 +19,8 @@ ThemeData _buildTheme(Brightness brightness) {
           ? FlexColorScheme.dark(
               primary: c.primary,
               secondary: c.mint,
+              primaryLightRef: AppColors.light.primary,
+              secondaryLightRef: AppColors.light.primaryDeep,
               surface: c.surface,
               error: AppPalette.coralDark,
               appBarBackground: c.scaffold,
