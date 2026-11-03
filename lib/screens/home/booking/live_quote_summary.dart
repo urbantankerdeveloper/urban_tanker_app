@@ -26,6 +26,7 @@ class LiveQuoteSummary extends StatefulWidget {
     required this.phone,
     required this.paymentMethod,
     this.couponCode,
+    this.onTotal,
   });
 
   final ApiClient api;
@@ -33,6 +34,9 @@ class LiveQuoteSummary extends StatefulWidget {
   final String phone;
   final String paymentMethod;
   final String? couponCode;
+
+  /// Told the rupee total of each fresh quote, or null when there is none.
+  final ValueChanged<double?>? onTotal;
 
   @override
   State<LiveQuoteSummary> createState() => _LiveQuoteSummaryState();
@@ -120,6 +124,7 @@ class _LiveQuoteSummaryState extends State<LiveQuoteSummary> {
         _quote = response['quote'];
         _error = null;
       });
+      widget.onTotal?.call(_totalRupees(_quote));
     } catch (error) {
       if (!mounted || requestId != _requestCount || key != _lastKey) return;
       setState(() {
@@ -127,6 +132,7 @@ class _LiveQuoteSummaryState extends State<LiveQuoteSummary> {
         _quote = null;
         _error = friendlyError(error);
       });
+      widget.onTotal?.call(null);
     }
   }
 
@@ -175,4 +181,11 @@ class _LiveQuoteSummaryState extends State<LiveQuoteSummary> {
       ),
     );
   }
+}
+
+/// Total in rupees from a quote's paise total, or null when it is missing.
+double? _totalRupees(Object? quote) {
+  if (quote is! Map<String, dynamic>) return null;
+  final total = quote['totalPaise'];
+  return total is num ? total / 100 : null;
 }
