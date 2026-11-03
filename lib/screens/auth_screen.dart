@@ -57,6 +57,18 @@ class _AuthScreenState extends State<AuthScreen> {
     _method =
         _methodFromName(widget.controller.lastAuthMethod) ?? _AuthMethod.phone;
     if (!_methods.contains(_method)) _method = _AuthMethod.phone;
+    _applyEmailConfirmed();
+  }
+
+  /// After the signup confirmation link, sign-in opens on email with the
+  /// confirmed notice. The app may have been opened by the link before this
+  /// screen was built, so this runs on start and on every change.
+  void _applyEmailConfirmed() {
+    if (!widget.controller.emailConfirmed) return;
+    widget.controller.acknowledgeEmailConfirmed();
+    _mode = _AuthMode.login;
+    _method = _AuthMethod.email;
+    _formKey = GlobalKey<FormState>();
   }
 
   @override
@@ -87,6 +99,7 @@ class _AuthScreenState extends State<AuthScreen> {
       _resendCooldown.start();
     }
     _lastChallengeId = challengeId;
+    _applyEmailConfirmed();
     if (mounted) setState(() {});
   }
 

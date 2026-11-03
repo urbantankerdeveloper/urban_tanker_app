@@ -417,4 +417,34 @@ void main() {
     expect(find.text('Welcome back.'), findsOneWidget);
     expect(_fieldText(tester, 0), 'asha@example.com');
   });
+
+  testWidgets('a confirmation link opens email sign-in with the notice',
+      (tester) async {
+    controller.showEmailConfirmed();
+    await showAuthScreen(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome back.'), findsOneWidget);
+    expect(
+      find.text('Your email is confirmed. Sign in to continue.'),
+      findsOneWidget,
+    );
+    expect(controller.emailConfirmed, isFalse);
+  });
+
+  testWidgets('a confirmation link that arrives while the screen is open',
+      (tester) async {
+    await showAuthScreen(tester);
+    await tester.pumpAndSettle();
+    expect(find.text('Create your account.'), findsOneWidget);
+
+    controller.showEmailConfirmed();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome back.'), findsOneWidget);
+    expect(
+      find.text('Your email is confirmed. Sign in to continue.'),
+      findsOneWidget,
+    );
+  });
 }

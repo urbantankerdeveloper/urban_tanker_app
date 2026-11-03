@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/design_system/widgets/status_banners.dart';
 import '../screens/app_lock_screen.dart';
 import '../screens/public_tracking_screen.dart';
+import '../services/email_confirmation_link.dart';
 import '../services/tracking_link.dart';
 import 'providers.dart';
 import 'theme.dart';
@@ -32,22 +33,25 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
     WidgetsBinding.instance.addObserver(this);
     final appLinks = AppLinks();
     unawaited(
-      appLinks.getInitialLink().then(_openTrackingLink).catchError((_) {}),
+      appLinks.getInitialLink().then(_handleLink).catchError((_) {}),
     );
     _linkSubscription = appLinks.uriLinkStream.listen(
-      _openTrackingLink,
+      _handleLink,
       onError: (_) {},
     );
   }
 
-  void _openTrackingLink(Uri? uri) {
+  void _handleLink(Uri? uri) {
     if (!mounted || uri == null) return;
+    if (isEmailConfirmationLink(uri)) {
+      ref.read(appControllerProvider).showEmailConfirmed();
+      return;
+    }
     final token = trackingTokenFromUri(uri);
     if (token == null) return;
     final navigator = _navigatorKey.currentState;
     if (navigator == null) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _openTrackingLink(uri));
+      WidgetsBinding.instance.addPostFrameCallback((_) => _handleLink(uri));
       return;
     }
     navigator.push(

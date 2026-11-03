@@ -301,6 +301,22 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Set when the app opens from the signup confirmation link while signed out.
+  /// The sign-in screen then opens on email sign-in with a confirmed notice.
+  bool emailConfirmed = false;
+
+  void showEmailConfirmed() {
+    if (isSignedIn) return;
+    pendingEmailVerification = null;
+    emailConfirmed = true;
+    successMessage = 'Your email is confirmed. Sign in to continue.';
+    notifyListeners();
+  }
+
+  void acknowledgeEmailConfirmed() {
+    emailConfirmed = false;
+  }
+
   Future<void> requestPasswordReset(String email) async {
     await _run(() async {
       await api.requestPasswordReset(email);
