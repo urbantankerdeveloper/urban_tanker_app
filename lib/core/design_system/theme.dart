@@ -129,6 +129,12 @@ ThemeData _buildTheme(Brightness brightness) {
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: AppRadius.inputBorder),
     ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: c.primary,
+      foregroundColor: c.onHero,
+      extendedTextStyle: const TextStyle(fontWeight: FontWeight.w700),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.inputBorder),
+    ),
     chipTheme: ChipThemeData(
       shape: RoundedRectangleBorder(
         borderRadius: AppRadius.chipBorder,

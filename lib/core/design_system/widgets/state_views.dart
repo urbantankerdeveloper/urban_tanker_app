@@ -43,10 +43,15 @@ class ErrorState extends StatelessWidget {
     required this.error,
     super.key,
     this.onRetry,
+    this.message,
   });
 
   final Object error;
   final VoidCallback? onRetry;
+
+  /// Text already written for users. Use it when [error] is only a message
+  /// string, since friendlyError would replace it with a generic line.
+  final String? message;
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +69,7 @@ class ErrorState extends StatelessWidget {
       title: offline ? 'No network connection' : 'Something went wrong',
       message: offline
           ? 'Check your internet connection and try again.'
-          : AppStateView.messageFor(error),
+          : message ?? AppStateView.messageFor(error),
       action: onRetry == null
           ? null
           : SecondaryButton(

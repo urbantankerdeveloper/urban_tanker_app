@@ -134,6 +134,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   /// Menu items switch to their tab; admin items also ask the operations
   /// screen to open their section.
+  /// Switches to [page] if the current role has a tab for it.
+  void _selectPage(ShellPage page) {
+    final index = tabsForRole(role).indexWhere((tab) => tab.page == page);
+    if (index >= 0) setState(() => _index = index);
+  }
+
   void _openDestination(WorkspaceNavigationDestination destination) {
     final section = destination.operationsSection;
     setState(() => _index = destination.index);
@@ -270,6 +276,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             error: _serviceError,
             onRetry: _loadServices,
             onBook: _services.isEmpty ? null : _createBooking,
+            onBookAgain: (booking) => _createBooking(previousBooking: booking),
+            onOpenBookings: () => _selectPage(ShellPage.bookings),
+            onOpenAccount: () => _selectPage(ShellPage.account),
           ),
         ShellPage.bookings => BookingsScreen(
             onBookAgain: (booking) => _createBooking(previousBooking: booking),
