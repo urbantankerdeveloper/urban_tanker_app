@@ -1,118 +1,43 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'dart:math';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
-import '../models/notification.dart';
-import '../models/booking.dart';
 import '../models/account.dart';
+import '../models/booking.dart';
+import '../models/booking_service_details.dart';
 import '../models/dispatcher.dart';
+import '../models/notification.dart';
 import '../models/service.dart';
 import '../models/session.dart';
 import '../models/vendor.dart';
-import '../models/booking_service_details.dart';
+import 'api/admin_api.dart';
+import 'api/api_core.dart';
+import 'api/api_transport.dart';
+import 'api/api_types.dart';
+import 'api/auth_api.dart';
+import 'api/customer_api.dart';
+import 'api/notification_api.dart';
+import 'api/vendor_api.dart';
 
-/// A random RFC 4122 version 4 UUID for idempotent booking submits.
-String newIdempotencyKey() {
-  final random = Random.secure();
-  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
-      '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
-}
+export 'api/api_types.dart';
 
-Map<String, dynamic> buildBookingRequestBody({
-  required String serviceId,
-  required String capacity,
-  required String location,
-  required String deliveryDate,
-  required List<BookingServiceDetails> services,
-  double? latitude,
-  double? longitude,
-  String? notes,
-  String paymentMethod = 'cod',
-  String? couponCode,
-  String? phone,
-  String? phoneVerificationChallengeId,
-  String? idempotencyKey,
-}) {
-  final normalizedServices =
-      services.map((service) => service.toJson()).toList(growable: false);
-  return {
-    'serviceId': serviceId,
-    'capacity': capacity,
-    'services': normalizedServices,
-    'location': location,
-    'deliveryDate': deliveryDate,
-    if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
-    if (latitude != null) 'latitude': latitude,
-    if (longitude != null) 'longitude': longitude,
-    if (phone != null && phone.trim().isNotEmpty)
-      'phone': normalizeIndianPhone(phone),
-    if (phoneVerificationChallengeId != null &&
-        phoneVerificationChallengeId.trim().isNotEmpty)
-      'phoneVerificationChallengeId': phoneVerificationChallengeId,
-    if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
-    'paymentMethod': paymentMethod,
-    if (couponCode != null && couponCode.trim().isNotEmpty)
-      'couponCode': couponCode.trim().toUpperCase(),
-  };
-}
-
-String normalizeIndianPhone(String value) {
-  final digits = value.replaceAll(RegExp(r'\D'), '');
-  return digits.length > 10 ? digits.substring(digits.length - 10) : digits;
-}
-
-class ApiException implements Exception {
-  const ApiException(this.message, this.statusCode);
-
-  /// Used when the server sent no readable error message.
-  static String genericFailureMessage(int statusCode) =>
-      'Request failed ($statusCode).';
-
-  final String message;
-  final int statusCode;
-
-  @override
-  String toString() => message;
-}
-
-class PhoneVerificationState {
-  const PhoneVerificationState({required this.phone, required this.verified});
-
-  final String phone;
-  final bool verified;
-}
-
-class BookingPage {
-  const BookingPage({required this.rows, this.nextOffset});
-
-  final List<Booking> rows;
-  final int? nextOffset;
-}
-
-const _invalidServerResponse = 'The server sent an unexpected response.';
-
-class ApiClient {
+/// The API the app talks to. Each endpoint lives in one of the domain classes
+/// in `services/api/`, and every HTTP call goes through [ApiCore]. This class
+/// keeps the names and signatures the screens and providers use.
+class ApiClient implements ApiTransport {
   ApiClient({
     http.Client? client,
     FlutterSecureStorage? storage,
     String? baseUrl,
-  })  : _client = client ?? http.Client(),
-        _storage = storage ?? _defaultStorage,
-        baseUrl = (baseUrl ??
-                const String.fromEnvironment(
-                  'API_BASE_URL',
-                  defaultValue: 'https://urban-tanker-backend.onrender.com/api',
-                ))
-            .replaceFirst(RegExp(r'/$'), '');
+  }) {
+    _core = ApiCore(
+      client: client ?? http.Client(),
+      storage: storage ?? _defaultStorage,
+      baseUrl: _resolveBaseUrl(baseUrl),
+      // Reads the token through this instance, so a subclass override applies.
+      tokenReader: () => readAccessToken(),
+    );
+  }
 
   static const _defaultStorage = FlutterSecureStorage(
     iOptions: IOSOptions(
@@ -121,71 +46,81 @@ class ApiClient {
     aOptions: AndroidOptions(resetOnError: true, migrateWithBackup: false),
   );
 
-  final http.Client _client;
-  final FlutterSecureStorage _storage;
-  final String baseUrl;
-  Future<String?>? _refreshOperation;
+  static String _resolveBaseUrl(String? value) => (value ??
+          const String.fromEnvironment(
+            'API_BASE_URL',
+            defaultValue: 'https://urban-tanker-backend.onrender.com/api',
+          ))
+      .replaceFirst(RegExp(r'/$'), '');
 
-  Future<void> saveAccessToken(String token) => _storage.write(
-        key: 'urban_tanker_access_token',
-        value: token,
+  late final ApiCore _core;
+  late final AuthApi _auth = AuthApi(this);
+  late final CustomerApi _customer = CustomerApi(this);
+  late final VendorApi _vendor = VendorApi(this);
+  late final AdminApi _admin = AdminApi(this);
+  late final NotificationApi _notificationApi = NotificationApi(this);
+
+  String get baseUrl => _core.baseUrl;
+
+  /// True while a request has taken longer than 3 seconds. The UI uses it to
+  /// show that the server is waking up.
+  ValueNotifier<bool> get slowRequest => _core.slowRequest;
+
+  // Transport and session storage.
+
+  @override
+  Future<http.Response> request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    List<int>? bodyBytes,
+    String contentType = 'application/json',
+    bool retry = true,
+  }) =>
+      _core.request(
+        method,
+        path,
+        body: body,
+        bodyBytes: bodyBytes,
+        contentType: contentType,
+        retry: retry,
       );
 
-  Future<void> saveRefreshToken(String token) => _storage.write(
-        key: 'urban_tanker_refresh_token',
-        value: token,
-      );
+  @override
+  Future<http.Response> sendRequest(
+    http.BaseRequest request, {
+    Duration timeout = const Duration(seconds: 20),
+  }) =>
+      _core.sendRequest(request, timeout: timeout);
 
-  Future<void> clearTokens() async {
-    await _storage.delete(key: 'urban_tanker_access_token');
-    await _storage.delete(key: 'urban_tanker_refresh_token');
-  }
+  @override
+  Future<void> saveAccessToken(String token) => _core.saveAccessToken(token);
+
+  @override
+  Future<void> saveRefreshToken(String token) => _core.saveRefreshToken(token);
+
+  Future<void> clearTokens() => _core.clearTokens();
 
   /// Keeps the signed-in user profile in secure storage, not SharedPreferences.
-  Future<void> saveSessionUser(Map<String, dynamic> user) => _storage.write(
-        key: 'urban_tanker_session_user',
-        value: jsonEncode(user),
-      );
+  Future<void> saveSessionUser(Map<String, dynamic> user) =>
+      _core.saveSessionUser(user);
 
-  Future<Map<String, dynamic>?> readSessionUser() async {
-    final raw = await _storage.read(key: 'urban_tanker_session_user');
-    if (raw == null) return null;
-    try {
-      final decoded = jsonDecode(raw);
-      return decoded is Map<String, dynamic> ? decoded : null;
-    } on FormatException {
-      return null;
-    }
-  }
+  Future<Map<String, dynamic>?> readSessionUser() => _core.readSessionUser();
 
   /// Removes the tokens and the stored user profile.
-  Future<void> clearSession() async {
-    await clearTokens();
-    await _storage.delete(key: 'urban_tanker_session_user');
-  }
+  Future<void> clearSession() => _core.clearSession();
+
+  Future<String?> readAccessToken() => _core.readAccessToken();
+
+  Future<String?> readRefreshToken() => _core.readRefreshToken();
 
   /// Revokes the refresh token on the server. Callers ignore failures.
-  Future<void> logout(String refreshToken) async {
-    await request(
-      'POST',
-      '/auth/logout',
-      body: {'refreshToken': refreshToken},
-      retry: false,
-    );
-  }
+  Future<void> logout(String refreshToken) => _auth.logout(refreshToken);
 
-  Future<String?> readAccessToken() =>
-      _storage.read(key: 'urban_tanker_access_token');
+  // Authentication and preferences.
 
-  Future<String?> readRefreshToken() =>
-      _storage.read(key: 'urban_tanker_refresh_token');
-
-  Future<AuthResult> login(String credential, String password) async {
-    final body = credential.contains('@')
-        ? {'email': credential, 'password': password}
-        : {'username': credential, 'password': password};
-    return _authRequest('/auth/login', body);
-  }
+  Future<AuthResult> login(String credential, String password) =>
+      _auth.login(credential, password);
 
   Future<AuthResult?> signup({
     required String email,
@@ -193,154 +128,52 @@ class ApiClient {
     required String name,
     required String phone,
     String? themeMode,
-  }) async {
-    final response = await request('POST', '/auth/signup', body: {
-      'email': email,
-      'password': password,
-      'name': name,
-      'phone': phone,
-      'role': 'customer',
-      if (themeMode != null) 'themeMode': themeMode,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The registration response was invalid.');
-    }
-    if (decoded['requiresEmailVerification'] == true) {
-      if (decoded['emailSent'] != true) {
-        throw const FormatException(
-          'The server did not confirm that the verification email was sent.',
-        );
-      }
-      return null;
-    }
-    return _saveAuthResult(decoded);
-  }
-
-  Future<void> requestPasswordReset(String email) async {
-    final response = await request(
-      'POST',
-      '/auth/password-reset',
-      body: {'email': email.trim()},
-      retry: false,
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic> || decoded['accepted'] != true) {
-      throw const FormatException(
-        'The password reset response was invalid.',
+  }) =>
+      _auth.signup(
+        email: email,
+        password: password,
+        name: name,
+        phone: phone,
+        themeMode: themeMode,
       );
-    }
-  }
 
-  Future<String> requestPhoneAuthOtp(String phone) async {
-    final normalized = normalizeIndianPhone(phone);
-    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
-      throw const FormatException('Enter a valid 10-digit mobile number.');
-    }
-    final response = await request(
-      'POST',
-      '/auth/phone/request-otp',
-      body: {'phone': normalized},
-      retry: false,
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic> || decoded['challengeId'] is! String) {
-      throw const FormatException('The phone sign-in response was invalid.');
-    }
-    return decoded['challengeId'] as String;
-  }
+  Future<void> requestPasswordReset(String email) =>
+      _auth.requestPasswordReset(email);
+
+  Future<String> requestPhoneAuthOtp(String phone) =>
+      _auth.requestPhoneAuthOtp(phone);
 
   Future<AuthResult> verifyPhoneAuthOtp({
     required String phone,
     required String challengeId,
     required String otp,
     String? name,
-  }) async {
-    final normalized = normalizeIndianPhone(phone);
-    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
-      throw const FormatException('Enter a valid 10-digit mobile number.');
-    }
-    if (!RegExp(r'^\d{6}$').hasMatch(otp.trim())) {
-      throw const FormatException('Enter the 6-digit verification code.');
-    }
-    final response = await request(
-      'POST',
-      '/auth/phone/verify-otp',
-      body: {
-        'phone': normalized,
-        'challengeId': challengeId,
-        'otp': otp.trim(),
-        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
-      },
-      retry: false,
-    );
-    return _saveAuthResult(_decodeBody(response));
-  }
+  }) =>
+      _auth.verifyPhoneAuthOtp(
+        phone: phone,
+        challengeId: challengeId,
+        otp: otp,
+        name: name,
+      );
 
-  Future<PhoneVerificationState> phoneVerification() async {
-    final response = await request('GET', '/customer/phone-verification');
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException(
-          'The phone verification response was invalid.');
-    }
-    return PhoneVerificationState(
-      phone: normalizeIndianPhone((decoded['phone'] ?? '').toString()),
-      verified: decoded['verified'] == true,
-    );
-  }
+  Future<PhoneVerificationState> phoneVerification() =>
+      _auth.phoneVerification();
 
-  Future<String> requestPhoneOtp(String phone) async {
-    final normalized = normalizeIndianPhone(phone);
-    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
-      throw const FormatException('Enter a valid 10-digit mobile number.');
-    }
-    final response = await request(
-      'POST',
-      '/auth/guest/request-otp',
-      body: {'phone': normalized},
-      retry: false,
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic> || decoded['challengeId'] is! String) {
-      throw const FormatException('The phone OTP response was invalid.');
-    }
-    return decoded['challengeId'] as String;
-  }
+  Future<String> requestPhoneOtp(String phone) => _auth.requestPhoneOtp(phone);
 
   Future<void> verifyPhoneOtp({
     required String challengeId,
     required String phone,
     required String otp,
-  }) async {
-    final response = await request(
-      'POST',
-      '/auth/guest/verify-phone',
-      body: {
-        'challengeId': challengeId,
-        'phone': normalizeIndianPhone(phone),
-        'otp': otp.trim(),
-      },
-      retry: false,
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic> || decoded['verified'] != true) {
-      throw const FormatException('Phone verification was not confirmed.');
-    }
-  }
+  }) =>
+      _auth.verifyPhoneOtp(challengeId: challengeId, phone: phone, otp: otp);
 
-  Future<List<TankerService>> services() async {
-    final response = await request('GET', '/customer/services');
-    final decoded = _decodeBody(response);
-    if (decoded is! List) {
-      throw const FormatException('The services response was invalid.');
-    }
-    return decoded
-        .whereType<Map<String, dynamic>>()
-        .where((service) => service['is_active'] != false)
-        .map(TankerService.fromJson)
-        .toList();
-  }
+  Future<void> updateThemePreference(String themeMode) =>
+      _auth.updateThemePreference(themeMode);
+
+  // Customer bookings, tracking and account.
+
+  Future<List<TankerService>> services() => _customer.services();
 
   Future<Map<String, dynamic>> createBooking({
     required String serviceId,
@@ -356,23 +189,13 @@ class ApiClient {
     double? latitude,
     double? longitude,
     String? idempotencyKey,
-  }) async {
-    final response = await request(
-      'POST',
-      '/customer/orders/quote',
-      body: buildBookingRequestBody(
+  }) =>
+      _customer.createBooking(
         serviceId: serviceId,
         capacity: capacity,
         location: location,
         deliveryDate: deliveryDate,
-        services: services ??
-            [
-              BookingServiceDetails(
-                serviceId: serviceId,
-                quantity: capacity,
-                details: notes ?? '',
-              ),
-            ],
+        services: services,
         notes: notes,
         paymentMethod: paymentMethod,
         couponCode: couponCode,
@@ -381,15 +204,7 @@ class ApiClient {
         latitude: latitude,
         longitude: longitude,
         idempotencyKey: idempotencyKey,
-      ),
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The booking response was invalid.');
-    }
-
-    return decoded;
-  }
+      );
 
   Future<Map<String, dynamic>> previewBookingQuote({
     required String serviceId,
@@ -404,22 +219,13 @@ class ApiClient {
     String? phoneVerificationChallengeId,
     double? latitude,
     double? longitude,
-  }) async {
-    final response =
-        await request('POST', '/customer/orders/quote-preview', body: {
-      ...buildBookingRequestBody(
+  }) =>
+      _customer.previewBookingQuote(
         serviceId: serviceId,
         capacity: capacity,
         location: location,
         deliveryDate: deliveryDate,
-        services: services ??
-            [
-              BookingServiceDetails(
-                serviceId: serviceId,
-                quantity: capacity,
-                details: notes ?? '',
-              ),
-            ],
+        services: services,
         notes: notes,
         paymentMethod: paymentMethod,
         couponCode: couponCode,
@@ -427,358 +233,49 @@ class ApiClient {
         phoneVerificationChallengeId: phoneVerificationChallengeId,
         latitude: latitude,
         longitude: longitude,
-      ),
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The booking quote response was invalid.');
-    }
-    return decoded;
-  }
+      );
 
   /// Loads every booking by following `nextOffset` from the server.
-  Future<List<Booking>> bookings() async {
-    final all = <Booking>[];
-    var offset = 0;
-    for (var pages = 0; pages < 50; pages++) {
-      final page = await bookingsPage(offset: offset);
-      all.addAll(page.rows);
-      final next = page.nextOffset;
-      if (next == null || next <= offset) break;
-      offset = next;
-    }
-    return all;
-  }
+  Future<List<Booking>> bookings() => _customer.bookings();
 
-  Future<BookingPage> bookingsPage({int offset = 0, int pageSize = 100}) async {
-    final response = await request(
-      'GET',
-      '/customer/orders?offset=$offset&pageSize=${pageSize.clamp(1, 100)}',
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic> || decoded['rows'] is! List) {
-      throw const FormatException('The bookings response was invalid.');
-    }
-    final next = decoded['nextOffset'];
-    return BookingPage(
-      rows: (decoded['rows'] as List)
-          .whereType<Map<String, dynamic>>()
-          .map(Booking.fromJson)
-          .toList(),
-      nextOffset: next is num ? next.toInt() : null,
-    );
-  }
+  Future<BookingPage> bookingsPage({int offset = 0, int pageSize = 100}) =>
+      _customer.bookingsPage(offset: offset, pageSize: pageSize);
 
-  Future<TrackingSnapshot> bookingTracking(String bookingId) async {
-    final response = await request(
-      'GET',
-      '/customer/orders/$bookingId/tracking',
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The tracking response was invalid.');
-    }
-    return TrackingSnapshot.fromJson(decoded);
-  }
+  Future<TrackingSnapshot> bookingTracking(String bookingId) =>
+      _customer.bookingTracking(bookingId);
 
-  Future<PublicTrackingSnapshot> publicTracking(String token) async {
-    final response = await request(
-        'GET', '/public/tracking/${Uri.encodeComponent(token)}',
-        retry: false);
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The public tracking response was invalid.');
-    }
-    return PublicTrackingSnapshot.fromJson(decoded);
-  }
+  Future<PublicTrackingSnapshot> publicTracking(String token) =>
+      _customer.publicTracking(token);
 
-  Future<Booking> cancelBooking(String bookingId) async {
-    final response = await request(
-      'PATCH',
-      '/customer/orders/$bookingId/status',
-      body: {'status': 'cancelled'},
-    );
-    return _bookingFromResponse(response, 'cancelled booking');
-  }
+  Future<Booking> cancelBooking(String bookingId) =>
+      _customer.cancelBooking(bookingId);
 
   Future<Booking> rescheduleBooking(
     String bookingId,
     DateTime scheduledFor,
-  ) async {
-    final response = await request(
-      'PATCH',
-      '/customer/orders/$bookingId/reschedule',
-      body: {'scheduledFor': scheduledFor.toUtc().toIso8601String()},
-    );
-    return _bookingFromResponse(response, 'rescheduled booking');
-  }
+  ) =>
+      _customer.rescheduleBooking(bookingId, scheduledFor);
 
-  Future<DateTime> requestDeliveryOtp(String bookingId) async {
-    final response = await request(
-      'POST',
-      '/customer/orders/$bookingId/delivery-otp',
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic> || decoded['expiresAt'] is! String) {
-      throw const FormatException('The delivery OTP response was invalid.');
-    }
-    final expiresAt = DateTime.tryParse(decoded['expiresAt'] as String);
-    if (expiresAt == null) {
-      throw const FormatException('The delivery OTP expiry was invalid.');
-    }
-    return expiresAt;
-  }
+  Future<DateTime> requestDeliveryOtp(String bookingId) =>
+      _customer.requestDeliveryOtp(bookingId);
 
   Future<void> rateBooking(
     String bookingId, {
     required int rating,
     String? review,
-  }) async {
-    await request(
-      'POST',
-      '/customer/orders/$bookingId/rating',
-      body: {'rating': rating, 'review': review},
-    );
-  }
+  }) =>
+      _customer.rateBooking(bookingId, rating: rating, review: review);
 
-  Booking _bookingFromResponse(http.Response response, String label) {
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw FormatException('The $label response was invalid.');
-    }
-    return Booking.fromJson(decoded);
-  }
-
-  Future<CustomerProfile> profile() async {
-    final response = await request('GET', '/customer/profile');
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The profile response was invalid.');
-    }
-    return CustomerProfile.fromJson(decoded);
-  }
+  Future<CustomerProfile> profile() => _customer.profile();
 
   Future<CustomerProfile> updateProfile({
     required String name,
     required String email,
     String? phone,
-  }) async {
-    final response = await request(
-      'PATCH',
-      '/customer/profile',
-      body: {
-        'name': name,
-        'email': email,
-        if (phone != null && phone.trim().isNotEmpty)
-          'phone': normalizeIndianPhone(phone),
-      },
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The updated profile response was invalid.');
-    }
-    return CustomerProfile.fromJson(decoded);
-  }
+  }) =>
+      _customer.updateProfile(name: name, email: email, phone: phone);
 
-  Future<List<AccountRecord>> addresses() =>
-      _records('/customer/addresses', 'addresses');
-
-  Future<List<AccountRecord>> adminVendors() =>
-      _records('/admin/vendors', 'admin vendors');
-
-  Future<List<AccountRecord>> adminCustomers() =>
-      _records('/admin/customers', 'admin customers');
-
-  Future<List<AccountRecord>> adminCoupons() =>
-      _records('/admin/coupons', 'admin coupons');
-
-  Future<List<AdminFleetVehicle>> adminVehicles() async {
-    final response = await request('GET', '/admin/vehicles');
-    return _vendorList(response, AdminFleetVehicle.fromJson, 'admin vehicles');
-  }
-
-  Future<List<AdminFleetDriver>> adminDrivers() async {
-    final response = await request('GET', '/admin/drivers');
-    return _vendorList(response, AdminFleetDriver.fromJson, 'admin drivers');
-  }
-
-  Future<AdminFleetVehicle> createAdminVehicle({
-    required String vendorId,
-    required String registrationNumber,
-    required int capacityLitres,
-    List<String> supportedServices = const [],
-  }) async {
-    final response = await request('POST', '/admin/vehicles', body: {
-      'vendorId': vendorId,
-      'registrationNumber': registrationNumber,
-      'capacityLitres': capacityLitres,
-      'supportedServices': supportedServices,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The vehicle response was invalid.');
-    }
-    return AdminFleetVehicle.fromJson(decoded);
-  }
-
-  Future<AdminFleetDriver> createAdminDriver({
-    required String vendorId,
-    required String name,
-    required String mobile,
-    required String licenceNumber,
-  }) async {
-    final response = await request('POST', '/admin/drivers', body: {
-      'vendorId': vendorId,
-      'name': name,
-      'mobileE164': normalizeIndianPhone(mobile),
-      'licenceNumber': licenceNumber,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The driver response was invalid.');
-    }
-    return AdminFleetDriver.fromJson(decoded);
-  }
-
-  Future<void> updateAdminVehicleStatus(
-    String id, {
-    required String verification,
-    required bool isActive,
-  }) async {
-    await request('PATCH', '/admin/vehicles/$id/status', body: {
-      'verification': verification,
-      'isActive': isActive,
-    });
-  }
-
-  Future<void> updateAdminDriverStatus(
-    String id, {
-    required String verification,
-    required bool isActive,
-  }) async {
-    await request('PATCH', '/admin/drivers/$id/status', body: {
-      'verification': verification,
-      'isActive': isActive,
-    });
-  }
-
-  Future<Map<String, dynamic>> adminHealth() async {
-    final response = await request('GET', '/admin/system/health');
-    return _mapResponse(response, 'admin health');
-  }
-
-  Future<void> updateVendorVerification(String id, String status) async {
-    await request(
-      'PATCH',
-      '/admin/vendors/$id/status',
-      body: {'status': status},
-    );
-  }
-
-  Future<List<AccountRecord>> wallet() =>
-      _records('/customer/wallet', 'wallet');
-
-  Future<List<AccountRecord>> invoices() =>
-      _records('/customer/invoices', 'invoices');
-
-  Future<List<AccountRecord>> subscriptions() =>
-      _records('/customer/subscriptions', 'subscriptions');
-
-  Future<List<AccountRecord>> supportRequests() =>
-      _records('/support/requests', 'support requests');
-
-  Future<CustomerUsage> usage() async {
-    final response = await request('GET', '/customer/usage');
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The usage response was invalid.');
-    }
-    return CustomerUsage.fromJson(decoded);
-  }
-
-  Future<List<AccountRecord>> offers() =>
-      _records('/customer/offers', 'offers');
-
-  Future<Map<String, dynamic>> validateCoupon({
-    required String code,
-    required String serviceCode,
-    required double amount,
-  }) async {
-    final response = await request('POST', '/customer/coupons/validate', body: {
-      'code': code,
-      'serviceCode': serviceCode,
-      'amount': amount,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The coupon response was invalid.');
-    }
-    final coupon = decoded['coupon'];
-    if (coupon is! Map<String, dynamic>) {
-      throw const FormatException('The coupon details were invalid.');
-    }
-    return coupon;
-  }
-
-  Future<List<AccountRecord>> membershipPlans() =>
-      _records('/customer/membership-plans', 'membership plans');
-
-  Future<AccountRecord?> membership() async {
-    final response = await request('GET', '/customer/membership');
-    final decoded = _decodeBody(response);
-    if (decoded == null) return null;
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The membership response was invalid.');
-    }
-    return AccountRecord(decoded);
-  }
-
-  Future<AccountRecord> updateMembership(String status) async {
-    final response = await request(
-      'PATCH',
-      '/customer/membership',
-      body: {'status': status},
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The membership update was invalid.');
-    }
-    return AccountRecord(decoded);
-  }
-
-  Future<AccountRecord> requestMembership(String planId) async {
-    final response = await request(
-      'POST',
-      '/customer/membership',
-      body: {'planId': planId},
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The membership request was invalid.');
-    }
-    return AccountRecord(decoded);
-  }
-
-  Future<List<AccountRecord>> contracts() =>
-      _records('/customer/contracts', 'contracts');
-
-  Future<AccountRecord> createContract({
-    required String propertyType,
-    required String address,
-    required double estimate,
-  }) async {
-    final response = await request('POST', '/customer/contracts', body: {
-      'propertyType': propertyType,
-      'servicePlan': <String, dynamic>{},
-      'address': address,
-      'estimate': estimate,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The contract response was invalid.');
-    }
-    return AccountRecord(decoded);
-  }
+  Future<List<AccountRecord>> addresses() => _customer.addresses();
 
   Future<AccountRecord> createAddress({
     required String label,
@@ -786,21 +283,14 @@ class ApiClient {
     required String city,
     required String pincode,
     bool isDefault = false,
-  }) async {
-    final response = await request('POST', '/customer/addresses', body: {
-      'label': label,
-      'address': address,
-      'city': city,
-      'pincode': pincode,
-      'isDefault': isDefault,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The address response was invalid.');
-    }
-
-    return AccountRecord(decoded);
-  }
+  }) =>
+      _customer.createAddress(
+        label: label,
+        address: address,
+        city: city,
+        pincode: pincode,
+        isDefault: isDefault,
+      );
 
   Future<AccountRecord> updateAddress(
     String id, {
@@ -809,426 +299,127 @@ class ApiClient {
     String? city,
     String? pincode,
     bool? isDefault,
-  }) async {
-    final response = await request('PATCH', '/customer/addresses/$id', body: {
-      if (label != null) 'label': label,
-      if (address != null) 'address': address,
-      if (city != null) 'city': city,
-      if (pincode != null) 'pincode': pincode,
-      if (isDefault != null) 'isDefault': isDefault,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The address update response was invalid.');
-    }
-    return AccountRecord(decoded);
-  }
+  }) =>
+      _customer.updateAddress(
+        id,
+        label: label,
+        address: address,
+        city: city,
+        pincode: pincode,
+        isDefault: isDefault,
+      );
 
-  Future<void> deleteAddress(String id) async {
-    await request('DELETE', '/customer/addresses/$id');
-  }
+  Future<void> deleteAddress(String id) => _customer.deleteAddress(id);
+
+  Future<List<AccountRecord>> wallet() => _customer.wallet();
+
+  Future<List<AccountRecord>> invoices() => _customer.invoices();
+
+  Future<List<AccountRecord>> subscriptions() => _customer.subscriptions();
+
+  Future<List<AccountRecord>> supportRequests() => _customer.supportRequests();
 
   Future<AccountRecord> createSupportRequest({
     required String subject,
     required String message,
-  }) async {
-    final response = await request('POST', '/support/requests', body: {
-      'subject': subject,
-      'message': message,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The support response was invalid.');
-    }
-    return AccountRecord(decoded);
-  }
-
-  Future<AccountRecord> supportRequest(String id) async {
-    final response = await request('GET', '/support/requests/$id');
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The support request response was invalid.');
-    }
-    return AccountRecord(decoded);
-  }
-
-  Future<AccountRecord> updateSubscription(
-    String id,
-    String status,
-  ) async {
-    final response = await request(
-      'PATCH',
-      '/customer/subscriptions/$id/status',
-      body: {'status': status},
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The subscription response was invalid.');
-    }
-    return AccountRecord(decoded);
-  }
-
-  Future<AccountRecord> invoice(String id) async {
-    final response = await request('GET', '/customer/invoices/$id/download');
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The invoice response was invalid.');
-    }
-    return AccountRecord(decoded);
-  }
-
-  Future<List<AccountRecord>> _records(String path, String label) async {
-    final response = await request('GET', path);
-    final decoded = _decodeBody(response);
-    if (decoded is! List) {
-      throw FormatException('The $label response was invalid.');
-    }
-    return decoded
-        .whereType<Map<String, dynamic>>()
-        .map(AccountRecord.new)
-        .toList();
-  }
-
-  static const _slowRequestAfter = Duration(seconds: 3);
-  static const _retryDelays = [
-    Duration(milliseconds: 500),
-    Duration(seconds: 1),
-    Duration(seconds: 2),
-  ];
-  static const _retryableStatusCodes = {502, 503, 504};
-
-  /// True while a request has taken longer than 3 seconds. The UI uses it to
-  /// show that the server is waking up.
-  final ValueNotifier<bool> slowRequest = ValueNotifier<bool>(false);
-  int _slowRequestCount = 0;
-
-  Future<http.Response> request(
-    String method,
-    String path, {
-    Map<String, dynamic>? body,
-    List<int>? bodyBytes,
-    String contentType = 'application/json',
-    bool retry = true,
   }) =>
-      _trackSlowRequest(
-        _requestOnce(
-          method,
-          path,
-          body: body,
-          bodyBytes: bodyBytes,
-          contentType: contentType,
-          retry: retry,
-        ),
+      _customer.createSupportRequest(subject: subject, message: message);
+
+  Future<AccountRecord> supportRequest(String id) =>
+      _customer.supportRequest(id);
+
+  Future<AccountRecord> updateSubscription(String id, String status) =>
+      _customer.updateSubscription(id, status);
+
+  Future<AccountRecord> invoice(String id) => _customer.invoice(id);
+
+  Future<List<AccountRecord>> contracts() => _customer.contracts();
+
+  Future<AccountRecord> createContract({
+    required String propertyType,
+    required String address,
+    required double estimate,
+  }) =>
+      _customer.createContract(
+        propertyType: propertyType,
+        address: address,
+        estimate: estimate,
       );
 
-  Future<T> _trackSlowRequest<T>(Future<T> operation) {
-    var slow = false;
-    final timer = Timer(_slowRequestAfter, () {
-      slow = true;
-      _slowRequestCount++;
-      slowRequest.value = true;
-    });
-    return operation.whenComplete(() {
-      timer.cancel();
-      if (slow) {
-        _slowRequestCount--;
-        slowRequest.value = _slowRequestCount > 0;
-      }
-    });
-  }
+  Future<CustomerUsage> usage() => _customer.usage();
 
-  Future<http.Response> _requestOnce(
-    String method,
-    String path, {
-    Map<String, dynamic>? body,
-    List<int>? bodyBytes,
-    String contentType = 'application/json',
-    bool retry = true,
-  }) async {
-    final response = await _sendWithRetries(
-      method,
-      path,
-      body: body,
-      bodyBytes: bodyBytes,
-      contentType: contentType,
-    );
+  Future<List<AccountRecord>> offers() => _customer.offers();
 
-    if (response.statusCode == 401 && retry && path != '/auth/mobile-refresh') {
-      final newToken = await _refreshAccessToken();
-      if (newToken != null) {
-        return _requestOnce(
-          method,
-          path,
-          body: body,
-          bodyBytes: bodyBytes,
-          contentType: contentType,
-          retry: false,
-        );
-      }
-    }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      var message = ApiException.genericFailureMessage(response.statusCode);
-      try {
-        final decoded = _decodeBody(response);
-        if (decoded is Map<String, dynamic>) {
-          if (decoded['error'] is String) {
-            message = decoded['error'] as String;
-          }
-          final details = decoded['details'];
-          if (details is Map<String, dynamic>) {
-            final fieldErrors = details['fieldErrors'];
-            if (fieldErrors is Map<String, dynamic>) {
-              final messages = <String>[];
-              for (final entry in fieldErrors.entries) {
-                if (entry.value is List) {
-                  messages.addAll(
-                    (entry.value as List)
-                        .whereType<String>()
-                        .map((detail) => '${entry.key}: $detail'),
-                  );
-                }
-              }
-              if (messages.isNotEmpty) {
-                message = '$message: ${messages.join('; ')}';
-              }
-            }
-          }
-        }
-      } on FormatException {
-        // The status code remains the useful error when the body is not JSON.
-      }
-      throw ApiException(message, response.statusCode);
-    }
-    return response;
-  }
-
-  /// Sends the request. Only GET requests are retried, after timeouts, network
-  /// errors and 502/503/504 responses. Writes are never sent twice.
-  Future<http.Response> _sendWithRetries(
-    String method,
-    String path, {
-    Map<String, dynamic>? body,
-    List<int>? bodyBytes,
-    required String contentType,
-  }) async {
-    for (var attempt = 0;; attempt++) {
-      final canRetry = method == 'GET' && attempt < _retryDelays.length;
-      try {
-        final response = await _sendOnce(
-          method,
-          path,
-          body: body,
-          bodyBytes: bodyBytes,
-          contentType: contentType,
-        );
-        if (!canRetry || !_retryableStatusCodes.contains(response.statusCode)) {
-          return response;
-        }
-      } catch (error) {
-        if (!canRetry || !_isNetworkFailure(error)) rethrow;
-      }
-      await Future<void>.delayed(_retryDelays[attempt]);
-    }
-  }
-
-  bool _isNetworkFailure(Object error) =>
-      error is TimeoutException || error is SocketException;
-
-  Future<http.Response> _sendOnce(
-    String method,
-    String path, {
-    Map<String, dynamic>? body,
-    List<int>? bodyBytes,
-    required String contentType,
-  }) async {
-    final token = await readAccessToken();
-    final headers = <String, String>{
-      'Content-Type': contentType,
-      'X-Client-Platform': 'mobile',
-    };
-    if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
-    }
-    final httpRequest = http.Request(method, Uri.parse('$baseUrl$path'))
-      ..headers.addAll(headers);
-    if (bodyBytes != null) {
-      httpRequest.bodyBytes = bodyBytes;
-    } else {
-      httpRequest.body = body == null ? '' : jsonEncode(body);
-    }
-    return _client
-        .send(httpRequest)
-        .then(http.Response.fromStream)
-        .timeout(const Duration(seconds: 20));
-  }
-
-  Future<String?> _refreshAccessToken() {
-    final active = _refreshOperation;
-    if (active != null) return active;
-    final operation = _performRefresh();
-    _refreshOperation = operation;
-    return operation.whenComplete(() => _refreshOperation = null);
-  }
-
-  Future<String?> _performRefresh() async {
-    try {
-      final refreshToken = await readRefreshToken();
-      if (refreshToken == null || refreshToken.isEmpty) return null;
-      final response = await request(
-        'POST',
-        '/auth/mobile-refresh',
-        body: {'refreshToken': refreshToken},
-        retry: false,
+  Future<Map<String, dynamic>> validateCoupon({
+    required String code,
+    required String serviceCode,
+    required double amount,
+  }) =>
+      _customer.validateCoupon(
+        code: code,
+        serviceCode: serviceCode,
+        amount: amount,
       );
-      final decoded = _decodeBody(response);
-      if (decoded is! Map<String, dynamic>) return null;
-      final accessToken = decoded['accessToken'] as String?;
-      final rotatedRefreshToken = decoded['refreshToken'] as String?;
-      if (accessToken == null ||
-          accessToken.isEmpty ||
-          rotatedRefreshToken == null ||
-          rotatedRefreshToken.isEmpty) {
-        return null;
-      }
-      await saveAccessToken(accessToken);
-      await saveRefreshToken(rotatedRefreshToken);
-      return accessToken;
-    } on Object catch (error) {
-      if (kDebugMode) debugPrint('Token refresh failed: $error');
-      await clearTokens();
-      return null;
-    }
-  }
 
-  Future<List<NotificationItem>> notifications(String role) async {
-    final path = switch (role) {
-      'vendor' => '/vendor/notifications',
-      'admin' => '/admin/notifications',
-      'dispatcher' => '/admin/notifications',
-      'customer' => '/customer/notifications',
-      _ => throw UnsupportedError(
-          'Notifications are not available for the $role workspace yet.',
-        ),
-    };
-    final response = await request('GET', path);
-    final decoded = _decodeBody(response);
-    if (decoded is! List) {
-      throw const FormatException('The notifications response was invalid.');
-    }
+  Future<List<AccountRecord>> membershipPlans() => _customer.membershipPlans();
 
-    return decoded
-        .whereType<Map<String, dynamic>>()
-        .map(NotificationItem.fromJson)
-        .toList();
-  }
+  Future<AccountRecord?> membership() => _customer.membership();
 
-  Future<void> updateThemePreference(String themeMode) async {
-    await request(
-      'PATCH',
-      '/auth/preferences',
-      body: {'themeMode': themeMode},
-    );
-  }
+  Future<AccountRecord> updateMembership(String status) =>
+      _customer.updateMembership(status);
 
-  Future<void> registerDevice({
-    required String token,
-    required String platform,
-  }) async {
-    await request(
-      'POST',
-      '/devices/register',
-      body: {
-        'token': token,
-        'platform': platform,
-      },
-    );
-  }
+  Future<AccountRecord> requestMembership(String planId) =>
+      _customer.requestMembership(planId);
 
-  Future<void> unregisterDevice(String token) async {
-    await request(
-      'DELETE',
-      '/devices/register',
-      body: {'token': token},
-    );
-  }
+  Future<void> uploadCustomerSelfie({required List<int> bytes}) =>
+      _customer.uploadCustomerSelfie(bytes: bytes);
 
-  Future<VendorDashboard> vendorDashboard() async {
-    final response = await request('GET', '/vendor/dashboard');
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The vendor dashboard response was invalid.');
-    }
-    return VendorDashboard.fromJson(decoded);
-  }
+  // Vendor workspace.
 
-  Future<List<VendorOrder>> vendorOrders() async {
-    final response = await request('GET', '/vendor/orders');
-    return _vendorList(response, VendorOrder.fromJson, 'vendor orders');
-  }
+  Future<VendorDashboard> vendorDashboard() => _vendor.vendorDashboard();
 
-  Future<List<VendorVehicle>> vendorVehicles() async {
-    final response = await request('GET', '/vendor/vehicles');
-    return _vendorList(response, VendorVehicle.fromJson, 'vendor vehicles');
-  }
+  Future<List<VendorOrder>> vendorOrders() => _vendor.vendorOrders();
 
-  Future<List<VendorDriver>> vendorDrivers() async {
-    final response = await request('GET', '/vendor/drivers');
-    return _vendorList(response, VendorDriver.fromJson, 'vendor drivers');
-  }
+  Future<List<VendorVehicle>> vendorVehicles() => _vendor.vendorVehicles();
+
+  Future<List<VendorDriver>> vendorDrivers() => _vendor.vendorDrivers();
 
   Future<VendorVehicle> createVendorVehicle({
     required String registrationNumber,
     required int capacityLitres,
     bool isActive = true,
-  }) async {
-    final response = await request('POST', '/vendor/vehicles', body: {
-      'registrationNumber': registrationNumber,
-      'capacityLitres': capacityLitres,
-      'isActive': isActive,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The vehicle response was invalid.');
-    }
-    return VendorVehicle.fromJson(decoded);
-  }
+  }) =>
+      _vendor.createVendorVehicle(
+        registrationNumber: registrationNumber,
+        capacityLitres: capacityLitres,
+        isActive: isActive,
+      );
 
   Future<VendorVehicle> updateVendorVehicle(
     String id, {
     String? registrationNumber,
     int? capacityLitres,
     bool? isActive,
-  }) async {
-    final response = await request('PATCH', '/vendor/vehicles/$id', body: {
-      if (registrationNumber != null) 'registrationNumber': registrationNumber,
-      if (capacityLitres != null) 'capacityLitres': capacityLitres,
-      if (isActive != null) 'isActive': isActive,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The vehicle update was invalid.');
-    }
-    return VendorVehicle.fromJson(decoded);
-  }
+  }) =>
+      _vendor.updateVendorVehicle(
+        id,
+        registrationNumber: registrationNumber,
+        capacityLitres: capacityLitres,
+        isActive: isActive,
+      );
 
   Future<VendorDriver> createVendorDriver({
     required String name,
     required String mobile,
     required String licenceNumber,
     bool isActive = true,
-  }) async {
-    final response = await request('POST', '/vendor/drivers', body: {
-      'name': name,
-      'mobileE164': mobile,
-      'licenceNumber': licenceNumber,
-      'isActive': isActive,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The driver response was invalid.');
-    }
-    return VendorDriver.fromJson(decoded);
-  }
+  }) =>
+      _vendor.createVendorDriver(
+        name: name,
+        mobile: mobile,
+        licenceNumber: licenceNumber,
+        isActive: isActive,
+      );
 
   Future<VendorDriver> updateVendorDriver(
     String id, {
@@ -1236,288 +427,142 @@ class ApiClient {
     String? mobile,
     String? licenceNumber,
     bool? isActive,
-  }) async {
-    final response = await request('PATCH', '/vendor/drivers/$id', body: {
-      if (name != null) 'name': name,
-      if (mobile != null) 'mobileE164': mobile,
-      if (licenceNumber != null) 'licenceNumber': licenceNumber,
-      if (isActive != null) 'isActive': isActive,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The driver update was invalid.');
-    }
-    return VendorDriver.fromJson(decoded);
-  }
+  }) =>
+      _vendor.updateVendorDriver(
+        id,
+        name: name,
+        mobile: mobile,
+        licenceNumber: licenceNumber,
+        isActive: isActive,
+      );
 
   Future<VendorPayout> requestVendorPayout({
     required double amount,
     DateTime? periodStart,
     DateTime? periodEnd,
-  }) async {
-    final response = await request('POST', '/vendor/payouts/request', body: {
-      'amount': amount,
-      if (periodStart != null)
-        'periodStart': periodStart.toIso8601String().split('T').first,
-      if (periodEnd != null)
-        'periodEnd': periodEnd.toIso8601String().split('T').first,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The payout request response was invalid.');
-    }
-    return VendorPayout.fromJson(decoded);
-  }
+  }) =>
+      _vendor.requestVendorPayout(
+        amount: amount,
+        periodStart: periodStart,
+        periodEnd: periodEnd,
+      );
 
   Future<VendorOrder> verifyVendorDelivery({
     required String orderId,
     required String otp,
     String? proofPath,
-  }) async {
-    final response = await request(
-      'POST',
-      '/vendor/orders/$orderId/delivery/verify',
-      body: {
-        'otp': otp,
-        if (proofPath != null && proofPath.trim().isNotEmpty)
-          'proofPath': proofPath.trim(),
-      },
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException(
-          'The delivery verification response was invalid.');
-    }
-    return VendorOrder.fromJson(decoded);
-  }
+  }) =>
+      _vendor.verifyVendorDelivery(
+        orderId: orderId,
+        otp: otp,
+        proofPath: proofPath,
+      );
 
   Future<void> updateVendorLocation({
     required String bookingId,
     required double latitude,
     required double longitude,
     double? accuracy,
-  }) async {
-    await request('POST', '/vendor/location', body: {
-      'bookingId': bookingId,
-      'latitude': latitude,
-      'longitude': longitude,
-      if (accuracy != null) 'accuracy': accuracy,
-    });
-  }
+  }) =>
+      _vendor.updateVendorLocation(
+        bookingId: bookingId,
+        latitude: latitude,
+        longitude: longitude,
+        accuracy: accuracy,
+      );
 
-  Future<List<VendorPayout>> vendorPayouts() async {
-    final response = await request('GET', '/vendor/payouts');
-    return _vendorList(response, VendorPayout.fromJson, 'vendor payouts');
-  }
+  Future<List<VendorPayout>> vendorPayouts() => _vendor.vendorPayouts();
 
-  Future<List<Map<String, dynamic>>> vendorComplaints() async {
-    final response = await request('GET', '/vendor/complaints');
-    return _mapList(response, 'vendor complaints');
-  }
+  Future<List<Map<String, dynamic>>> vendorComplaints() =>
+      _vendor.vendorComplaints();
 
   Future<Map<String, dynamic>> updateVendorComplaint({
     required String id,
     required String status,
     String? resolution,
-  }) async {
-    final response = await request('PATCH', '/vendor/complaints/$id', body: {
-      'status': status,
-      if (resolution != null && resolution.trim().isNotEmpty)
-        'resolution': resolution.trim(),
-    });
-    return _mapResponse(response, 'vendor complaint update');
-  }
+  }) =>
+      _vendor.updateVendorComplaint(
+        id: id,
+        status: status,
+        resolution: resolution,
+      );
 
   Future<Map<String, dynamic>> createVendorComplaint({
     required String bookingId,
     required String subject,
     required String message,
-  }) async {
-    final response = await request('POST', '/vendor/complaints', body: {
-      'bookingId': bookingId,
-      'subject': subject,
-      'message': message,
-    });
-    return _mapResponse(response, 'vendor complaint');
-  }
+  }) =>
+      _vendor.createVendorComplaint(
+        bookingId: bookingId,
+        subject: subject,
+        message: message,
+      );
 
-  Future<List<Map<String, dynamic>>> vendorDocuments() async {
-    final response = await request('GET', '/vendor/documents');
-    return _mapList(response, 'vendor documents');
-  }
+  Future<List<Map<String, dynamic>>> vendorDocuments() =>
+      _vendor.vendorDocuments();
 
   Future<Map<String, dynamic>> createVendorDocument({
     required String documentType,
     required String objectKey,
     String? expiresOn,
-  }) async {
-    final response = await request('POST', '/vendor/documents', body: {
-      'documentType': documentType,
-      'objectKey': objectKey,
-      if (expiresOn != null && expiresOn.isNotEmpty) 'expiresOn': expiresOn,
-    });
-    return _mapResponse(response, 'vendor document');
-  }
+  }) =>
+      _vendor.createVendorDocument(
+        documentType: documentType,
+        objectKey: objectKey,
+        expiresOn: expiresOn,
+      );
 
   Future<String> uploadVendorFile({
     required String fileName,
     required String contentType,
     required List<int> bytes,
-  }) async {
-    if (bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
-      throw const FormatException('Choose a file no larger than 10 MB.');
-    }
-    const allowedTypes = {
-      'application/pdf',
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    };
-    if (!allowedTypes.contains(contentType)) {
-      throw const FormatException('This file type is not supported.');
-    }
-    final safeName = fileName
-        .replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')
-        .replaceAll(RegExp(r'_+'), '_');
-    if (safeName.isEmpty || safeName == '.' || safeName == '..') {
-      throw const FormatException('The selected file name is invalid.');
-    }
-
-    return _uploadToDocumentBucket(
-      path: 'vendor/${DateTime.now().millisecondsSinceEpoch}_$safeName',
-      contentType: contentType,
-      bytes: bytes,
-    );
-  }
-
-  Future<void> uploadCustomerSelfie({required List<int> bytes}) async {
-    if (bytes.isEmpty) {
-      throw const FormatException(
-          'The selfie could not be read. Please retake it.');
-    }
-    if (bytes.length > 3 * 1024 * 1024) {
-      throw const FormatException(
-          'The photo is larger than 3 MB. Choose a smaller photo.');
-    }
-    final isJpeg = bytes.length >= 3 &&
-        bytes[0] == 0xff &&
-        bytes[1] == 0xd8 &&
-        bytes[2] == 0xff;
-    if (!isJpeg) {
-      throw const FormatException('Choose a JPEG photo.');
-    }
-    await request(
-      'POST',
-      '/customer/profile/selfie',
-      bodyBytes: bytes,
-      contentType: 'image/jpeg',
-    );
-  }
-
-  Future<String> _uploadToDocumentBucket({
-    required String path,
-    required String contentType,
-    required List<int> bytes,
-  }) async {
-    final signedResponse = await request(
-      'POST',
-      '/uploads/signed-url',
-      body: {
-        'path': path,
-        'bucket': 'urban-tanker-documents',
-        'contentType': contentType,
-        'size': bytes.length,
-      },
-    );
-    final decoded = jsonDecode(signedResponse.body);
-    if (decoded is! Map<String, dynamic> ||
-        decoded['signedUrl'] is! String ||
-        decoded['path'] is! String) {
-      throw const FormatException('The document upload link was invalid.');
-    }
-    final signedUri = Uri.tryParse(decoded['signedUrl'] as String);
-    if (signedUri == null || signedUri.scheme != 'https') {
-      throw const FormatException('The document upload link was not secure.');
-    }
-
-    final upload = http.Request('PUT', signedUri)
-      ..headers['Content-Type'] = contentType
-      ..bodyBytes = bytes;
-    final uploadResponse = await _client
-        .send(upload)
-        .then(http.Response.fromStream)
-        .timeout(const Duration(seconds: 30));
-    if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
-      throw ApiException(
-        'File upload failed (${uploadResponse.statusCode}).',
-        uploadResponse.statusCode,
+  }) =>
+      _vendor.uploadVendorFile(
+        fileName: fileName,
+        contentType: contentType,
+        bytes: bytes,
       );
-    }
-    return decoded['path'] as String;
-  }
 
   Future<Map<String, dynamic>> updateVendorDocument({
     required String id,
     String? objectKey,
     String? documentType,
     String? expiresOn,
-  }) async {
-    final response = await request('PATCH', '/vendor/documents/$id', body: {
-      if (objectKey != null) 'objectKey': objectKey,
-      if (documentType != null) 'documentType': documentType,
-      if (expiresOn != null) 'expiresOn': expiresOn,
-    });
-    return _mapResponse(response, 'vendor document update');
-  }
+  }) =>
+      _vendor.updateVendorDocument(
+        id: id,
+        objectKey: objectKey,
+        documentType: documentType,
+        expiresOn: expiresOn,
+      );
 
   Future<Map<String, dynamic>> updateVendorAttendance({
     required String driverId,
     required String status,
     DateTime? date,
-  }) async {
-    final attendanceDate = date ?? DateTime.now();
-    final response = await request('POST', '/vendor/attendance', body: {
-      'driverId': driverId,
-      'status': status,
-      'date': attendanceDate.toIso8601String().split('T').first,
-    });
-    return _mapResponse(response, 'driver attendance');
-  }
+  }) =>
+      _vendor.updateVendorAttendance(
+        driverId: driverId,
+        status: status,
+        date: date,
+      );
 
   Future<List<Map<String, dynamic>>> vendorAttendance({
     String? driverId,
     DateTime? date,
-  }) async {
-    final query = <String, String>{
-      if (driverId != null) 'driverId': driverId,
-      if (date != null) 'date': date.toIso8601String().split('T').first,
-    };
-    final path = Uri(
-      path: '/vendor/attendance',
-      queryParameters: query.isEmpty ? null : query,
-    ).toString();
-    final response = await request('GET', path);
-    return _mapList(response, 'vendor attendance');
-  }
+  }) =>
+      _vendor.vendorAttendance(driverId: driverId, date: date);
 
-  Future<List<VendorService>> vendorServices() async {
-    final response = await request('GET', '/vendor/services');
-    return _vendorList(response, VendorService.fromJson, 'vendor services');
-  }
+  Future<List<VendorService>> vendorServices() => _vendor.vendorServices();
 
   Future<Map<String, dynamic>> updateVendorServiceAvailability({
     required String serviceCode,
     required bool enabled,
-  }) async {
-    final response = await request(
-      'PATCH',
-      '/vendor/services/$serviceCode/availability',
-      body: {'enabled': enabled},
-    );
-    return _mapResponse(response, 'service availability');
-  }
+  }) =>
+      _vendor.updateVendorServiceAvailability(
+        serviceCode: serviceCode,
+        enabled: enabled,
+      );
 
   Future<VendorOrder> transitionVendorOrder(
     String orderId, {
@@ -1526,106 +571,102 @@ class ApiClient {
     String? reason,
     String? vehicleId,
     String? driverId,
-  }) async {
-    if (action == 'reject' &&
-        ((reason?.trim().length ?? 0) < 2 ||
-            (reason?.trim().length ?? 0) > 500)) {
-      throw const FormatException(
-        'Enter a cancellation reason between 2 and 500 characters.',
+  }) =>
+      _vendor.transitionVendorOrder(
+        orderId,
+        action: action,
+        status: status,
+        reason: reason,
+        vehicleId: vehicleId,
+        driverId: driverId,
       );
-    }
-    final response = await request(
-      'PATCH',
-      '/vendor/orders/$orderId/transition',
-      body: {
-        'action': action,
-        if (status != null) 'status': status,
-        if (reason != null && reason.isNotEmpty) 'reason': reason,
-        if (vehicleId != null) 'vehicleId': vehicleId,
-        if (driverId != null) 'driverId': driverId,
-      },
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The vendor order update was invalid.');
-    }
-    return VendorOrder.fromJson(decoded);
-  }
 
-  Future<List<VendorOfflineMutation>> vendorOfflineMutations() async {
-    final response = await request('GET', '/vendor/offline-mutations');
-    return _vendorList(
-      response,
-      VendorOfflineMutation.fromJson,
-      'offline mutations',
-    );
-  }
+  Future<List<VendorOfflineMutation>> vendorOfflineMutations() =>
+      _vendor.vendorOfflineMutations();
 
   Future<VendorOfflineMutation> queueVendorMutation({
     required String mutationType,
     required String entityType,
     String? entityId,
     required Map<String, dynamic> payload,
-  }) async {
-    final duplicate = await _findDuplicateOfflineMutation(
-      mutationType: mutationType,
-      entityType: entityType,
-      entityId: entityId,
-      payload: payload,
-    );
-    if (duplicate != null) return duplicate;
-    final response = await request('POST', '/vendor/offline-mutations', body: {
-      'mutationType': mutationType,
-      'entityType': entityType,
-      if (entityId != null) 'entityId': entityId,
-      'payload': payload,
-    });
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The offline mutation response was invalid.');
-    }
-    return VendorOfflineMutation.fromJson(decoded);
-  }
+  }) =>
+      _vendor.queueVendorMutation(
+        mutationType: mutationType,
+        entityType: entityType,
+        entityId: entityId,
+        payload: payload,
+      );
 
-  Future<VendorOfflineMutation?> _findDuplicateOfflineMutation({
-    required String mutationType,
-    required String entityType,
-    String? entityId,
-    required Map<String, dynamic> payload,
-  }) async {
-    final pending = await vendorOfflineMutations();
-    for (final item in pending) {
-      if (item.status == 'discarded' ||
-          item.status == 'completed' ||
-          item.type != mutationType ||
-          item.entityType != entityType ||
-          item.payload['status'] != payload['status'] ||
-          item.payload['vehicleId'] != payload['vehicleId'] ||
-          item.payload['driverId'] != payload['driverId']) {
-        continue;
-      }
-      if (entityId == null || item.entityId == entityId) {
-        return item;
-      }
-    }
-    return null;
-  }
+  Future<VendorOfflineMutation> retryVendorMutation(String id) =>
+      _vendor.retryVendorMutation(id);
 
-  Future<VendorOfflineMutation> retryVendorMutation(String id) async {
-    final response = await request(
-      'POST',
-      '/vendor/offline-mutations/$id/retry',
-    );
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The mutation retry response was invalid.');
-    }
-    return VendorOfflineMutation.fromJson(decoded);
-  }
+  Future<void> discardVendorMutation(String id) =>
+      _vendor.discardVendorMutation(id);
 
-  Future<void> discardVendorMutation(String id) async {
-    await request('DELETE', '/vendor/offline-mutations/$id');
-  }
+  // Admin and dispatcher workspaces.
+
+  Future<List<AccountRecord>> adminVendors() => _admin.adminVendors();
+
+  Future<List<AccountRecord>> adminCustomers() => _admin.adminCustomers();
+
+  Future<List<AccountRecord>> adminCoupons() => _admin.adminCoupons();
+
+  Future<List<AdminFleetVehicle>> adminVehicles() => _admin.adminVehicles();
+
+  Future<List<AdminFleetDriver>> adminDrivers() => _admin.adminDrivers();
+
+  Future<AdminFleetVehicle> createAdminVehicle({
+    required String vendorId,
+    required String registrationNumber,
+    required int capacityLitres,
+    List<String> supportedServices = const [],
+  }) =>
+      _admin.createAdminVehicle(
+        vendorId: vendorId,
+        registrationNumber: registrationNumber,
+        capacityLitres: capacityLitres,
+        supportedServices: supportedServices,
+      );
+
+  Future<AdminFleetDriver> createAdminDriver({
+    required String vendorId,
+    required String name,
+    required String mobile,
+    required String licenceNumber,
+  }) =>
+      _admin.createAdminDriver(
+        vendorId: vendorId,
+        name: name,
+        mobile: mobile,
+        licenceNumber: licenceNumber,
+      );
+
+  Future<void> updateAdminVehicleStatus(
+    String id, {
+    required String verification,
+    required bool isActive,
+  }) =>
+      _admin.updateAdminVehicleStatus(
+        id,
+        verification: verification,
+        isActive: isActive,
+      );
+
+  Future<void> updateAdminDriverStatus(
+    String id, {
+    required String verification,
+    required bool isActive,
+  }) =>
+      _admin.updateAdminDriverStatus(
+        id,
+        verification: verification,
+        isActive: isActive,
+      );
+
+  Future<Map<String, dynamic>> adminHealth() => _admin.adminHealth();
+
+  Future<void> updateVendorVerification(String id, String status) =>
+      _admin.updateVendorVerification(id, status);
 
   Future<Map<String, dynamic>> adminOrders({
     int page = 1,
@@ -1636,22 +677,17 @@ class ApiClient {
     String? to,
     bool? assigned,
     int pageSize = 25,
-  }) async {
-    final response = await request(
-      'GET',
-      _adminPath('/orders', {
-        'page': '$page',
-        'pageSize': '$pageSize',
-        if (status != null && status.isNotEmpty) 'status': status,
-        if (service != null && service.isNotEmpty) 'service': service,
-        if (vendorId != null && vendorId.isNotEmpty) 'vendorId': vendorId,
-        if (from != null && from.isNotEmpty) 'from': from,
-        if (to != null && to.isNotEmpty) 'to': to,
-        if (assigned != null) 'assigned': '$assigned',
-      }),
-    );
-    return _mapResponse(response, 'admin orders');
-  }
+  }) =>
+      _admin.adminOrders(
+        page: page,
+        status: status,
+        service: service,
+        vendorId: vendorId,
+        from: from,
+        to: to,
+        assigned: assigned,
+        pageSize: pageSize,
+      );
 
   Future<List<DispatcherOrder>> dispatcherOrderRows({
     int page = 1,
@@ -1661,48 +697,27 @@ class ApiClient {
     String? from,
     String? to,
     bool? assigned,
-  }) async {
-    final pageData = await adminOrders(
-      page: page,
-      status: status,
-      service: service,
-      vendorId: vendorId,
-      from: from,
-      to: to,
-      assigned: assigned,
-    );
-    return (pageData['rows'] as List?)
-            ?.whereType<Map>()
-            .map((row) => DispatcherOrder.fromJson(
-                  Map<String, dynamic>.from(row),
-                ))
-            .toList() ??
-        const [];
-  }
-
-  Future<List<AccountRecord>> adminAlerts({String? status}) => _records(
-        _adminPath('/alerts', {if (status != null) 'status': status}),
-        'admin alerts',
+  }) =>
+      _admin.dispatcherOrderRows(
+        page: page,
+        status: status,
+        service: service,
+        vendorId: vendorId,
+        from: from,
+        to: to,
+        assigned: assigned,
       );
 
-  Future<AccountRecord> updateDispatcherAlert(
-    String id,
-    String status,
-  ) async {
-    final response = await request(
-      'PATCH',
-      '/admin/alerts/$id',
-      body: {'status': status},
-    );
-    return AccountRecord(await _mapResponse(response, 'dispatcher alert'));
-  }
+  Future<List<AccountRecord>> adminAlerts({String? status}) =>
+      _admin.adminAlerts(status: status);
 
-  Future<List<DispatcherAlert>> dispatcherAlertRows() async {
-    final items = await adminAlerts();
-    return items.map((item) => DispatcherAlert.fromJson(item.data)).toList();
-  }
+  Future<AccountRecord> updateDispatcherAlert(String id, String status) =>
+      _admin.updateDispatcherAlert(id, status);
 
-  Future<List<AccountRecord>> dispatcherVendors() => adminVendors();
+  Future<List<DispatcherAlert>> dispatcherAlertRows() =>
+      _admin.dispatcherAlertRows();
+
+  Future<List<AccountRecord>> dispatcherVendors() => _admin.dispatcherVendors();
 
   Future<AccountRecord> dispatcherAssignOrder(
     String orderId, {
@@ -1710,307 +725,152 @@ class ApiClient {
     String? vehicleId,
     String? driverId,
   }) =>
-      assignAdminOrder(
+      _admin.dispatcherAssignOrder(
         orderId,
         vendorId: vendorId,
         vehicleId: vehicleId,
         driverId: driverId,
       );
 
-  Future<AccountRecord> dispatcherUpdateStatus(
-    String orderId,
-    String status,
-  ) =>
-      updateAdminOrderStatus(orderId, status);
+  Future<AccountRecord> dispatcherUpdateStatus(String orderId, String status) =>
+      _admin.dispatcherUpdateStatus(orderId, status);
 
-  Future<AccountRecord> dispatcherCancelOrder(
-    String orderId,
-    String reason,
-  ) =>
-      cancelAdminOrder(orderId, reason);
+  Future<AccountRecord> dispatcherCancelOrder(String orderId, String reason) =>
+      _admin.dispatcherCancelOrder(orderId, reason);
 
   Future<AccountRecord> assignAdminOrder(
     String id, {
     String? vendorId,
     String? vehicleId,
     String? driverId,
-  }) async {
-    final response =
-        await request('PATCH', '/admin/orders/$id/assignment', body: {
-      if (vendorId != null) 'vendorId': vendorId,
-      if (vehicleId != null) 'vehicleId': vehicleId,
-      if (driverId != null) 'driverId': driverId,
-    });
-    return AccountRecord(await _mapResponse(response, 'admin assignment'));
-  }
-
-  Future<AccountRecord> updateAdminOrderStatus(String id, String status) async {
-    final response = await request(
-      'PATCH',
-      '/admin/orders/$id/status',
-      body: {'status': status},
-    );
-    return AccountRecord(await _mapResponse(response, 'admin order status'));
-  }
-
-  Future<AccountRecord> cancelAdminOrder(String id, String reason) async {
-    final normalizedReason = reason.trim();
-    if (normalizedReason.length < 2 || normalizedReason.length > 500) {
-      throw const FormatException(
-        'Enter a cancellation reason between 2 and 500 characters.',
+  }) =>
+      _admin.assignAdminOrder(
+        id,
+        vendorId: vendorId,
+        vehicleId: vehicleId,
+        driverId: driverId,
       );
-    }
-    final response = await request(
-      'POST',
-      '/admin/orders/$id/cancel',
-      body: {'reason': normalizedReason},
-    );
-    return AccountRecord(
-        await _mapResponse(response, 'admin order cancellation'));
-  }
 
-  Future<AccountRecord> adminVendor(String id) async =>
-      AccountRecord(await _adminMap('/vendors/$id', 'admin vendor'));
+  Future<AccountRecord> updateAdminOrderStatus(String id, String status) =>
+      _admin.updateAdminOrderStatus(id, status);
 
-  Future<AccountRecord> createAdminVendor(Map<String, dynamic> body) async {
-    final response = await request('POST', '/admin/vendors', body: body);
-    return AccountRecord(await _mapResponse(response, 'admin vendor'));
-  }
+  Future<AccountRecord> cancelAdminOrder(String id, String reason) =>
+      _admin.cancelAdminOrder(id, reason);
+
+  Future<AccountRecord> adminVendor(String id) => _admin.adminVendor(id);
+
+  Future<AccountRecord> createAdminVendor(Map<String, dynamic> body) =>
+      _admin.createAdminVendor(body);
 
   Future<AccountRecord> updateAdminVendor(
-      String id, Map<String, dynamic> body) async {
-    final response = await request('PATCH', '/admin/vendors/$id', body: body);
-    return AccountRecord(await _mapResponse(response, 'admin vendor update'));
-  }
+    String id,
+    Map<String, dynamic> body,
+  ) =>
+      _admin.updateAdminVendor(id, body);
 
-  Future<void> deleteAdminVendor(String id) async {
-    await request('DELETE', '/admin/vendors/$id');
-  }
+  Future<void> deleteAdminVendor(String id) => _admin.deleteAdminVendor(id);
 
-  Future<AccountRecord> adminCustomer(String id) async =>
-      AccountRecord(await _adminMap('/customers/$id', 'admin customer'));
+  Future<AccountRecord> adminCustomer(String id) => _admin.adminCustomer(id);
 
-  Future<AccountRecord> createAdminCustomer(Map<String, dynamic> body) async {
-    final response = await request('POST', '/admin/customers', body: body);
-    return AccountRecord(await _mapResponse(response, 'admin customer'));
-  }
+  Future<AccountRecord> createAdminCustomer(Map<String, dynamic> body) =>
+      _admin.createAdminCustomer(body);
 
   Future<AccountRecord> updateAdminCustomer(
-      String id, Map<String, dynamic> body) async {
-    final response = await request('PATCH', '/admin/customers/$id', body: body);
-    return AccountRecord(await _mapResponse(response, 'admin customer update'));
-  }
+    String id,
+    Map<String, dynamic> body,
+  ) =>
+      _admin.updateAdminCustomer(id, body);
 
-  Future<void> deleteAdminCustomer(String id) async {
-    await request('DELETE', '/admin/customers/$id');
-  }
+  Future<void> deleteAdminCustomer(String id) => _admin.deleteAdminCustomer(id);
 
-  Future<AccountRecord> createAdminCoupon(Map<String, dynamic> body) async {
-    final response = await request('POST', '/admin/coupons', body: body);
-    return AccountRecord(await _mapResponse(response, 'admin coupon'));
-  }
+  Future<AccountRecord> createAdminCoupon(Map<String, dynamic> body) =>
+      _admin.createAdminCoupon(body);
 
   Future<AccountRecord> updateAdminCoupon(
-      String id, Map<String, dynamic> body) async {
-    final response = await request('PATCH', '/admin/coupons/$id', body: body);
-    return AccountRecord(await _mapResponse(response, 'admin coupon update'));
-  }
+    String id,
+    Map<String, dynamic> body,
+  ) =>
+      _admin.updateAdminCoupon(id, body);
 
-  Future<void> deleteAdminCoupon(String id) async {
-    await request('DELETE', '/admin/coupons/$id');
-  }
+  Future<void> deleteAdminCoupon(String id) => _admin.deleteAdminCoupon(id);
 
-  Future<List<AccountRecord>> adminServices() async =>
-      _records('/admin/services', 'admin services');
+  Future<List<AccountRecord>> adminServices() => _admin.adminServices();
 
-  Future<AccountRecord> createAdminService(Map<String, dynamic> body) async {
-    final response = await request('POST', '/admin/services', body: body);
-    return AccountRecord(await _mapResponse(response, 'admin service'));
-  }
+  Future<AccountRecord> createAdminService(Map<String, dynamic> body) =>
+      _admin.createAdminService(body);
 
   Future<AccountRecord> updateAdminService(
-      String id, Map<String, dynamic> body) async {
-    final response = await request('PATCH', '/admin/services/$id', body: body);
-    return AccountRecord(await _mapResponse(response, 'admin service update'));
-  }
+    String id,
+    Map<String, dynamic> body,
+  ) =>
+      _admin.updateAdminService(id, body);
 
-  Future<List<AccountRecord>> adminPayouts() async {
-    final page = await adminPayoutPage();
-    final rows = page['rows'];
-    if (rows is! List) {
-      throw const FormatException('The admin payouts response was invalid.');
-    }
-    return rows
-        .whereType<Map<String, dynamic>>()
-        .map(AccountRecord.new)
-        .toList();
-  }
+  Future<List<AccountRecord>> adminPayouts() => _admin.adminPayouts();
 
-  Future<List<AccountRecord>> adminPartnerApplications({String? status}) async {
-    final path = _adminPath('/partner-applications', {
-      if (status != null) 'status': status,
-    });
-    return _records(path, 'partner applications');
-  }
+  Future<List<AccountRecord>> adminPartnerApplications({String? status}) =>
+      _admin.adminPartnerApplications(status: status);
 
   Future<AccountRecord> reviewPartnerApplication(
     String id, {
     required String status,
     String? reviewNote,
-  }) async {
-    final response = await request('PATCH', '/admin/partner-applications/$id',
-        body: {
-          'status': status,
-          if (reviewNote != null) 'reviewNote': reviewNote
-        });
-    return AccountRecord(await _mapResponse(response, 'partner review'));
-  }
+  }) =>
+      _admin.reviewPartnerApplication(
+        id,
+        status: status,
+        reviewNote: reviewNote,
+      );
 
-  Future<Map<String, dynamic>> adminReport(Map<String, dynamic> body) async {
-    final response = await request('POST', '/admin/reports', body: body);
-    return _mapResponse(response, 'admin report');
-  }
+  Future<Map<String, dynamic>> adminReport(Map<String, dynamic> body) =>
+      _admin.adminReport(body);
 
-  Future<void> adminStorageCleanup() async {
-    await request('POST', '/admin/storage/cleanup');
-  }
+  Future<void> adminStorageCleanup() => _admin.adminStorageCleanup();
 
-  Future<void> sendAdminNotification(Map<String, dynamic> body) async {
-    await request('POST', '/admin/notifications', body: body);
-  }
+  Future<void> sendAdminNotification(Map<String, dynamic> body) =>
+      _admin.sendAdminNotification(body);
 
-  Future<List<NotificationItem>> adminNotifications() async =>
-      notifications('admin');
+  Future<Map<String, dynamic>> adminPayoutPage({int page = 1}) =>
+      _admin.adminPayoutPage(page: page);
 
-  Future<void> markAdminNotificationRead(String id) async {
-    await request('PATCH', '/admin/notifications/$id/read');
-  }
-
-  Future<Map<String, dynamic>> adminPayoutPage({int page = 1}) async {
-    final response =
-        await request('GET', _adminPath('/payouts', {'page': '$page'}));
-    return _mapResponse(response, 'admin payouts');
-  }
-
-  Future<AccountRecord> updateAdminPayout(String id, String status) async {
-    final response = await request(
-      'PATCH',
-      '/admin/payouts/$id/status',
-      body: {'status': status},
-    );
-    return AccountRecord(await _mapResponse(response, 'admin payout update'));
-  }
+  Future<AccountRecord> updateAdminPayout(String id, String status) =>
+      _admin.updateAdminPayout(id, status);
 
   Future<Map<String, dynamic>> adminAuditLogs({
     int page = 1,
     String? actorId,
     String? action,
     String? entityType,
-  }) async {
-    final response = await request(
-      'GET',
-      _adminPath('/audit-logs', {
-        'page': '$page',
-        if (actorId != null && actorId.isNotEmpty) 'actorId': actorId,
-        if (action != null && action.isNotEmpty) 'action': action,
-        if (entityType != null && entityType.isNotEmpty)
-          'entityType': entityType,
-      }),
-    );
-    return _mapResponse(response, 'admin audit logs');
-  }
-
-  String _adminPath(String path, Map<String, String> query) {
-    final uri =
-        Uri(path: '/admin$path', queryParameters: query.isEmpty ? null : query);
-    return uri.toString();
-  }
-
-  Future<Map<String, dynamic>> _adminMap(String path, String label) async {
-    final response = await request('GET', '/admin$path');
-    return _mapResponse(response, label);
-  }
-
-  Future<List<T>> _vendorList<T>(
-    http.Response response,
-    T Function(Map<String, dynamic>) parse,
-    String label,
-  ) async {
-    final decoded = _decodeBody(response);
-    if (decoded is! List) {
-      throw FormatException('The $label response was invalid.');
-    }
-
-    return decoded.whereType<Map<String, dynamic>>().map(parse).toList();
-  }
-
-  Future<Map<String, dynamic>> _mapResponse(
-    http.Response response,
-    String label,
-  ) async {
-    final decoded = _decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw FormatException('The $label response was invalid.');
-    }
-    return decoded;
-  }
-
-  /// Decodes a JSON body. A non-JSON body gives a generic message, not the
-  /// parser's raw text.
-  dynamic _decodeBody(http.Response response) {
-    try {
-      return jsonDecode(response.body);
-    } on FormatException {
-      throw const FormatException(_invalidServerResponse);
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _mapList(
-    http.Response response,
-    String label,
-  ) async {
-    final decoded = _decodeBody(response);
-    if (decoded is! List) {
-      throw FormatException('The $label response was invalid.');
-    }
-    return decoded.whereType<Map<String, dynamic>>().toList();
-  }
-
-  Future<void> markNotificationRead(String role, String id) async {
-    final prefix = role == 'vendor'
-        ? '/vendor'
-        : role == 'dispatcher' || role == 'admin'
-            ? '/admin'
-            : '/customer';
-    await request('PATCH', '$prefix/notifications/$id/read');
-  }
-
-  Future<void> markAllNotificationsRead(String role) async {
-    if (role != 'customer') {
-      throw UnsupportedError(
-        'Mark all as read is not available for the $role workspace.',
+  }) =>
+      _admin.adminAuditLogs(
+        page: page,
+        actorId: actorId,
+        action: action,
+        entityType: entityType,
       );
-    }
-    await request('PATCH', '/customer/notifications/read-all');
-  }
 
-  Future<AuthResult> _authRequest(
-    String path,
-    Map<String, dynamic> body,
-  ) async {
-    final response = await request('POST', path, body: body, retry: false);
-    return _saveAuthResult(_decodeBody(response));
-  }
+  // Notifications and devices.
 
-  Future<AuthResult> _saveAuthResult(dynamic body) async {
-    if (body is! Map<String, dynamic>) {
-      throw const FormatException('The authentication response was invalid.');
-    }
-    final result = AuthResult.fromJson(body);
-    await saveAccessToken(result.accessToken);
-    if (result.refreshToken != null && result.refreshToken!.isNotEmpty) {
-      await saveRefreshToken(result.refreshToken!);
-    }
-    return result;
-  }
+  Future<List<NotificationItem>> notifications(String role) =>
+      _notificationApi.notifications(role);
+
+  Future<List<NotificationItem>> adminNotifications() =>
+      _notificationApi.adminNotifications();
+
+  Future<void> markAdminNotificationRead(String id) =>
+      _notificationApi.markAdminNotificationRead(id);
+
+  Future<void> markNotificationRead(String role, String id) =>
+      _notificationApi.markNotificationRead(role, id);
+
+  Future<void> markAllNotificationsRead(String role) =>
+      _notificationApi.markAllNotificationsRead(role);
+
+  Future<void> registerDevice({
+    required String token,
+    required String platform,
+  }) =>
+      _notificationApi.registerDevice(token: token, platform: platform);
+
+  Future<void> unregisterDevice(String token) =>
+      _notificationApi.unregisterDevice(token);
 }
