@@ -340,12 +340,6 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: AppSpace.md),
-                      Text(
-                        'Public registration is for customer accounts, by phone or email. Existing vendor and admin accounts can sign in with their registered phone number, email or credentials.',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall,
-                      ),
                     ],
                   ],
                 ),
