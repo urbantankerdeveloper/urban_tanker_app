@@ -1,28 +1,88 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../app/page_components.dart';
+import '../../core/design_system/motion.dart';
 import '../../models/account.dart';
 import '../../models/notification.dart';
 import '../../models/vendor.dart';
+import '../../models/workspace_navigation.dart';
 import '../../services/api_client.dart';
 import '../../services/friendly_error.dart';
 
-class AdminOperationsScreen extends ConsumerWidget {
-  const AdminOperationsScreen({super.key});
+class AdminOperationsScreen extends ConsumerStatefulWidget {
+  const AdminOperationsScreen({super.key, this.focus});
+
+  /// Posting a new [OperationsFocus] expands and scrolls to that section.
+  final ValueListenable<OperationsFocus?>? focus;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AdminOperationsScreen> createState() =>
+      _AdminOperationsScreenState();
+}
+
+class _AdminOperationsScreenState extends ConsumerState<AdminOperationsScreen> {
+  final _groupKeys = {
+    for (final section in OperationsSection.values) section: GlobalKey(),
+  };
+  final _groupControllers = {
+    for (final section in OperationsSection.values)
+      section: ExpansibleController(),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focus?.addListener(_onFocus);
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminOperationsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focus != widget.focus) {
+      oldWidget.focus?.removeListener(_onFocus);
+      widget.focus?.addListener(_onFocus);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.focus?.removeListener(_onFocus);
+    super.dispose();
+  }
+
+  void _onFocus() {
+    final request = widget.focus?.value;
+    if (request == null) return;
+    _groupControllers[request.section]!.expand();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _groupKeys[request.section]?.currentContext;
+      if (target == null || !target.mounted) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: AppMotion.duration(target, AppMotion.base),
+        curve: AppMotion.curve,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return ListView(
       padding: AppPageInsets.standard,
       children: [
         _AdminGroup(
+          key: _groupKeys[OperationsSection.orders],
+          controller: _groupControllers[OperationsSection.orders],
           title: 'Bookings & dispatch',
           icon: Icons.local_shipping_outlined,
           children: const [_AdminOrdersSection()],
         ),
         _AdminGroup(
+          key: _groupKeys[OperationsSection.people],
+          controller: _groupControllers[OperationsSection.people],
           title: 'People & fleet',
           icon: Icons.groups_outlined,
           children: [
@@ -48,6 +108,8 @@ class AdminOperationsScreen extends ConsumerWidget {
           ],
         ),
         _AdminGroup(
+          key: _groupKeys[OperationsSection.finance],
+          controller: _groupControllers[OperationsSection.finance],
           title: 'Finance & promos',
           icon: Icons.payments_outlined,
           children: [
@@ -62,6 +124,8 @@ class AdminOperationsScreen extends ConsumerWidget {
           ],
         ),
         _AdminGroup(
+          key: _groupKeys[OperationsSection.setup],
+          controller: _groupControllers[OperationsSection.setup],
           title: 'Reports & setup',
           icon: Icons.settings_outlined,
           children: const [
@@ -80,15 +144,19 @@ class _AdminGroup extends StatelessWidget {
     required this.title,
     required this.icon,
     required this.children,
+    this.controller,
+    super.key,
   });
 
   final String title;
   final IconData icon;
   final List<Widget> children;
+  final ExpansibleController? controller;
 
   @override
   Widget build(BuildContext context) => Card(
         child: ExpansionTile(
+          controller: controller,
           leading: Icon(icon),
           title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           children: children,
@@ -1595,7 +1663,8 @@ class _AdminRecordsSection extends ConsumerWidget {
         title: Text(title),
         trailing: onAdd == null
             ? null
-            : IconButton(tooltip: 'Add', onPressed: onAdd, icon: const Icon(Icons.add)),
+            : IconButton(
+                tooltip: 'Add', onPressed: onAdd, icon: const Icon(Icons.add)),
         children: [
           FutureBuilder<List<AccountRecord>>(
             future: loader(ref.read(appControllerProvider).api),
