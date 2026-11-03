@@ -80,8 +80,12 @@ class BookingStatusChip extends StatelessWidget {
 IconData? _statusIcon(String status) => switch (status) {
       'pending' || 'pending_vendor' => Icons.schedule,
       'accepted' || 'vendor_accepted' => Icons.thumb_up_alt_outlined,
-      'assigned' => Icons.person_pin_circle_outlined,
-      'in_transit' || 'on_the_way' => Icons.local_shipping_outlined,
+      'assigned' || 'vendor_assigned' => Icons.person_pin_circle_outlined,
+      'in_transit' ||
+      'on_the_way' ||
+      'en_route' =>
+        Icons.local_shipping_outlined,
+      'arrived' => Icons.place_outlined,
       'delivered' || 'completed' => Icons.check_circle_outline,
       'cancelled' || 'canceled' => Icons.cancel_outlined,
       'rejected' => Icons.block,

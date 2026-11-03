@@ -31,6 +31,8 @@ class AppTextField extends StatelessWidget {
     this.autofillHints,
     this.inputFormatters,
     this.maxLength,
+    this.minLines,
+    this.maxLines = 1,
     this.autofocus = false,
     this.focusNode,
   });
@@ -53,6 +55,8 @@ class AppTextField extends StatelessWidget {
   final Iterable<String>? autofillHints;
   final List<TextInputFormatter>? inputFormatters;
   final int? maxLength;
+  final int? minLines;
+  final int maxLines;
   final bool autofocus;
   final FocusNode? focusNode;
 
@@ -72,6 +76,8 @@ class AppTextField extends StatelessWidget {
       autofillHints: autofillHints,
       inputFormatters: inputFormatters,
       maxLength: maxLength,
+      minLines: minLines,
+      maxLines: maxLines,
       autofocus: autofocus,
       decoration: InputDecoration(
         labelText: label,

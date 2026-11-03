@@ -106,8 +106,12 @@ class AppColors extends ThemeExtension<AppColors> {
   AppTone statusTone(String status) => switch (status) {
         'pending' || 'pending_vendor' => statusPending,
         'accepted' || 'vendor_accepted' => statusAccepted,
-        'assigned' => statusAssigned,
-        'in_transit' || 'on_the_way' => statusOnTheWay,
+        'assigned' || 'vendor_assigned' => statusAssigned,
+        'in_transit' ||
+        'on_the_way' ||
+        'en_route' ||
+        'arrived' =>
+          statusOnTheWay,
         'delivered' || 'completed' => statusDelivered,
         'cancelled' || 'canceled' => statusCancelled,
         'rejected' => statusRejected,
