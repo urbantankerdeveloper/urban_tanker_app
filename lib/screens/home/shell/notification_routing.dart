@@ -4,7 +4,7 @@ import '../../../app/app_controller.dart';
 import '../../../models/notification.dart';
 import '../../../models/session.dart';
 import '../../../services/friendly_error.dart';
-import '../../bookings_screen.dart';
+import '../../booking_details_screen.dart';
 import '../../invoice_detail_screen.dart';
 import '../../support_request_detail_screen.dart';
 import 'role_tabs.dart';

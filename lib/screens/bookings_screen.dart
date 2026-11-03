@@ -4,12 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
-import '../app/page_components.dart';
+import '../core/design_system/design_system.dart';
 import '../models/booking.dart';
-import '../models/booking_service_form.dart';
-import '../services/realtime_service.dart';
-import '../services/friendly_error.dart';
+import 'booking_details_screen.dart';
+import 'common/booking_format.dart';
 
+/// Bookings tab. Active and Past filter the bookings loaded so far. More pages
+/// load as the list nears its end.
 class BookingsScreen extends ConsumerStatefulWidget {
   const BookingsScreen({this.onBookAgain, super.key});
 
@@ -21,6 +22,7 @@ class BookingsScreen extends ConsumerStatefulWidget {
 
 class _BookingsScreenState extends ConsumerState<BookingsScreen> {
   final _scrollController = ScrollController();
+  int _filter = 0;
 
   @override
   void initState() {
@@ -48,42 +50,83 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
   Widget build(BuildContext context) {
     final bookings = ref.watch(bookingsProvider);
     return bookings.when(
-      loading: () => const AppStateView.loading(),
-      error: (error, _) => AppStateView.error(
+      loading: () => const LoadingState(message: 'Loading your bookings...'),
+      error: (error, _) => ErrorState(
         error: error,
         onRetry: () => ref.invalidate(bookingsProvider),
       ),
       data: (page) {
-        final items = page.items;
-        if (items.isEmpty) {
-          return const AppStateView.empty(
+        if (page.items.isEmpty) {
+          return const EmptyState(
             icon: Icons.receipt_long_outlined,
+            title: 'No bookings yet',
             message: 'Your bookings will appear here.',
           );
         }
-        return RefreshIndicator(
-          onRefresh: () async => ref.invalidate(bookingsProvider),
-          child: ListView.separated(
-            controller: _scrollController,
-            padding: AppPageInsets.standard,
-            itemCount: items.length + (page.hasMore ? 1 : 0),
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              if (index == items.length) {
-                return _BookingsFooter(
-                  failed: page.loadMoreFailed,
-                  onVisible: () =>
-                      unawaited(ref.read(bookingsProvider.notifier).loadMore()),
-                  onRetry: () =>
-                      ref.read(bookingsProvider.notifier).retryLoadMore(),
-                );
-              }
-              return _BookingTile(
-                booking: items[index],
-                onBookAgain: widget.onBookAgain,
-              );
-            },
-          ),
+        final shown = [
+          for (final booking in page.items)
+            if (isActiveBooking(booking) == (_filter == 0)) booking,
+        ];
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.gutter,
+                AppSpace.md,
+                AppSpace.gutter,
+                AppSpace.sm,
+              ),
+              child: SegmentedTabs(
+                labels: const ['Active', 'Past'],
+                selectedIndex: _filter,
+                onChanged: (index) => setState(() => _filter = index),
+              ),
+            ),
+            Expanded(
+              child: shown.isEmpty && !page.hasMore
+                  ? EmptyState(
+                      icon: Icons.receipt_long_outlined,
+                      title: _filter == 0
+                          ? 'No active bookings'
+                          : 'No past bookings',
+                      message: _filter == 0
+                          ? 'Bookings show here until they are delivered.'
+                          : 'Finished and cancelled bookings show here.',
+                    )
+                  : RefreshIndicator(
+                      onRefresh: () async => ref.invalidate(bookingsProvider),
+                      child: ListView.separated(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpace.gutter,
+                          AppSpace.sm,
+                          AppSpace.gutter,
+                          AppSpace.xxxl,
+                        ),
+                        itemCount: shown.length + (page.hasMore ? 1 : 0),
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: AppSpace.md),
+                        itemBuilder: (context, index) {
+                          if (index == shown.length) {
+                            return _BookingsFooter(
+                              failed: page.loadMoreFailed,
+                              onVisible: () => unawaited(
+                                ref.read(bookingsProvider.notifier).loadMore(),
+                              ),
+                              onRetry: () => ref
+                                  .read(bookingsProvider.notifier)
+                                  .retryLoadMore(),
+                            );
+                          }
+                          return _BookingCard(
+                            booking: shown[index],
+                            onBookAgain: widget.onBookAgain,
+                          );
+                        },
+                      ),
+                    ),
+            ),
+          ],
         );
       },
     );
@@ -129,7 +172,7 @@ class _BookingsFooterState extends State<_BookingsFooter> {
       );
     }
     return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 12),
+      padding: EdgeInsets.symmetric(vertical: AppSpace.md),
       child: Center(
         child: SizedBox.square(
           dimension: 24,
@@ -140,531 +183,80 @@ class _BookingsFooterState extends State<_BookingsFooter> {
   }
 }
 
-class _BookingTile extends StatelessWidget {
-  const _BookingTile({required this.booking, this.onBookAgain});
+class _BookingCard extends StatelessWidget {
+  const _BookingCard({required this.booking, this.onBookAgain});
 
   final Booking booking;
   final Future<void> Function(Booking booking)? onBookAgain;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: CircleAvatar(
-          child: Icon(_iconForStatus(booking.status)),
-        ),
-        title: Text(booking.reference),
-        subtitle: Text(
-          '${booking.status.replaceAll('_', ' ')}\n${booking.location}',
-        ),
-        isThreeLine: true,
-        trailing: onBookAgain == null
-            ? const Icon(Icons.chevron_right)
-            : Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  IconButton(
-                    tooltip: 'Book these services again',
-                    icon: const Icon(Icons.replay_outlined),
-                    onPressed: () => onBookAgain!(booking),
-                  ),
-                  const Icon(Icons.chevron_right),
-                ],
-              ),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => BookingDetailsScreen(booking: booking),
-          ),
+    final theme = Theme.of(context);
+    final amount = booking.quotedAmountRupees;
+    final details = [
+      booking.location,
+      if (booking.deliveryDate != null) formatBookingDate(booking.deliveryDate),
+    ];
+    return SurfaceCard(
+      padding: const EdgeInsets.all(AppSpace.lg),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => BookingDetailsScreen(booking: booking),
         ),
       ),
-    );
-  }
-}
-
-class BookingDetailsScreen extends ConsumerStatefulWidget {
-  const BookingDetailsScreen({required this.booking, super.key});
-
-  final Booking booking;
-
-  @override
-  ConsumerState<BookingDetailsScreen> createState() =>
-      _BookingDetailsScreenState();
-}
-
-class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
-    with WidgetsBindingObserver {
-  Booking get booking => widget.booking;
-
-  RealtimeService? _realtime;
-  StreamSubscription<RealtimeEvent>? _realtimeSubscription;
-  Timer? _refreshTimer;
-  bool _liveUpdatesConnected = false;
-  bool _inForeground = true;
-  String? _liveUpdatesError;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _connectRealtime();
-    _startRefreshTimer();
-  }
-
-  /// Polling is only a fallback. It runs while the live connection is down and
-  /// the app is in the foreground.
-  void _startRefreshTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
-    if (!_inForeground || _liveUpdatesConnected) return;
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 60),
-      (_) => _refreshTracking(),
-    );
-  }
-
-  void _connectRealtime() {
-    try {
-      final controller = ref.read(appControllerProvider);
-      final realtime = controller.realtime;
-      if (realtime == null) {
-        setState(() => _liveUpdatesError = 'Realtime connection unavailable.');
-        return;
-      }
-      _realtime = realtime;
-      _liveUpdatesConnected = realtime.isConnected;
-      _realtimeSubscription = realtime.events.listen(
-        (event) => _onRealtimeEvent(event.name, event.payload),
-      );
-      realtime.joinBooking(widget.booking.id);
-    } catch (error) {
-      if (mounted) setState(() => _liveUpdatesError = friendlyError(error));
-    }
-  }
-
-  void _onRealtimeEvent(String event, dynamic payload) {
-    if (event == 'disconnect' || event == 'connect_error') {
-      if (mounted) {
-        setState(() {
-          _liveUpdatesConnected = false;
-          _liveUpdatesError = payload.toString();
-        });
-        _startRefreshTimer();
-      }
-      return;
-    }
-    if (event == 'connected') {
-      _realtime?.joinBooking(widget.booking.id);
-      if (mounted) {
-        setState(() {
-          _liveUpdatesConnected = true;
-          _liveUpdatesError = null;
-        });
-        _startRefreshTimer();
-      }
-      return;
-    }
-    if (payload is! Map ||
-        payload['bookingId']?.toString() != widget.booking.id) {
-      return;
-    }
-    if (event == 'booking.location.updated' ||
-        event == 'booking.updated' ||
-        event == 'notification.created') {
-      _refreshTracking();
-      if (event != 'booking.location.updated') {
-        ref.invalidate(bookingsProvider);
-      }
-    }
-  }
-
-  void _refreshTracking() {
-    if (!mounted) return;
-    ref.invalidate(bookingTrackingProvider(widget.booking.id));
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _inForeground = true;
-      _refreshTracking();
-      _startRefreshTimer();
-    } else if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
-      _inForeground = false;
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _refreshTimer?.cancel();
-    _realtimeSubscription?.cancel();
-    _realtime?.leaveBooking(widget.booking.id);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final booking = widget.booking;
-    final tracking = ref.watch(bookingTrackingProvider(booking.id));
-    final currentStatus = tracking.value?.status ?? booking.status;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(booking.reference),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh tracking',
-            onPressed: _refreshTracking,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: AppPageInsets.standard,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            currentStatus.replaceAll('_', ' ').toUpperCase(),
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
-          const SizedBox(height: 8),
-          Text(booking.location,
-              style: Theme.of(context).textTheme.headlineSmall),
-          if (booking.latitude != null && booking.longitude != null)
-            Text(
-              'Delivery coordinates: ${booking.latitude!.toStringAsFixed(5)}, '
-              '${booking.longitude!.toStringAsFixed(5)}',
-            ),
-          if (booking.notes != null && booking.notes!.trim().isNotEmpty)
-            Text('Access notes: ${booking.notes}'),
-          if (booking.cancellationReason != null &&
-              booking.cancellationReason!.trim().isNotEmpty)
-            Text('Cancellation reason: ${booking.cancellationReason}'),
-          const SizedBox(height: 20),
-          Card(
-            child: Column(
-              children: [
-                if (booking.services.isNotEmpty) ...[
-                  for (final service in booking.services)
-                    ListTile(
-                      leading: const Icon(Icons.local_shipping_outlined),
-                      title: Text(
-                        BookingServiceForm.forService(service.serviceId)
-                            .serviceName,
-                      ),
-                      subtitle: Text([
-                        if (service.quantity.trim().isNotEmpty)
-                          'Quantity/capacity: ${service.quantity}',
-                        if (service.waterType?.trim().isNotEmpty == true)
-                          'Water type: ${service.waterType}',
-                        if (service.tankerCount?.trim().isNotEmpty == true)
-                          'Tanker count: ${service.tankerCount}',
-                        if (service.details.trim().isNotEmpty)
-                          'Details: ${service.details}',
-                      ].join('\n')),
-                      isThreeLine: true,
-                    ),
-                  const Divider(height: 1),
-                ],
-                ListTile(
-                  leading: const Icon(Icons.water_drop_outlined),
-                  title: const Text('Capacity'),
-                  subtitle: Text(
-                    booking.capacity.isEmpty
-                        ? 'Not specified'
-                        : '${booking.capacity} litres',
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.event_outlined),
-                  title: const Text('Delivery date'),
-                  subtitle: Text(_formatDate(booking.deliveryDate)),
-                ),
-                if (booking.quotedAmountRupees != null)
-                  ListTile(
-                    leading: const Icon(Icons.currency_rupee_outlined),
-                    title: const Text('Quoted amount'),
-                    subtitle: Text(
-                      '₹${booking.quotedAmountRupees!.toStringAsFixed(2)}',
-                    ),
-                  ),
-                if (booking.paymentStatus != null &&
-                    booking.paymentStatus!.isNotEmpty)
-                  ListTile(
-                    leading: const Icon(Icons.payments_outlined),
-                    title: const Text('Payment status'),
-                    subtitle:
-                        Text(_paymentLabel(booking.normalizedPaymentStatus)),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
-                child: Text('Live tracking',
-                    style: Theme.of(context).textTheme.titleLarge),
+                child: Text(
+                  booking.reference,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium,
+                ),
               ),
-              Text(
-                _liveUpdatesConnected ? 'Live' : 'Auto-refresh',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
+              const SizedBox(width: AppSpace.sm),
+              BookingStatusChip(status: booking.status),
             ],
           ),
-          if (_liveUpdatesError != null)
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text('Live updates unavailable; checking periodically.'),
-            ),
-          const SizedBox(height: 8),
-          tracking.when(
-            loading: () => const Card(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: Center(child: CircularProgressIndicator()),
+          const SizedBox(height: AppSpace.md),
+          for (final line in details)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpace.xs),
+              child: Text(
+                line,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium,
               ),
             ),
-            error: (error, _) => Card(
-              child: AppStateInline.error(
-                error: error,
-                message: 'Live tracking is temporarily unavailable.',
-                onRetry: _refreshTracking,
+          if (amount != null || onBookAgain != null)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpace.sm),
+              child: Row(
+                children: [
+                  if (amount != null)
+                    AmountText(
+                      '₹${amount.toStringAsFixed(2)}',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  const Spacer(),
+                  if (onBookAgain != null)
+                    Tooltip(
+                      message: 'Book these services again',
+                      child: TextButton.icon(
+                        onPressed: () => onBookAgain!(booking),
+                        icon: const Icon(Icons.replay_outlined, size: 18),
+                        label: const Text('Book again'),
+                      ),
+                    ),
+                ],
               ),
-            ),
-            data: (snapshot) => Card(
-              child: ListTile(
-                leading: Icon(
-                  snapshot.trackingAvailable
-                      ? Icons.location_on_outlined
-                      : Icons.location_searching_outlined,
-                ),
-                title: Text(
-                  snapshot.trackingAvailable
-                      ? 'Vendor location available'
-                      : 'Waiting for vendor location',
-                ),
-                subtitle: Text([
-                  if (snapshot.driver != null) 'Driver: ${snapshot.driver}',
-                  if (snapshot.vehicle != null) 'Vehicle: ${snapshot.vehicle}',
-                  if (snapshot.latitude != null && snapshot.longitude != null)
-                    'Location: ${snapshot.latitude!.toStringAsFixed(5)}, '
-                        '${snapshot.longitude!.toStringAsFixed(5)}',
-                  if (snapshot.accuracy != null)
-                    'Accuracy: ${snapshot.accuracy!.round()} m',
-                  if (snapshot.recordedAt != null)
-                    'Updated: ${_formatDate(snapshot.recordedAt)}',
-                ].join('\n')),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (!['delivered', 'cancelled'].contains(currentStatus))
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.event_repeat_outlined),
-                  label: const Text('Reschedule'),
-                  onPressed: () => _reschedule(context, ref),
-                ),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.cancel_outlined),
-                  label: const Text('Cancel'),
-                  onPressed: () => _cancel(context, ref),
-                ),
-              ],
-            ),
-          if (currentStatus == 'arrived')
-            FilledButton.icon(
-              icon: const Icon(Icons.password_outlined),
-              label: const Text('Request delivery OTP'),
-              onPressed: () => _requestOtp(context, ref),
-            ),
-          if (currentStatus == 'delivered')
-            FilledButton.icon(
-              icon: const Icon(Icons.star_outline),
-              label: const Text('Rate delivery'),
-              onPressed: () => _rate(context, ref),
             ),
         ],
       ),
     );
   }
-
-  String _paymentLabel(String status) {
-    switch (status) {
-      case 'cod':
-        return 'Cash on delivery • Payment due at delivery';
-      case 'paid':
-        return 'Paid successfully';
-      case 'failed':
-        return 'Failed • Please contact support to retry payment';
-      case 'cancelled':
-        return 'Cancelled';
-      case 'pending':
-        return 'Pending confirmation';
-      default:
-        return status.replaceAll('_', ' ');
-    }
-  }
-
-  Future<void> _cancel(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancel booking?'),
-        content: const Text(
-            'This action is sent to the server and cannot be undone.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Keep')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Cancel booking')),
-        ],
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-    try {
-      await ref.read(appControllerProvider).api.cancelBooking(booking.id);
-      ref.invalidate(bookingsProvider);
-      if (context.mounted) Navigator.pop(context);
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
-      }
-    }
-  }
-
-  Future<void> _reschedule(BuildContext context, WidgetRef ref) async {
-    final selected = await showDatePicker(
-      context: context,
-      firstDate: DateTime.now().add(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      initialDate: DateTime.now().add(const Duration(days: 1)),
-    );
-    if (selected == null || !context.mounted) return;
-    try {
-      await ref.read(appControllerProvider).api.rescheduleBooking(
-            booking.id,
-            DateTime(selected.year, selected.month, selected.day, 9),
-          );
-      ref.invalidate(bookingsProvider);
-      if (context.mounted) Navigator.pop(context);
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
-      }
-    }
-  }
-
-  Future<void> _requestOtp(BuildContext context, WidgetRef ref) async {
-    try {
-      final expiresAt = await ref
-          .read(appControllerProvider)
-          .api
-          .requestDeliveryOtp(booking.id);
-      if (context.mounted) {
-        showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Delivery OTP requested'),
-            content: Text(
-                'The OTP was sent to your registered mobile number and expires at ${expiresAt.toLocal()}.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Done'))
-            ],
-          ),
-        );
-      }
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
-      }
-    }
-  }
-
-  Future<void> _rate(BuildContext context, WidgetRef ref) async {
-    var rating = 5;
-    final review = TextEditingController();
-    final submitted = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Rate delivery'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButton<int>(
-                value: rating,
-                items: [1, 2, 3, 4, 5]
-                    .map((value) => DropdownMenuItem(
-                        value: value, child: Text('$value stars')))
-                    .toList(),
-                onChanged: (value) => setState(() => rating = value ?? 5),
-              ),
-              TextField(
-                  controller: review,
-                  decoration:
-                      const InputDecoration(labelText: 'Review (optional)')),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel')),
-            FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Submit')),
-          ],
-        ),
-      ),
-    );
-    if (submitted != true || !context.mounted) {
-      review.dispose();
-      return;
-    }
-    try {
-      await ref.read(appControllerProvider).api.rateBooking(
-            booking.id,
-            rating: rating,
-            review: review.text.trim().isEmpty ? null : review.text.trim(),
-          );
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Thank you for rating the delivery.')));
-      }
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
-      }
-    } finally {
-      review.dispose();
-    }
-  }
-}
-
-IconData _iconForStatus(String status) => switch (status) {
-      'delivered' => Icons.check_circle_outline,
-      'cancelled' => Icons.cancel_outlined,
-      'in_transit' || 'arrived' => Icons.local_shipping_outlined,
-      _ => Icons.schedule_outlined,
-    };
-
-String _formatDate(DateTime? value) {
-  if (value == null) return 'Not scheduled';
-  final local = value.toLocal();
-  return '${local.day.toString().padLeft(2, '0')}/'
-      '${local.month.toString().padLeft(2, '0')}/${local.year}';
 }

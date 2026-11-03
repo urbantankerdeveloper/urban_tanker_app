@@ -6,18 +6,7 @@ import '../../../core/design_system/design_system.dart';
 import '../../../models/booking.dart';
 import '../../../models/service.dart';
 import '../../../models/session.dart';
-
-const _finishedStatuses = {
-  'delivered',
-  'completed',
-  'cancelled',
-  'canceled',
-  'rejected',
-};
-
-/// A booking that still needs attention: anything that has not finished.
-bool isActiveBooking(Booking booking) =>
-    !_finishedStatuses.contains(booking.status.toLowerCase());
+import '../../common/booking_format.dart';
 
 /// Customer Home tab. Shows the next delivery (or a call to book), quick
 /// actions, the service grid, and recent bookings. Loading, error and empty

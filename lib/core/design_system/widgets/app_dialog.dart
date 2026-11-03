@@ -70,21 +70,22 @@ Future<bool> showAppConfirmDialog(
   bool destructive = false,
 }) async {
   final colors = context.colors;
-  final confirmed = await showAppDialog<bool>(
-    context,
-    dialog: AppDialog(
+  // Buttons pop their own dialog context, so they never pop the caller's route.
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AppDialog(
       title: title,
       message: message,
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(dialogContext).pop(false),
           child: Text(cancelLabel),
         ),
         TextButton(
           style: destructive
               ? TextButton.styleFrom(foregroundColor: colors.danger.fg)
               : null,
-          onPressed: () => Navigator.of(context).pop(true),
+          onPressed: () => Navigator.of(dialogContext).pop(true),
           child: Text(confirmLabel),
         ),
       ],
