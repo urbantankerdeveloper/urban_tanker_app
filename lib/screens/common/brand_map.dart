@@ -3,13 +3,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../core/design_system/design_system.dart';
+import 'map_tiles.dart';
 
-/// OpenStreetMap view with a branded pin. In dark mode the tiles get a dark
-/// tint so they match the theme.
-///
-/// The tiles come from the public OSM tile server. It has usage limits and is
-/// not meant for production traffic, so a commercial tile provider should be
-/// chosen before launch. The provider has not been switched yet.
+/// Map view with a branded pin. Tiles follow the theme, see [MapTileLayer].
 class BrandMap extends StatelessWidget {
   const BrandMap({
     required this.center,
@@ -24,12 +20,10 @@ class BrandMap extends StatelessWidget {
   /// Pan and zoom are off by default, so the map can sit inside a scrolling page.
   final bool interactive;
 
-  static const _tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final map = FlutterMap(
+    return FlutterMap(
       options: MapOptions(
         initialCenter: center,
         initialZoom: zoom,
@@ -38,10 +32,7 @@ class BrandMap extends StatelessWidget {
         ),
       ),
       children: [
-        TileLayer(
-          urlTemplate: _tileUrl,
-          userAgentPackageName: 'com.urbantanker.app',
-        ),
+        const MapTileLayer(),
         MarkerLayer(
           markers: [
             Marker(
@@ -52,15 +43,8 @@ class BrandMap extends StatelessWidget {
             ),
           ],
         ),
+        const MapAttribution(),
       ],
-    );
-    if (!colors.isDark) return map;
-    return ColorFiltered(
-      colorFilter: ColorFilter.mode(
-        colors.scaffold.withValues(alpha: 0.55),
-        BlendMode.multiply,
-      ),
-      child: map,
     );
   }
 }

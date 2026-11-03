@@ -8,6 +8,7 @@ import '../../core/design_system/design_system.dart';
 import '../../models/dispatcher.dart';
 import '../../services/friendly_error.dart';
 import '../common/brand_map.dart';
+import '../common/map_tiles.dart';
 
 /// Chennai, where deliveries are made. The map starts here when no active
 /// order has a location yet.
@@ -78,7 +79,6 @@ class _DispatcherLiveScreenState extends ConsumerState<DispatcherLiveScreen> {
             if (order.latitude != null && order.longitude != null) order,
         ];
         final clusters = _cluster(located);
-        final colors = context.colors;
         final map = FlutterMap(
           mapController: _map,
           options: MapOptions(
@@ -88,10 +88,7 @@ class _DispatcherLiveScreenState extends ConsumerState<DispatcherLiveScreen> {
             initialZoom: 12,
           ),
           children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.urbantanker.app',
-            ),
+            const MapTileLayer(),
             MarkerLayer(
               markers: [
                 for (final cluster in clusters)
@@ -103,20 +100,13 @@ class _DispatcherLiveScreenState extends ConsumerState<DispatcherLiveScreen> {
                   ),
               ],
             ),
+            const MapAttribution(),
           ],
         );
         return Stack(
           fit: StackFit.expand,
           children: [
-            colors.isDark
-                ? ColorFiltered(
-                    colorFilter: ColorFilter.mode(
-                      colors.scaffold.withValues(alpha: 0.55),
-                      BlendMode.multiply,
-                    ),
-                    child: map,
-                  )
-                : map,
+            map,
             SafeArea(
               bottom: false,
               child: Align(

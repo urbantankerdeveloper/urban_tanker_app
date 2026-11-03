@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../services/service_area.dart';
 import '../../common/brand_map.dart';
+import '../../common/map_tiles.dart';
 
 class MapLocationPicker extends StatefulWidget {
   const MapLocationPicker({super.key, this.latitude, this.longitude});
@@ -55,10 +56,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                 },
               ),
               children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.urbantanker.app',
-                ),
+                const MapTileLayer(),
                 if (_selected != null)
                   MarkerLayer(
                     markers: [
@@ -73,6 +71,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                       ),
                     ],
                   ),
+                const MapAttribution(),
               ],
             ),
           ),

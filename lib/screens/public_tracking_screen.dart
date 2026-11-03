@@ -9,6 +9,7 @@ import '../models/booking.dart';
 import '../services/api_client.dart';
 import '../services/friendly_error.dart';
 import 'common/brand_map.dart';
+import 'common/map_tiles.dart';
 
 /// Public tracking for a booking, opened from a link. A map fills the screen
 /// and a draggable sheet carries the details. The data refreshes every 30
@@ -308,10 +309,7 @@ class _MapAreaState extends State<_MapArea> {
       mapController: _controller,
       options: MapOptions(initialCenter: vehicle, initialZoom: 15),
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.urbantanker.app',
-        ),
+        const MapTileLayer(),
         MarkerLayer(
           markers: [
             Marker(
@@ -322,19 +320,12 @@ class _MapAreaState extends State<_MapArea> {
             ),
           ],
         ),
+        const MapAttribution(),
       ],
     );
     return Semantics(
       label: 'Map showing the vehicle location',
-      child: colors.isDark
-          ? ColorFiltered(
-              colorFilter: ColorFilter.mode(
-                colors.scaffold.withValues(alpha: 0.55),
-                BlendMode.multiply,
-              ),
-              child: map,
-            )
-          : map,
+      child: map,
     );
   }
 }
