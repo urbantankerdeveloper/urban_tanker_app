@@ -8,6 +8,7 @@ Files:
   loading_water.json   water drop with a ripple (loading)
   delivery_truck.json  truck driving back and forth (in-transit and loading)
   location_pin.json    pin dropping onto its shadow (location)
+  mail.json            envelope with a flap (check your inbox after email sign-up)
 
 These are original animations in the brand colours. A scratch generator script made them and is not checked in.
 They were generated rather than downloaded: the public Lottie samples do not include

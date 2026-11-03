@@ -49,9 +49,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 
-      await tester.tap(find.text('Already a user? Log in'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(SegmentedTabs),
+          matching: find.text('Sign in'),
+        ),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Username'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Username'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     }

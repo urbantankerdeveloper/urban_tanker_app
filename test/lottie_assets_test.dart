@@ -13,6 +13,7 @@ void main() {
     'loading_water',
     'delivery_truck',
     'location_pin',
+    'mail',
   ];
 
   for (final name in names) {
