@@ -43,19 +43,25 @@ class _AuthScreenState extends State<AuthScreen> {
   bool get _isRegistration => _mode == _AuthMode.register;
   bool get _usesPhone => _method == _AuthMethod.phone;
   bool get _usesEmail => _method == _AuthMethod.email;
+  bool get _isMpinRecovery => widget.controller.pendingMpinReset;
 
   /// Customers can create an account by phone or email. Username is for
   /// existing accounts only.
-  List<_AuthMethod> get _methods => _isRegistration
-      ? const [_AuthMethod.phone, _AuthMethod.email]
-      : const [_AuthMethod.phone, _AuthMethod.email, _AuthMethod.username];
+  List<_AuthMethod> get _methods => _isMpinRecovery
+      ? const [_AuthMethod.phone]
+      : _isRegistration
+          ? const [_AuthMethod.phone, _AuthMethod.email]
+          : const [_AuthMethod.phone, _AuthMethod.email, _AuthMethod.username];
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
-    _method =
-        _methodFromName(widget.controller.lastAuthMethod) ?? _AuthMethod.phone;
+    _mode = _isMpinRecovery ? _AuthMode.login : _AuthMode.register;
+    _method = _isMpinRecovery
+        ? _AuthMethod.phone
+        : _methodFromName(widget.controller.lastAuthMethod) ??
+            _AuthMethod.phone;
     if (!_methods.contains(_method)) _method = _AuthMethod.phone;
   }
 
@@ -203,33 +209,37 @@ class _AuthScreenState extends State<AuthScreen> {
     final pendingEmail = controller.pendingEmailVerification;
 
     final title = pendingEmail != null
-        ? 'Verify your email.'
-        : _usesEmail
-            ? _isRegistration
-                ? 'Create your account.'
-                : 'Welcome back.'
-            : _otpRequested
-                ? 'Verify your number.'
-                : _isRegistration
+        ? 'Check your inbox.'
+        : _isMpinRecovery
+            ? 'Recover your account.'
+            : _usesEmail
+                ? _isRegistration
                     ? 'Create your account.'
-                    : _usesPhone
-                        ? 'Welcome back.'
-                        : 'Sign in.';
+                    : 'Welcome back.'
+                : _otpRequested
+                    ? 'Verify your number.'
+                    : _isRegistration
+                        ? 'Create your account.'
+                        : _usesPhone
+                            ? 'Welcome back.'
+                            : 'Sign in.';
     final subtitle = pendingEmail != null
         ? 'One step left to finish.'
-        : _usesEmail
-            ? _isRegistration
-                ? 'Create a customer account with your email and a password, '
-                    'or with a one-time code.'
-                : 'Sign in with your email and password, or with a one-time '
-                    'code.'
-            : _otpRequested
-                ? 'Enter the 6-digit code sent to ${maskPhone(_phone.text)}.'
-                : _isRegistration
-                    ? 'Create a customer account with your mobile number and a one-time code.'
-                    : _usesPhone
-                        ? 'Sign in with a one-time code sent to your mobile number.'
-                        : 'Use your registered username and password.';
+        : _isMpinRecovery
+            ? 'Verify your phone number with a one-time code to reset your MPIN.'
+            : _usesEmail
+                ? _isRegistration
+                    ? 'Create a customer account with your email and a password, '
+                        'or with a one-time code.'
+                    : 'Sign in with your email and password, or with a one-time '
+                        'code.'
+                : _otpRequested
+                    ? 'Enter the 6-digit code sent to ${maskPhone(_phone.text)}.'
+                    : _isRegistration
+                        ? 'Create a customer account with your mobile number and a one-time code.'
+                        : _usesPhone
+                            ? 'Sign in with a one-time code sent to your mobile number.'
+                            : 'Use your registered username and password.';
 
     return Scaffold(
       body: BrandBackdrop(
@@ -280,33 +290,35 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       )
                     else ...[
-                      SegmentedTabs(
-                        labels: const ['Sign in', 'Create account'],
-                        selectedIndex: _isRegistration ? 1 : 0,
-                        onChanged: controller.busy
-                            ? null
-                            : (index) => _selectMode(
-                                  index == 1
-                                      ? _AuthMode.register
-                                      : _AuthMode.login,
-                                ),
-                      ),
-                      const SizedBox(height: AppSpace.md),
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: AppSpace.sm,
-                        runSpacing: AppSpace.sm,
-                        children: [
-                          for (final method in _methods)
-                            ChoiceChip(
-                              label: Text(_methodLabel(method)),
-                              selected: _method == method,
-                              onSelected: controller.busy
-                                  ? null
-                                  : (_) => _selectMethod(method),
-                            ),
-                        ],
-                      ),
+                      if (!_isMpinRecovery) ...[
+                        SegmentedTabs(
+                          labels: const ['Sign in', 'Create account'],
+                          selectedIndex: _isRegistration ? 1 : 0,
+                          onChanged: controller.busy
+                              ? null
+                              : (index) => _selectMode(
+                                    index == 1
+                                        ? _AuthMode.register
+                                        : _AuthMode.login,
+                                  ),
+                        ),
+                        const SizedBox(height: AppSpace.md),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: AppSpace.sm,
+                          runSpacing: AppSpace.sm,
+                          children: [
+                            for (final method in _methods)
+                              ChoiceChip(
+                                label: Text(_methodLabel(method)),
+                                selected: _method == method,
+                                onSelected: controller.busy
+                                    ? null
+                                    : (_) => _selectMethod(method),
+                              ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: AppSpace.lg),
                       GlassCard(
                         padding: const EdgeInsets.all(AppSpace.xl),

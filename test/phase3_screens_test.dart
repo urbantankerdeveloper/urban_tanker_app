@@ -95,6 +95,10 @@ void main() {
         );
 
     await tester.pumpWidget(pad(0));
+    expect(
+      tester.getCenter(find.text('4')).dy - tester.getCenter(find.text('1')).dy,
+      greaterThan(72),
+    );
     await tester.tap(find.text('4'));
     await tester.pumpWidget(pad(1));
     await tester.pump(const Duration(milliseconds: 200));

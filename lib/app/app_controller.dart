@@ -38,6 +38,7 @@ class AppController extends ChangeNotifier {
   bool sessionLocked = false;
   bool biometricPromptOffered = false;
   bool pendingUnlockSetup = false;
+  bool pendingMpinReset = false;
   String? phoneOtpChallengeId;
   String? emailOtpChallengeId;
 
@@ -227,9 +228,11 @@ class AppController extends ChangeNotifier {
   bool get quickUnlockEnabled => biometricEnabled || mpinEnabled;
 
   Future<void> setMpin(String pin) async {
+    await api.saveMpin(pin);
     await mpin.setPin(pin);
     mpinEnabled = true;
     pendingUnlockSetup = false;
+    pendingMpinReset = false;
     notifyListeners();
   }
 
@@ -246,6 +249,11 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> disableMpin() async {
+    try {
+      await api.deleteMpin();
+    } catch (_) {
+      // Local recovery and unlock must remain available if the server is down.
+    }
     await mpin.clear();
     mpinEnabled = false;
     if (!biometricEnabled) sessionLocked = false;
@@ -259,9 +267,17 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> usePhoneOtpRecovery() async {
+    pendingMpinReset = mpinEnabled;
+    rememberAuthMethod('phone');
     await disableMpin();
     await setBiometricEnabled(false);
     await signOut();
+  }
+
+  void dismissMpinReset() {
+    pendingMpinReset = false;
+    pendingUnlockSetup = false;
+    notifyListeners();
   }
 
   Future<void> signIn(String credential, String password) async {

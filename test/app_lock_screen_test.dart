@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:urban_tanker_app/app/app_controller.dart';
+import 'package:urban_tanker_app/core/design_system/design_system.dart';
 import 'package:urban_tanker_app/screens/app_lock_screen.dart';
+import 'package:urban_tanker_app/screens/home/shell/unlock_offer.dart';
+import 'package:urban_tanker_app/screens/unlock_setup_screen.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
 import 'package:urban_tanker_app/services/mpin_service.dart';
 
@@ -19,11 +22,21 @@ class _MemoryStore implements MpinStore {
   Future<void> delete(String key) async => values.remove(key);
 }
 
+class _MpinApi extends ApiClient {
+  _MpinApi() : super(baseUrl: 'https://example.test/api');
+
+  @override
+  Future<void> saveMpin(String pin) async {}
+
+  @override
+  Future<void> deleteMpin() async {}
+}
+
 Future<AppController> _lockedController() async {
   SharedPreferences.setMockInitialValues({});
   final preferences = await SharedPreferences.getInstance();
   final controller = AppController(
-    api: ApiClient(),
+    api: _MpinApi(),
     preferences: preferences,
     mpin: MpinService(store: _MemoryStore()),
   );
@@ -49,6 +62,7 @@ void main() {
       MaterialApp(home: AppLockScreen(controller: controller)),
     );
 
+    expect(find.text('Forgot MPIN? Recover with phone OTP'), findsOneWidget);
     await _enter(tester, '9999');
 
     expect(find.text('Incorrect MPIN. 4 attempts left.'), findsOneWidget);
@@ -64,5 +78,44 @@ void main() {
     await _enter(tester, '1234');
 
     expect(controller.sessionLocked, isFalse);
+  });
+
+  testWidgets('the MPIN reset screen explains and labels the reset flow',
+      (tester) async {
+    final controller = await _lockedController();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildLightTheme(),
+        home: UnlockSetupScreen(controller: controller, isReset: true),
+      ),
+    );
+
+    expect(find.text('Reset your MPIN'), findsOneWidget);
+    expect(find.text('Choose a new 4 to 6 digit MPIN.'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
+  });
+
+  testWidgets('phone recovery opens the reset screen after sign-in',
+      (tester) async {
+    final controller = await _lockedController();
+    controller.pendingMpinReset = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildLightTheme(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => offerUnlockSetup(context, controller),
+              child: const Text('Continue recovery'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Continue recovery'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reset your MPIN'), findsOneWidget);
   });
 }

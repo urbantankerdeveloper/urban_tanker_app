@@ -499,7 +499,12 @@ Future<void> openBookingForm(
                         normalizeIndianPhone(phoneController.text);
                     phoneVerified =
                         verifiedPhone != null && normalized == verifiedPhone;
-                    if (!phoneVerified) phoneChallengeId = null;
+                    if (!phoneVerified) {
+                      phoneChallengeId = null;
+                      emailChallengeId = null;
+                      otpController.clear();
+                      emailOtpController.clear();
+                    }
                     bookingFormError = null;
                   }),
                   validator: (value) {
@@ -532,31 +537,21 @@ Future<void> openBookingForm(
                     ),
                   ),
                 if (!phoneVerified && !loadingPhoneVerification) ...[
-                  if (AuthFeatureFlags.emailOtp) ...[
-                    const SizedBox(height: AppSpace.md),
-                    TextFormField(
-                      controller: emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      decoration: const InputDecoration(
-                        labelText: 'Email (optional)',
-                      ),
-                      onChanged: (_) => setSheetState(() {
-                        bookingFormError = null;
-                      }),
-                    ),
-                  ],
                   const SizedBox(height: AppSpace.md),
                   Row(
                     children: [
                       Expanded(
                         child: TextFormField(
-                          controller: otpController,
+                          controller: emailChallengeId == null
+                              ? otpController
+                              : emailOtpController,
                           keyboardType: TextInputType.number,
                           decoration: InputDecoration(
-                            labelText: AuthFeatureFlags.emailOtp
-                                ? 'SMS code'
-                                : 'OTP',
+                            labelText: emailChallengeId != null
+                                ? 'Email code'
+                                : AuthFeatureFlags.emailOtp
+                                    ? 'SMS code'
+                                    : 'OTP',
                           ),
                         ),
                       ),
@@ -566,40 +561,59 @@ Future<void> openBookingForm(
                           try {
                             final normalized =
                                 normalizeIndianPhone(phoneController.text);
-                            final email = AuthFeatureFlags.emailOtp
-                                ? emailController.text.trim()
-                                : '';
                             final challenge =
                                 await controller.api.requestBookingOtp(
                               phone: normalized,
-                              email: email.isEmpty ? null : email,
                             );
                             setSheetState(() {
                               phoneChallengeId = challenge.challengeId;
                               emailChallengeId = challenge.emailChallengeId;
-                              bookingFormError = email.isEmpty
-                                  ? 'OTP sent. Enter it to verify this number.'
-                                  : 'Codes sent to your phone and email. '
-                                      'Enter either one to verify.';
+                              bookingFormError =
+                                  'OTP sent. Enter it to verify this number.';
                             });
                           } catch (error) {
-                            setSheetState(
-                              () => bookingFormError = friendlyError(error),
-                            );
+                            final accountEmail = controller.user?.email;
+                            final canUseEmailFallback = accountEmail != null &&
+                                accountEmail.trim().isNotEmpty &&
+                                error is ApiException &&
+                                error.statusCode == 503 &&
+                                error.message ==
+                                    'Mobile verification is not configured yet.';
+                            if (!canUseEmailFallback) {
+                              setSheetState(() =>
+                                  bookingFormError = friendlyError(error));
+                              return;
+                            }
+                            try {
+                              final challengeId = await controller.api
+                                  .requestRegisteredBookingEmailOtp(
+                                phone: normalizeIndianPhone(
+                                  phoneController.text,
+                                ),
+                              );
+                              setSheetState(() {
+                                emailController.text = accountEmail.trim();
+                                phoneChallengeId = null;
+                                emailChallengeId = challengeId;
+                                bookingFormError = 'SMS is unavailable. A '
+                                    'verification code was sent to your '
+                                    'registered email.';
+                              });
+                            } catch (fallbackError) {
+                              setSheetState(() => bookingFormError =
+                                  friendlyError(fallbackError));
+                            }
                           }
                         },
                         child: const Text('Send OTP'),
                       ),
                     ],
                   ),
-                  if (AuthFeatureFlags.emailOtp) ...[
-                    const SizedBox(height: AppSpace.md),
-                    TextFormField(
-                      controller: emailOtpController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Email code',
-                      ),
+                  if (bookingFormError != null) ...[
+                    const SizedBox(height: AppSpace.sm),
+                    Text(
+                      bookingFormError!,
+                      style: TextStyle(color: colors.danger.fg),
                     ),
                   ],
                   const SizedBox(height: AppSpace.xs),
@@ -928,10 +942,8 @@ Future<void> openBookingForm(
             );
             if (leave && context.mounted) Navigator.pop(context);
           },
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.88,
-            ),
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.65,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,

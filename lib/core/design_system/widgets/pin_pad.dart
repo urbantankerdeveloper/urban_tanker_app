@@ -133,7 +133,7 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final row in PinPad._rows)
+              for (final row in PinPad._rows) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -147,6 +147,8 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
                       ),
                   ],
                 ),
+                const SizedBox(height: AppSpace.sm),
+              ],
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [

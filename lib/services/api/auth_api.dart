@@ -203,6 +203,27 @@ class AuthApi {
     );
   }
 
+  Future<String> requestRegisteredBookingEmailOtp({
+    required String phone,
+  }) async {
+    final normalized = normalizeIndianPhone(phone);
+    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
+      throw const FormatException('Enter a valid 10-digit mobile number.');
+    }
+    final response = await _api.request(
+      'POST',
+      '/auth/booking/email-fallback',
+      body: {'phone': normalized},
+      retry: false,
+    );
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic> ||
+        decoded['emailChallengeId'] is! String) {
+      throw const FormatException('The booking email response was invalid.');
+    }
+    return decoded['emailChallengeId'] as String;
+  }
+
   /// Verifies the SMS code, the email code, or both. Send only the pair the
   /// user entered; each pair that is sent must be correct.
   Future<void> verifyPhoneOtp({
@@ -288,6 +309,19 @@ class AuthApi {
       '/auth/preferences',
       body: {'themeMode': themeMode},
     );
+  }
+
+  Future<void> saveMpin(String pin) async {
+    await _api.request(
+      'PUT',
+      '/auth/mpin',
+      body: {'pin': pin},
+      retry: false,
+    );
+  }
+
+  Future<void> deleteMpin() async {
+    await _api.request('DELETE', '/auth/mpin', retry: false);
   }
 
   Future<AuthResult> _authRequest(

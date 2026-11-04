@@ -8,9 +8,14 @@ import '../services/mpin_service.dart';
 /// Creates or changes the MPIN. The user enters it twice, then can also turn on
 /// fingerprint unlock if the device supports it.
 class UnlockSetupScreen extends StatefulWidget {
-  const UnlockSetupScreen({required this.controller, super.key});
+  const UnlockSetupScreen({
+    required this.controller,
+    this.isReset = false,
+    super.key,
+  });
 
   final AppController controller;
+  final bool isReset;
 
   @override
   State<UnlockSetupScreen> createState() => _UnlockSetupScreenState();
@@ -57,7 +62,17 @@ class _UnlockSetupScreenState extends State<UnlockSetupScreen> {
       return;
     }
     setState(() => _saving = true);
-    await widget.controller.setMpin(_pin);
+    try {
+      await widget.controller.setMpin(_pin);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error =
+            'MPIN could not be saved. Check your connection and try again.';
+      });
+      return;
+    }
     if (!mounted) return;
     await _offerFingerprint();
     if (mounted) Navigator.of(context).pop();
@@ -102,8 +117,15 @@ class _UnlockSetupScreenState extends State<UnlockSetupScreen> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final canContinue = _pin.length >= MpinService.minLength && !_saving;
+    final title = widget.isReset
+        ? _confirming
+            ? 'Confirm your new MPIN'
+            : 'Reset your MPIN'
+        : _confirming
+            ? 'Confirm your MPIN'
+            : 'Create your MPIN';
     return AppScaffold(
-      title: _confirming ? 'Confirm your MPIN' : 'Create your MPIN',
+      title: title,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpace.gutter),
         child: Center(
@@ -115,9 +137,14 @@ class _UnlockSetupScreenState extends State<UnlockSetupScreen> {
               children: [
                 Text(
                   _confirming
-                      ? 'Enter the same MPIN again.'
-                      : 'Choose a ${MpinService.minLength} to '
-                          '${MpinService.maxLength} digit MPIN. You will use it to unlock the app.',
+                      ? widget.isReset
+                          ? 'Enter the new MPIN again to complete the reset.'
+                          : 'Enter the same MPIN again.'
+                      : widget.isReset
+                          ? 'Choose a new ${MpinService.minLength} to '
+                              '${MpinService.maxLength} digit MPIN.'
+                          : 'Choose a ${MpinService.minLength} to '
+                              '${MpinService.maxLength} digit MPIN. You will use it to unlock the app.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
@@ -140,7 +167,11 @@ class _UnlockSetupScreenState extends State<UnlockSetupScreen> {
                 ),
                 const SizedBox(height: AppSpace.xl),
                 PrimaryButton(
-                  label: _confirming ? 'Save MPIN' : 'Continue',
+                  label: _confirming
+                      ? widget.isReset
+                          ? 'Reset MPIN'
+                          : 'Save MPIN'
+                      : 'Continue',
                   loading: _saving,
                   onPressed: canContinue ? _continue : null,
                 ),

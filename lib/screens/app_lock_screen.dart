@@ -199,7 +199,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                         onPressed: busy ? null : controller.usePhoneOtpRecovery,
                         child: Text(
                           mpinOn
-                              ? 'Forgot MPIN? Sign out and use phone number and OTP'
+                              ? 'Forgot MPIN? Recover with phone OTP'
                               : 'Sign out and use phone number and OTP',
                           textAlign: TextAlign.center,
                         ),

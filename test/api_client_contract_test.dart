@@ -98,6 +98,56 @@ void main() {
     expect(jsonDecode(captured!.body), {'refreshToken': 'refresh-token-value'});
   });
 
+  test('MPIN enrollment sends the PIN only to the authenticated API', () async {
+    http.Request? captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response('', 204);
+    });
+
+    await _SignedInApiClient(client: client).saveMpin('1234');
+
+    expect(captured?.method, 'PUT');
+    expect(captured?.url.path, '/api/auth/mpin');
+    expect(captured?.headers['authorization'], 'Bearer access-token');
+    expect(jsonDecode(captured!.body), {'pin': '1234'});
+  });
+
+  test('MPIN removal uses the authenticated API', () async {
+    http.Request? captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response('', 204);
+    });
+
+    await _SignedInApiClient(client: client).deleteMpin();
+
+    expect(captured?.method, 'DELETE');
+    expect(captured?.url.path, '/api/auth/mpin');
+    expect(captured?.headers['authorization'], 'Bearer access-token');
+  });
+
+  test('registered booking email fallback never accepts a client email',
+      () async {
+    http.Request? captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        jsonEncode({'emailChallengeId': 'email-challenge'}),
+        202,
+      );
+    });
+
+    final challengeId = await _SignedInApiClient(client: client)
+        .requestRegisteredBookingEmailOtp(phone: '+91 98765 43210');
+
+    expect(challengeId, 'email-challenge');
+    expect(captured?.method, 'POST');
+    expect(captured?.url.path, '/api/auth/booking/email-fallback');
+    expect(captured?.headers['authorization'], 'Bearer access-token');
+    expect(jsonDecode(captured!.body), {'phone': '9876543210'});
+  });
+
   test('idempotency keys are random RFC 4122 version 4 UUIDs', () {
     final pattern = RegExp(
       r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',

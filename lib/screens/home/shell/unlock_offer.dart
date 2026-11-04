@@ -9,6 +9,18 @@ Future<void> offerUnlockSetup(
   BuildContext context,
   AppController controller,
 ) async {
+  if (controller.pendingMpinReset) {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UnlockSetupScreen(
+          controller: controller,
+          isReset: true,
+        ),
+      ),
+    );
+    if (controller.pendingMpinReset) controller.dismissMpinReset();
+    return;
+  }
   if (!controller.pendingUnlockSetup) return;
   await controller.markBiometricPromptOffered();
   if (!context.mounted) return;

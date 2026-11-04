@@ -176,6 +176,23 @@ void main() {
     expect(find.text('Password'), findsNothing);
   });
 
+  testWidgets('MPIN recovery requires phone OTP sign-in', (tester) async {
+    controller.pendingMpinReset = true;
+    await showAuthScreen(tester);
+
+    expect(find.text('Recover your account.'), findsOneWidget);
+    expect(
+      find.text(
+        'Verify your phone number with a one-time code to reset your MPIN.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(SegmentedTabs), findsNothing);
+    expect(find.byType(ChoiceChip), findsNothing);
+    expect(find.text('10-digit mobile number'), findsOneWidget);
+    expect(find.text('Send verification code'), findsOneWidget);
+  });
+
   testWidgets('existing users can sign in with username and password',
       (tester) async {
     api.loginError = 'Invalid credentials';

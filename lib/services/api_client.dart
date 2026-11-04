@@ -165,6 +165,9 @@ class ApiClient implements ApiTransport {
           {required String phone, String? email}) =>
       _auth.requestBookingOtp(phone: phone, email: email);
 
+  Future<String> requestRegisteredBookingEmailOtp({required String phone}) =>
+      _auth.requestRegisteredBookingEmailOtp(phone: phone);
+
   Future<void> verifyPhoneOtp({
     required String phone,
     String? challengeId,
@@ -202,6 +205,10 @@ class ApiClient implements ApiTransport {
 
   Future<void> updateThemePreference(String themeMode) =>
       _auth.updateThemePreference(themeMode);
+
+  Future<void> saveMpin(String pin) => _auth.saveMpin(pin);
+
+  Future<void> deleteMpin() => _auth.deleteMpin();
 
   // Customer bookings, tracking and account.
 
