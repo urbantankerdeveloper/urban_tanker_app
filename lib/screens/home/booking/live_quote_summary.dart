@@ -10,10 +10,13 @@ String formatQuoteSummary(Object? quote) {
   if (quote is! Map<String, dynamic>) return 'Quote unavailable.';
   String money(Object? value) =>
       value is num ? '₹${(value / 100).toStringAsFixed(2)}' : 'Unavailable';
+  final gstRate = quote['gstRate'];
+  final gstLabel =
+      gstRate is num ? 'GST (${(gstRate * 100).toStringAsFixed(0)}%)' : 'GST';
   return [
     'Subtotal: ${money(quote['subtotalPaise'])}',
     'Discount: ${money(quote['discountPaise'])}',
-    'GST: ${money(quote['gstPaise'])}',
+    '$gstLabel: ${money(quote['gstPaise'])}',
     'Total: ${money(quote['totalPaise'])}',
   ].join('\n');
 }

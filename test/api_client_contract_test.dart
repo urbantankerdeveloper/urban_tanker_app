@@ -148,6 +148,48 @@ void main() {
     expect(jsonDecode(captured!.body), {'phone': '9876543210'});
   });
 
+  test('phone verification reads the backend booking policy', () async {
+    final client = MockClient((_) async => http.Response(
+        jsonEncode(
+            {'phone': '9876543210', 'verified': true, 'required': false}),
+        200));
+
+    final state = await _SignedInApiClient(client: client).phoneVerification();
+
+    expect(state.phone, '9876543210');
+    expect(state.verified, isTrue);
+    expect(state.required, isFalse);
+  });
+
+  test('coupon validation returns the details used by the booking UI',
+      () async {
+    final client = MockClient((request) async {
+      expect(request.url.path, '/api/customer/coupons/validate');
+      return http.Response(
+        jsonEncode({
+          'valid': true,
+          'coupon': {
+            'id': 'coupon-1',
+            'code': 'SAVE10',
+            'title': 'Ten percent off',
+            'discountType': 'percentage',
+            'discountValue': 10,
+          },
+        }),
+        200,
+      );
+    });
+
+    final coupon = await _SignedInApiClient(client: client).validateCoupon(
+      code: 'SAVE10',
+      serviceCode: 'water_tanker',
+      amount: 0,
+    );
+
+    expect(coupon['code'], 'SAVE10');
+    expect(coupon['title'], 'Ten percent off');
+  });
+
   test('idempotency keys are random RFC 4122 version 4 UUIDs', () {
     final pattern = RegExp(
       r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',

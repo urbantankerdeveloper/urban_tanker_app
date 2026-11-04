@@ -140,6 +140,7 @@ class AuthApi {
     return PhoneVerificationState(
       phone: normalizeIndianPhone((decoded['phone'] ?? '').toString()),
       verified: decoded['verified'] == true,
+      required: decoded['required'] != false,
     );
   }
 

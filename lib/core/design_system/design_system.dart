@@ -29,5 +29,6 @@ export 'widgets/state_views.dart';
 export 'widgets/status_dot.dart';
 export 'widgets/status_banners.dart';
 export 'widgets/status_chip.dart';
+export 'widgets/slide_to_confirm.dart';
 export 'widgets/surfaces.dart';
 export 'widgets/timeline.dart';

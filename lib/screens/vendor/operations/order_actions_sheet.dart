@@ -580,9 +580,9 @@ Future<bool> showConfirmSheet(
               ),
               const SizedBox(width: AppSpace.md),
               Expanded(
-                child: PrimaryButton(
-                  label: confirmLabel,
-                  onPressed: () => Navigator.pop(sheetContext, true),
+                child: SlideToConfirm(
+                  label: confirmLabel.toLowerCase(),
+                  onConfirmed: () => Navigator.pop(sheetContext, true),
                 ),
               ),
             ],

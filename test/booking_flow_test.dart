@@ -12,12 +12,19 @@ class _FakeApi extends ApiClient {
   _FakeApi() : super(baseUrl: 'https://example.test/api');
 
   bool mobileOtpUnavailable = false;
+  bool bookingPhoneVerificationRequired = true;
+  String accountPhone = '';
+  bool accountPhoneVerified = false;
   String? fallbackPhone;
   String? verifiedEmail;
 
   @override
   Future<PhoneVerificationState> phoneVerification() async =>
-      const PhoneVerificationState(phone: '', verified: false);
+      PhoneVerificationState(
+        phone: accountPhone,
+        verified: accountPhoneVerified,
+        required: bookingPhoneVerificationRequired,
+      );
 
   @override
   Future<List<AccountRecord>> addresses() async => const [];
@@ -74,6 +81,43 @@ const _tanker = TankerService(
 );
 
 void main() {
+  testWidgets('disabled booking verification uses the profile phone',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await tester.runAsync(SharedPreferences.getInstance);
+    final api = _FakeApi()
+      ..bookingPhoneVerificationRequired = false
+      ..accountPhone = '9876543210'
+      ..accountPhoneVerified = true;
+    final controller = AppController(api: api, preferences: preferences!);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => openBookingForm(
+                context,
+                controller: controller,
+                serviceCatalog: const [_tanker],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Using your account phone: 9876543210'), findsOneWidget);
+    expect(find.text('Send OTP'), findsNothing);
+  });
+
   testWidgets('booking falls back to the registered email when SMS is off',
       (tester) async {
     tester.view.physicalSize = const Size(800, 1600);

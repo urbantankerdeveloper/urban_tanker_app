@@ -81,10 +81,15 @@ typedef SignUpOutcome = ({
 });
 
 class PhoneVerificationState {
-  const PhoneVerificationState({required this.phone, required this.verified});
+  const PhoneVerificationState({
+    required this.phone,
+    required this.verified,
+    this.required = true,
+  });
 
   final String phone;
   final bool verified;
+  final bool required;
 }
 
 class BookingPage {

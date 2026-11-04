@@ -132,6 +132,34 @@ void main() {
     expect(picked, 1);
   });
 
+  testWidgets('slide-to-confirm activates after the drag reaches the end',
+      (tester) async {
+    var confirmed = false;
+    await tester.pumpWidget(
+      _host(
+        SizedBox(
+          width: 280,
+          child: SlideToConfirm(
+            label: 'booking',
+            onConfirmed: () => confirmed = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(
+        find.byKey(const Key('slide-to-confirm')), const Offset(8, 0));
+    await tester.pumpAndSettle();
+    expect(confirmed, isFalse);
+
+    await tester.drag(
+      find.byKey(const Key('slide-to-confirm')),
+      const Offset(320, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(confirmed, isTrue);
+  });
+
   testWidgets('showAppSnack shows the message with its variant icon',
       (tester) async {
     await tester.pumpWidget(

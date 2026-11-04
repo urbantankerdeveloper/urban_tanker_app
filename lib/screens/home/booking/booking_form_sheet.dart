@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-
 import '../../../app/app_controller.dart';
 import '../../../app/auth_feature_flags.dart';
 import '../../../core/design_system/design_system.dart';
@@ -16,6 +15,167 @@ import '../../../services/service_area.dart';
 import '../../booking_details_screen.dart';
 import 'booking_fields.dart';
 import 'live_quote_summary.dart';
+
+typedef _VerifiedBookingContact = ({String phone, String challengeId});
+
+Future<_VerifiedBookingContact?> _showBookingPhoneVerificationDialog(
+  BuildContext context,
+  ApiClient api,
+  String initialPhone,
+) {
+  return showDialog<_VerifiedBookingContact>(
+    context: context,
+    builder: (_) => _BookingPhoneVerificationDialog(
+      api: api,
+      initialPhone: initialPhone,
+    ),
+  );
+}
+
+class _BookingPhoneVerificationDialog extends StatefulWidget {
+  const _BookingPhoneVerificationDialog({
+    required this.api,
+    required this.initialPhone,
+  });
+
+  final ApiClient api;
+  final String initialPhone;
+
+  @override
+  State<_BookingPhoneVerificationDialog> createState() =>
+      _BookingPhoneVerificationDialogState();
+}
+
+class _BookingPhoneVerificationDialogState
+    extends State<_BookingPhoneVerificationDialog> {
+  late final TextEditingController _phone =
+      TextEditingController(text: widget.initialPhone);
+  final _otp = TextEditingController();
+  String? _challengeId;
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _phone.dispose();
+    _otp.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendCode() async {
+    final phone = normalizeIndianPhone(_phone.text);
+    if (!RegExp(r'^\d{10}$').hasMatch(phone)) {
+      setState(() => _error = 'Enter a valid 10-digit mobile number.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.api.requestBookingOtp(phone: phone);
+      if (!mounted) return;
+      if (result.challengeId == null) {
+        setState(() => _error = 'A code could not be sent to this number.');
+        return;
+      }
+      setState(() {
+        _challengeId = result.challengeId;
+        _otp.clear();
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _verify() async {
+    final challengeId = _challengeId;
+    final phone = normalizeIndianPhone(_phone.text);
+    if (challengeId == null) {
+      setState(() => _error = 'Send a verification code first.');
+      return;
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(_otp.text.trim())) {
+      setState(() => _error = 'Enter the 6-digit verification code.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.api.verifyPhoneOtp(
+        phone: phone,
+        challengeId: challengeId,
+        otp: _otp.text,
+      );
+      if (mounted) {
+        Navigator.pop(
+          context,
+          (phone: phone, challengeId: challengeId),
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AppDialog(
+        title: 'Verify booking phone',
+        message: 'Verify the contact number before confirming your booking.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'Mobile number'),
+              onChanged: (_) => setState(() {
+                _challengeId = null;
+                _error = null;
+              }),
+            ),
+            const SizedBox(height: AppSpace.md),
+            TextField(
+              controller: _otp,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '6-digit verification code',
+              ),
+              onChanged: (_) => setState(() => _error = null),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: AppSpace.sm),
+              Text(
+                _error!,
+                style: TextStyle(color: context.colors.danger.fg),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          OutlinedButton(
+            onPressed: _busy ? null : _sendCode,
+            child: const Text('Send code'),
+          ),
+          PrimaryButton(
+            label: 'Verify number',
+            loading: _busy,
+            onPressed: _busy ? null : _verify,
+          ),
+        ],
+      );
+}
 
 String _paymentMethodLabel(String method) => switch (method) {
       'wallet' => 'Wallet',
@@ -119,6 +279,7 @@ Future<void> openBookingForm(
   String? emailChallengeId;
   String? verifiedPhone;
   var phoneVerified = false;
+  var phoneVerificationRequired = true;
   var loadingPhoneVerification = true;
   var validatingCoupon = false;
   var submittingBooking = false;
@@ -130,6 +291,7 @@ Future<void> openBookingForm(
     phoneController.text = savedPhone.phone;
     verifiedPhone = savedPhone.verified ? savedPhone.phone : null;
     phoneVerified = savedPhone.verified && savedPhone.phone.isNotEmpty;
+    phoneVerificationRequired = savedPhone.required;
   } catch (_) {
     // The booking form still permits verification when the number is changed.
   } finally {
@@ -242,6 +404,7 @@ Future<void> openBookingForm(
           final form = stepKeys[step].currentState;
           if (form != null && !form.validate()) return;
           setSheetState(() => submittingBooking = true);
+          var bookingContactRecoveryUsed = false;
           try {
             final services = buildServiceDetails();
             final quotePreview = await controller.api.previewBookingQuote(
@@ -265,91 +428,125 @@ Future<void> openBookingForm(
               (id) =>
                   serviceCatalog.firstWhere((service) => service.id == id).name,
             );
-            final confirmed = await showDialog<bool>(
-              context: context,
-              builder: (context) => AppDialog(
-                title: 'Confirm booking quote',
-                content: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var index = 0; index < services.length; index++) ...[
-                        Text(
-                          selectedServiceNames.elementAt(index),
-                          style: theme.textTheme.titleSmall,
-                        ),
-                        if (services[index].quantity.trim().isNotEmpty)
+            while (context.mounted) {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (dialogContext) => AppDialog(
+                  title: 'Confirm booking quote',
+                  content: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var index = 0;
+                            index < services.length;
+                            index++) ...[
                           Text(
-                            'Quantity/capacity: ${services[index].quantity.trim()}',
+                            selectedServiceNames.elementAt(index),
+                            style: theme.textTheme.titleSmall,
                           ),
-                        if (services[index].waterType?.trim().isNotEmpty ==
-                            true)
-                          Text('Water type: ${services[index].waterType}'),
-                        if (services[index].tankerCount?.trim().isNotEmpty ==
-                            true)
-                          Text(
-                            'Tanker count: ${services[index].tankerCount}',
-                          ),
-                        Text('Details: ${services[index].details.trim()}'),
-                        const SizedBox(height: AppSpace.sm),
+                          if (services[index].quantity.trim().isNotEmpty)
+                            Text(
+                              'Quantity/capacity: ${services[index].quantity.trim()}',
+                            ),
+                          if (services[index].waterType?.trim().isNotEmpty ==
+                              true)
+                            Text('Water type: ${services[index].waterType}'),
+                          if (services[index].tankerCount?.trim().isNotEmpty ==
+                              true)
+                            Text(
+                                'Tanker count: ${services[index].tankerCount}'),
+                          Text('Details: ${services[index].details.trim()}'),
+                          const SizedBox(height: AppSpace.sm),
+                        ],
+                        Text(formatQuoteSummary(quote)),
                       ],
-                      Text(formatQuoteSummary(quote)),
-                    ],
+                    ),
                   ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('Review'),
+                    ),
+                    SizedBox(
+                      width: 240,
+                      height: AppSize.buttonHeight,
+                      child: SlideToConfirm(
+                        label: 'confirm booking',
+                        onConfirmed: () => Navigator.pop(dialogContext, true),
+                      ),
+                    ),
+                  ],
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Review'),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Confirm booking'),
-                  ),
-                ],
-              ),
-            );
-            if (confirmed != true || !context.mounted) return;
-            // One key per distinct submission. A retry of the same form reuses
-            // it, so the server can dedupe it.
-            final keyFingerprint = jsonEncode([
-              for (final service in services) service.toJson(),
-              notesController.text,
-              phoneController.text,
-              validatedCoupon == null ? null : couponController.text.trim(),
-              paymentMethod,
-              phoneChallengeId,
-            ]);
-            if (keyFingerprint != bookingKeyFingerprint) {
-              bookingKeyFingerprint = keyFingerprint;
-              bookingKey = newIdempotencyKey();
+              );
+              if (confirmed != true || !context.mounted) return;
+
+              final keyFingerprint = jsonEncode([
+                for (final service in services) service.toJson(),
+                notesController.text,
+                phoneController.text,
+                validatedCoupon == null ? null : couponController.text.trim(),
+                paymentMethod,
+                phoneChallengeId,
+              ]);
+              if (keyFingerprint != bookingKeyFingerprint) {
+                bookingKeyFingerprint = keyFingerprint;
+                bookingKey = newIdempotencyKey();
+              }
+              try {
+                final booking = await controller.api.createBooking(
+                  serviceId: services.first.serviceId,
+                  capacity: services.first.quantity,
+                  services: services,
+                  location: services.first.location ?? '',
+                  deliveryDate: services.first.deliveryDate ?? '',
+                  notes: notesController.text,
+                  paymentMethod: paymentMethod,
+                  latitude: services.first.latitude,
+                  longitude: services.first.longitude,
+                  couponCode: validatedCoupon == null
+                      ? null
+                      : couponController.text.trim(),
+                  phone: phoneController.text,
+                  phoneVerificationChallengeId: phoneChallengeId,
+                  idempotencyKey: bookingKey,
+                );
+                booking['service_details'] =
+                    services.map((service) => service.toJson()).toList();
+                booking['service_names'] = {
+                  for (final serviceId in selectedServices)
+                    serviceId: serviceCatalog
+                        .firstWhere((service) => service.id == serviceId)
+                        .name,
+                };
+                if (context.mounted) Navigator.pop(context, booking);
+                return;
+              } on ApiException catch (error) {
+                const contactVerificationError =
+                    'Verify the contact number for booking contact before booking.';
+                if (!phoneVerificationRequired ||
+                    error.statusCode != 400 ||
+                    error.message != contactVerificationError ||
+                    bookingContactRecoveryUsed) {
+                  rethrow;
+                }
+                bookingContactRecoveryUsed = true;
+                final verified = await _showBookingPhoneVerificationDialog(
+                  context,
+                  controller.api,
+                  phoneController.text,
+                );
+                if (verified == null || !context.mounted) return;
+                setSheetState(() {
+                  phoneController.text = verified.phone;
+                  phoneChallengeId = verified.challengeId;
+                  emailChallengeId = null;
+                  phoneVerified = true;
+                  verifiedPhone = verified.phone;
+                  bookingFormError = null;
+                });
+              }
             }
-            final booking = await controller.api.createBooking(
-              serviceId: services.first.serviceId,
-              capacity: services.first.quantity,
-              services: services,
-              location: services.first.location ?? '',
-              deliveryDate: services.first.deliveryDate ?? '',
-              notes: notesController.text,
-              paymentMethod: paymentMethod,
-              latitude: services.first.latitude,
-              longitude: services.first.longitude,
-              couponCode:
-                  validatedCoupon == null ? null : couponController.text.trim(),
-              phone: phoneController.text,
-              phoneVerificationChallengeId: phoneChallengeId,
-              idempotencyKey: bookingKey,
-            );
-            booking['service_details'] =
-                services.map((service) => service.toJson()).toList();
-            booking['service_names'] = {
-              for (final serviceId in selectedServices)
-                serviceId: serviceCatalog
-                    .firstWhere((service) => service.id == serviceId)
-                    .name,
-            };
-            if (context.mounted) Navigator.pop(context, booking);
           } catch (error) {
             if (context.mounted) {
               showAppSnack(
@@ -407,6 +604,59 @@ Future<void> openBookingForm(
             }
           }
         }
+
+        Widget couponEntry() => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Coupon', style: theme.textTheme.titleSmall),
+                const SizedBox(height: AppSpace.sm),
+                TextFormField(
+                  controller: couponController,
+                  textCapitalization: TextCapitalization.characters,
+                  onChanged: (_) => setSheetState(() {
+                    validatedCoupon = null;
+                    couponMessage = null;
+                  }),
+                  decoration: InputDecoration(
+                    labelText: 'Coupon code',
+                    hintText: 'Enter code',
+                    suffixIcon: validatingCoupon
+                        ? const Padding(
+                            padding: EdgeInsets.all(AppSpace.md),
+                            child: SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : validatedCoupon != null
+                            ? IconButton(
+                                tooltip: 'Remove coupon',
+                                onPressed: () => setSheetState(() {
+                                  couponController.clear();
+                                  validatedCoupon = null;
+                                  couponMessage = null;
+                                }),
+                                icon: const Icon(Icons.close),
+                              )
+                            : TextButton(
+                                onPressed: applyCoupon,
+                                child: const Text('Apply'),
+                              ),
+                  ),
+                ),
+                if (couponMessage != null) ...[
+                  const SizedBox(height: AppSpace.xs),
+                  Text(
+                    couponMessage!,
+                    style: TextStyle(
+                      color: validatedCoupon == null
+                          ? colors.danger.fg
+                          : colors.success.fg,
+                    ),
+                  ),
+                ],
+              ],
+            );
 
         Widget serviceEditor(TankerService service) {
           final fields = serviceFields[service.id]!;
@@ -487,33 +737,44 @@ Future<void> openBookingForm(
                   style: theme.textTheme.bodyMedium,
                 ),
                 const SizedBox(height: AppSpace.md),
-                TextFormField(
-                  controller: phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Booking phone number',
-                    helperText: 'Shared across all selected services',
+                if (phoneVerificationRequired)
+                  TextFormField(
+                    controller: phoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Booking phone number',
+                      helperText: 'Shared across all selected services',
+                    ),
+                    onChanged: (_) => setSheetState(() {
+                      final normalized =
+                          normalizeIndianPhone(phoneController.text);
+                      phoneVerified =
+                          verifiedPhone != null && normalized == verifiedPhone;
+                      if (!phoneVerified) {
+                        phoneChallengeId = null;
+                        emailChallengeId = null;
+                        otpController.clear();
+                        emailOtpController.clear();
+                      }
+                      bookingFormError = null;
+                    }),
+                    validator: (value) {
+                      final normalized = normalizeIndianPhone(value ?? '');
+                      return RegExp(r'^\d{10}$').hasMatch(normalized)
+                          ? null
+                          : 'Enter a valid 10-digit mobile number.';
+                    },
+                  )
+                else if (phoneController.text.isNotEmpty)
+                  Text(
+                    'Using your account phone: ${phoneController.text}',
+                    style: theme.textTheme.bodyMedium,
+                  )
+                else
+                  Text(
+                    'Add a mobile number to your account before booking.',
+                    style: TextStyle(color: colors.danger.fg),
                   ),
-                  onChanged: (_) => setSheetState(() {
-                    final normalized =
-                        normalizeIndianPhone(phoneController.text);
-                    phoneVerified =
-                        verifiedPhone != null && normalized == verifiedPhone;
-                    if (!phoneVerified) {
-                      phoneChallengeId = null;
-                      emailChallengeId = null;
-                      otpController.clear();
-                      emailOtpController.clear();
-                    }
-                    bookingFormError = null;
-                  }),
-                  validator: (value) {
-                    final normalized = normalizeIndianPhone(value ?? '');
-                    return RegExp(r'^\d{10}$').hasMatch(normalized)
-                        ? null
-                        : 'Enter a valid 10-digit mobile number.';
-                  },
-                ),
                 if (loadingPhoneVerification)
                   const Padding(
                     padding: EdgeInsets.only(top: AppSpace.md),
@@ -527,7 +788,9 @@ Future<void> openBookingForm(
                         Icon(Icons.verified_outlined, color: colors.success.fg),
                         const SizedBox(width: AppSpace.sm),
                         Text(
-                          'Number verified',
+                          phoneVerificationRequired
+                              ? 'Number verified'
+                              : 'Using your account phone',
                           style: TextStyle(
                             color: colors.success.fg,
                             fontWeight: FontWeight.w700,
@@ -536,7 +799,9 @@ Future<void> openBookingForm(
                       ],
                     ),
                   ),
-                if (!phoneVerified && !loadingPhoneVerification) ...[
+                if (phoneVerificationRequired &&
+                    !phoneVerified &&
+                    !loadingPhoneVerification) ...[
                   const SizedBox(height: AppSpace.md),
                   Row(
                     children: [
@@ -815,36 +1080,6 @@ Future<void> openBookingForm(
                     () => paymentMethod = value ?? 'cod',
                   ),
                 ),
-                const SizedBox(height: AppSpace.md),
-                TextFormField(
-                  controller: couponController,
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: InputDecoration(
-                    labelText: 'Coupon code (optional)',
-                    suffixIcon: TextButton(
-                      onPressed: validatingCoupon ? null : applyCoupon,
-                      child: validatingCoupon
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Apply'),
-                    ),
-                  ),
-                ),
-                if (couponMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppSpace.xs),
-                    child: Text(
-                      couponMessage!,
-                      style: TextStyle(
-                        color: validatedCoupon == null
-                            ? colors.danger.fg
-                            : colors.success.fg,
-                      ),
-                    ),
-                  ),
               ],
             );
 
@@ -894,6 +1129,8 @@ Future<void> openBookingForm(
                       ),
                     ),
                   ),
+                const SizedBox(height: AppSpace.md),
+                couponEntry(),
                 if (!phoneVerified && !loadingPhoneVerification)
                   Padding(
                     padding: const EdgeInsets.only(top: AppSpace.md),
