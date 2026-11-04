@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import '../app/app_controller.dart';
 import '../core/design_system/design_system.dart';
 import '../services/masking.dart';
-import 'auth/check_inbox_view.dart';
 import 'auth/email_sign_in_form.dart';
 import 'auth/email_sign_up_form.dart';
 import 'auth/resend_cooldown.dart';
+import 'auth/sign_up_code_view.dart';
 
 enum _AuthMode { register, login }
 
@@ -57,18 +57,6 @@ class _AuthScreenState extends State<AuthScreen> {
     _method =
         _methodFromName(widget.controller.lastAuthMethod) ?? _AuthMethod.phone;
     if (!_methods.contains(_method)) _method = _AuthMethod.phone;
-    _applyEmailConfirmed();
-  }
-
-  /// After the signup confirmation link, sign-in opens on email with the
-  /// confirmed notice. The app may have been opened by the link before this
-  /// screen was built, so this runs on start and on every change.
-  void _applyEmailConfirmed() {
-    if (!widget.controller.emailConfirmed) return;
-    widget.controller.acknowledgeEmailConfirmed();
-    _mode = _AuthMode.login;
-    _method = _AuthMethod.email;
-    _formKey = GlobalKey<FormState>();
   }
 
   @override
@@ -99,7 +87,6 @@ class _AuthScreenState extends State<AuthScreen> {
       _resendCooldown.start();
     }
     _lastChallengeId = challengeId;
-    _applyEmailConfirmed();
     if (mounted) setState(() {});
   }
 
@@ -176,7 +163,7 @@ class _AuthScreenState extends State<AuthScreen> {
     widget.controller.clearError();
   }
 
-  void _backToSignInFromInbox() {
+  void _backToSignInFromCode() {
     final email = widget.controller.pendingEmailVerification ?? '';
     widget.controller.clearPendingEmailVerification();
     _switchToSignIn(email);
@@ -216,7 +203,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final pendingEmail = controller.pendingEmailVerification;
 
     final title = pendingEmail != null
-        ? 'Check your inbox.'
+        ? 'Verify your email.'
         : _usesEmail
             ? _isRegistration
                 ? 'Create your account.'
@@ -286,9 +273,10 @@ class _AuthScreenState extends State<AuthScreen> {
                     if (pendingEmail != null)
                       GlassCard(
                         padding: const EdgeInsets.all(AppSpace.xl),
-                        child: CheckInboxView(
+                        child: SignUpCodeView(
+                          controller: controller,
                           email: pendingEmail,
-                          onBackToSignIn: _backToSignInFromInbox,
+                          onBackToSignIn: _backToSignInFromCode,
                         ),
                       )
                     else ...[

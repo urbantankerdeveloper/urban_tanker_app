@@ -117,7 +117,7 @@ class ApiClient implements ApiTransport {
   Future<AuthResult> login(String credential, String password) =>
       _auth.login(credential, password);
 
-  Future<AuthResult?> signup({
+  Future<SignUpOutcome> signup({
     required String email,
     required String password,
     required String name,
@@ -156,12 +156,31 @@ class ApiClient implements ApiTransport {
 
   Future<String> requestPhoneOtp(String phone) => _auth.requestPhoneOtp(phone);
 
+  Future<
+      ({
+        String? challengeId,
+        String? emailChallengeId,
+        int resendAfterSeconds
+      })> requestBookingOtp(
+          {required String phone, String? email}) =>
+      _auth.requestBookingOtp(phone: phone, email: email);
+
   Future<void> verifyPhoneOtp({
-    required String challengeId,
     required String phone,
-    required String otp,
+    String? challengeId,
+    String? otp,
+    String? email,
+    String? emailChallengeId,
+    String? emailOtp,
   }) =>
-      _auth.verifyPhoneOtp(challengeId: challengeId, phone: phone, otp: otp);
+      _auth.verifyPhoneOtp(
+        phone: phone,
+        challengeId: challengeId,
+        otp: otp,
+        email: email,
+        emailChallengeId: emailChallengeId,
+        emailOtp: emailOtp,
+      );
 
   Future<String> requestEmailAuthOtp(String email) =>
       _auth.requestEmailAuthOtp(email);

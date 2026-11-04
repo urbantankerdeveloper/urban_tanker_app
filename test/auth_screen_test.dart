@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:urban_tanker_app/app/app_controller.dart';
+import 'package:urban_tanker_app/app/auth_feature_flags.dart';
 import 'package:urban_tanker_app/core/design_system/design_system.dart';
 import 'package:urban_tanker_app/models/session.dart';
 import 'package:urban_tanker_app/screens/auth_screen.dart';
@@ -69,7 +70,7 @@ class _FakeApiClient extends ApiClient {
   }
 
   @override
-  Future<AuthResult?> signup({
+  Future<SignUpOutcome> signup({
     required String email,
     required String password,
     required String name,
@@ -79,8 +80,14 @@ class _FakeApiClient extends ApiClient {
     signupCalls++;
     requestedEmail = email;
     if (signupError != null) throw signupError!;
-    if (signupRequiresVerification) return null;
-    return _customer;
+    if (signupRequiresVerification) {
+      return (
+        authResult: null,
+        challengeId: 'challenge-1',
+        resendAfterSeconds: 30
+      );
+    }
+    return (authResult: _customer, challengeId: null, resendAfterSeconds: 0);
   }
 
   @override
@@ -308,7 +315,7 @@ void main() {
   });
 
   testWidgets('email code sign-in requests a code and verifies it',
-      (tester) async {
+      skip: !AuthFeatureFlags.emailOtp, (tester) async {
     api.emailVerifyError = ApiException('The code is incorrect.', 400);
     await showAuthScreen(tester);
     await tester.tap(_tab('Sign in'));
@@ -334,7 +341,7 @@ void main() {
   });
 
   testWidgets('email codes are hidden when the server does not have them',
-      (tester) async {
+      skip: !AuthFeatureFlags.emailOtp, (tester) async {
     api.emailRequestError = ApiException('Not found', 404);
     await showAuthScreen(tester);
     await tester.tap(_tab('Sign in'));
@@ -394,8 +401,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.requestedEmail, 'asha@example.com');
-    expect(find.text('Check your inbox'), findsOneWidget);
+    expect(find.text('Enter your verification code'), findsOneWidget);
     expect(find.text('asha@example.com'), findsOneWidget);
+    expect(find.text('Verify and continue'), findsOneWidget);
     expect(find.text('Back to sign in'), findsOneWidget);
   });
 
@@ -421,33 +429,11 @@ void main() {
     expect(_fieldText(tester, 0), 'asha@example.com');
   });
 
-  testWidgets('a confirmation link opens email sign-in with the notice',
-      (tester) async {
-    controller.showEmailConfirmed();
-    await showAuthScreen(tester);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Welcome back.'), findsOneWidget);
-    expect(
-      find.text('Your email is confirmed. Sign in to continue.'),
-      findsOneWidget,
-    );
-    expect(controller.emailConfirmed, isFalse);
-  });
-
-  testWidgets('a confirmation link that arrives while the screen is open',
+  testWidgets('a signed-out user opens the sign-in screen normally',
       (tester) async {
     await showAuthScreen(tester);
     await tester.pumpAndSettle();
+
     expect(find.text('Create your account.'), findsOneWidget);
-
-    controller.showEmailConfirmed();
-    await tester.pumpAndSettle();
-
-    expect(find.text('Welcome back.'), findsOneWidget);
-    expect(
-      find.text('Your email is confirmed. Sign in to continue.'),
-      findsOneWidget,
-    );
   });
 }

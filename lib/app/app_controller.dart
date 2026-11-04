@@ -193,6 +193,7 @@ class AppController extends ChangeNotifier {
         phone: phone,
       );
       emailOtpChallengeId = null;
+      pendingEmailVerification = null;
       _setSession(result);
       pendingUnlockSetup = !quickUnlockEnabled && !biometricPromptOffered;
     });
@@ -278,43 +279,30 @@ class AppController extends ChangeNotifier {
     required String phone,
   }) async {
     await _run(() async {
-      final result = await api.signup(
+      final outcome = await api.signup(
         email: normalizeEmail(email),
         password: password,
         name: name.trim(),
         phone: phone.trim(),
         themeMode: themeMode.name,
       );
-      if (result == null) {
+      final authResult = outcome.authResult;
+      if (authResult == null) {
         pendingEmailVerification = normalizeEmail(email);
+        emailOtpChallengeId = outcome.challengeId;
         successMessage =
-            'Account created. Check your email for the confirmation link, then sign in.';
+            'Account created. Enter the 6-digit code we sent to your email.';
         return;
       }
-      _setSession(result);
+      _setSession(authResult);
     });
   }
 
   void clearPendingEmailVerification() {
     pendingEmailVerification = null;
+    emailOtpChallengeId = null;
     successMessage = null;
     notifyListeners();
-  }
-
-  /// Set when the app opens from the signup confirmation link while signed out.
-  /// The sign-in screen then opens on email sign-in with a confirmed notice.
-  bool emailConfirmed = false;
-
-  void showEmailConfirmed() {
-    if (isSignedIn) return;
-    pendingEmailVerification = null;
-    emailConfirmed = true;
-    successMessage = 'Your email is confirmed. Sign in to continue.';
-    notifyListeners();
-  }
-
-  void acknowledgeEmailConfirmed() {
-    emailConfirmed = false;
   }
 
   Future<void> requestPasswordReset(String email) async {

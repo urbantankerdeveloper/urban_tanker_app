@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 /// Holds a resend action for [seconds] after each code is sent. Listen to it to
 /// rebuild the button label as the count goes down.
 class ResendCooldown extends ChangeNotifier {
-  static const seconds = 30;
+  static const defaultSeconds = 30;
 
   int _remaining = 0;
   Timer? _timer;
@@ -14,7 +14,8 @@ class ResendCooldown extends ChangeNotifier {
 
   bool get active => _remaining > 0;
 
-  void start() {
+  /// [seconds] comes from the server's `resendAfterSeconds`.
+  void start([int seconds = defaultSeconds]) {
     _timer?.cancel();
     _remaining = seconds;
     notifyListeners();

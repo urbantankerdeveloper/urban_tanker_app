@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../../models/booking.dart';
 import '../../models/booking_service_details.dart';
+import '../../models/session.dart';
 
 /// A random RFC 4122 version 4 UUID for idempotent booking submits.
 String newIdempotencyKey() {
@@ -70,6 +71,14 @@ class ApiException implements Exception {
   @override
   String toString() => message;
 }
+
+/// Result of sign-up. Exactly one of [authResult] or [challengeId] is set:
+/// [challengeId] means the account needs an email code before it can sign in.
+typedef SignUpOutcome = ({
+  AuthResult? authResult,
+  String? challengeId,
+  int resendAfterSeconds,
+});
 
 class PhoneVerificationState {
   const PhoneVerificationState({required this.phone, required this.verified});

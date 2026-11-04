@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/design_system/widgets/status_banners.dart';
 import '../screens/app_lock_screen.dart';
 import '../screens/public_tracking_screen.dart';
-import '../services/email_confirmation_link.dart';
 import '../services/tracking_link.dart';
 import 'providers.dart';
 import 'theme.dart';
@@ -43,10 +42,6 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
 
   void _handleLink(Uri? uri) {
     if (!mounted || uri == null) return;
-    if (isEmailConfirmationLink(uri)) {
-      ref.read(appControllerProvider).showEmailConfirmed();
-      return;
-    }
     final token = trackingTokenFromUri(uri);
     if (token == null) return;
     final navigator = _navigatorKey.currentState;

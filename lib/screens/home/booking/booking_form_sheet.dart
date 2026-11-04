@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../../app/app_controller.dart';
+import '../../../app/auth_feature_flags.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/account.dart';
 import '../../../models/booking.dart';
@@ -40,6 +41,8 @@ Future<void> openBookingForm(
       TextEditingController(text: previousBooking?.notes ?? '');
   final phoneController = TextEditingController();
   final otpController = TextEditingController();
+  final emailController = TextEditingController();
+  final emailOtpController = TextEditingController();
   String? selectedAddress;
   final previousDetails = {
     for (final detail in previousBooking?.services ?? <BookingServiceDetails>[])
@@ -113,6 +116,7 @@ Future<void> openBookingForm(
   String? couponMessage;
   String? bookingFormError;
   String? phoneChallengeId;
+  String? emailChallengeId;
   String? verifiedPhone;
   var phoneVerified = false;
   var loadingPhoneVerification = true;
@@ -136,6 +140,8 @@ Future<void> openBookingForm(
     notesController.dispose();
     phoneController.dispose();
     otpController.dispose();
+    emailController.dispose();
+    emailOtpController.dispose();
     for (final fields in serviceFields.values) {
       fields.dispose();
     }
@@ -526,6 +532,20 @@ Future<void> openBookingForm(
                     ),
                   ),
                 if (!phoneVerified && !loadingPhoneVerification) ...[
+                  if (AuthFeatureFlags.emailOtp) ...[
+                    const SizedBox(height: AppSpace.md),
+                    TextFormField(
+                      controller: emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.email],
+                      decoration: const InputDecoration(
+                        labelText: 'Email (optional)',
+                      ),
+                      onChanged: (_) => setSheetState(() {
+                        bookingFormError = null;
+                      }),
+                    ),
+                  ],
                   const SizedBox(height: AppSpace.md),
                   Row(
                     children: [
@@ -533,7 +553,11 @@ Future<void> openBookingForm(
                         child: TextFormField(
                           controller: otpController,
                           keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'OTP'),
+                          decoration: InputDecoration(
+                            labelText: AuthFeatureFlags.emailOtp
+                                ? 'SMS code'
+                                : 'OTP',
+                          ),
                         ),
                       ),
                       const SizedBox(width: AppSpace.sm),
@@ -542,12 +566,21 @@ Future<void> openBookingForm(
                           try {
                             final normalized =
                                 normalizeIndianPhone(phoneController.text);
-                            final challenge = await controller.api
-                                .requestPhoneOtp(normalized);
+                            final email = AuthFeatureFlags.emailOtp
+                                ? emailController.text.trim()
+                                : '';
+                            final challenge =
+                                await controller.api.requestBookingOtp(
+                              phone: normalized,
+                              email: email.isEmpty ? null : email,
+                            );
                             setSheetState(() {
-                              phoneChallengeId = challenge;
-                              bookingFormError =
-                                  'OTP sent. Enter it to verify this number.';
+                              phoneChallengeId = challenge.challengeId;
+                              emailChallengeId = challenge.emailChallengeId;
+                              bookingFormError = email.isEmpty
+                                  ? 'OTP sent. Enter it to verify this number.'
+                                  : 'Codes sent to your phone and email. '
+                                      'Enter either one to verify.';
                             });
                           } catch (error) {
                             setSheetState(
@@ -559,21 +592,51 @@ Future<void> openBookingForm(
                       ),
                     ],
                   ),
+                  if (AuthFeatureFlags.emailOtp) ...[
+                    const SizedBox(height: AppSpace.md),
+                    TextFormField(
+                      controller: emailOtpController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Email code',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: AppSpace.xs),
                   Text(
                     'Verify this shared number before reviewing your booking.',
                     style: theme.textTheme.bodySmall,
                   ),
-                  if (phoneChallengeId != null)
+                  if (phoneChallengeId != null || emailChallengeId != null)
                     Align(
                       alignment: AlignmentDirectional.centerEnd,
                       child: TextButton(
                         onPressed: () async {
+                          final enteredPhoneOtp = phoneChallengeId != null &&
+                              otpController.text.trim().isNotEmpty;
+                          final enteredEmailOtp = emailChallengeId != null &&
+                              emailOtpController.text.trim().isNotEmpty;
+                          if (!enteredPhoneOtp && !enteredEmailOtp) {
+                            setSheetState(
+                              () => bookingFormError =
+                                  'Enter the code sent to your phone or email.',
+                            );
+                            return;
+                          }
                           try {
                             await controller.api.verifyPhoneOtp(
-                              challengeId: phoneChallengeId!,
                               phone: phoneController.text,
-                              otp: otpController.text,
+                              challengeId:
+                                  enteredPhoneOtp ? phoneChallengeId : null,
+                              otp: enteredPhoneOtp ? otpController.text : null,
+                              email: enteredEmailOtp
+                                  ? emailController.text.trim()
+                                  : null,
+                              emailChallengeId:
+                                  enteredEmailOtp ? emailChallengeId : null,
+                              emailOtp: enteredEmailOtp
+                                  ? emailOtpController.text
+                                  : null,
                             );
                             setSheetState(() {
                               phoneVerified = true;
@@ -1025,6 +1088,8 @@ Future<void> openBookingForm(
   notesController.dispose();
   phoneController.dispose();
   otpController.dispose();
+  emailController.dispose();
+  emailOtpController.dispose();
   for (final fields in serviceFields.values) {
     fields.dispose();
   }

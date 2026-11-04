@@ -9,6 +9,8 @@ import 'api_types.dart';
 class AuthApi {
   AuthApi(this._api);
 
+  static const _defaultResendAfterSeconds = 30;
+
   final ApiTransport _api;
 
   Future<void> logout(String refreshToken) async {
@@ -27,7 +29,9 @@ class AuthApi {
     return _authRequest('/auth/login', body);
   }
 
-  Future<AuthResult?> signup({
+  /// Creates the account. The server either signs the user in, or (when email
+  /// confirmation is required) sends a code and returns its challenge.
+  Future<SignUpOutcome> signup({
     required String email,
     required String password,
     required String name,
@@ -47,14 +51,23 @@ class AuthApi {
       throw const FormatException('The registration response was invalid.');
     }
     if (decoded['requiresEmailVerification'] == true) {
-      if (decoded['emailSent'] != true) {
+      if (decoded['emailSent'] != true || decoded['challengeId'] is! String) {
         throw const FormatException(
-          'The server did not confirm that the verification email was sent.',
+          'The server did not confirm that the verification code was sent.',
         );
       }
-      return null;
+      return (
+        authResult: null,
+        challengeId: decoded['challengeId'] as String,
+        resendAfterSeconds: (decoded['resendAfterSeconds'] as num?)?.toInt() ??
+            _defaultResendAfterSeconds,
+      );
     }
-    return _saveAuthResult(decoded);
+    return (
+      authResult: await _saveAuthResult(decoded),
+      challengeId: null,
+      resendAfterSeconds: 0,
+    );
   }
 
   Future<void> requestPasswordReset(String email) async {
@@ -148,18 +161,68 @@ class AuthApi {
     return decoded['challengeId'] as String;
   }
 
+  /// Sends the booking code to the phone and, when [email] is given, a second
+  /// code to the email. Either challenge can be null if that channel is off.
+  Future<
+      ({
+        String? challengeId,
+        String? emailChallengeId,
+        int resendAfterSeconds
+      })> requestBookingOtp({required String phone, String? email}) async {
+    final normalized = normalizeIndianPhone(phone);
+    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
+      throw const FormatException('Enter a valid 10-digit mobile number.');
+    }
+    final trimmedEmail = email == null ? null : normalizeEmail(email);
+    if (trimmedEmail != null && !isValidEmail(trimmedEmail)) {
+      throw const FormatException('Enter a valid email address.');
+    }
+    final response = await _api.request(
+      'POST',
+      '/auth/guest/request-otp',
+      body: {
+        'phone': normalized,
+        if (trimmedEmail != null) 'email': trimmedEmail,
+      },
+      retry: false,
+    );
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The booking OTP response was invalid.');
+    }
+    final challengeId = decoded['challengeId'] as String?;
+    final emailChallengeId = decoded['emailChallengeId'] as String?;
+    if (challengeId == null && emailChallengeId == null) {
+      throw const FormatException('The booking OTP response was invalid.');
+    }
+    return (
+      challengeId: challengeId,
+      emailChallengeId: emailChallengeId,
+      resendAfterSeconds: (decoded['resendAfterSeconds'] as num?)?.toInt() ??
+          _defaultResendAfterSeconds,
+    );
+  }
+
+  /// Verifies the SMS code, the email code, or both. Send only the pair the
+  /// user entered; each pair that is sent must be correct.
   Future<void> verifyPhoneOtp({
-    required String challengeId,
     required String phone,
-    required String otp,
+    String? challengeId,
+    String? otp,
+    String? email,
+    String? emailChallengeId,
+    String? emailOtp,
   }) async {
     final response = await _api.request(
       'POST',
       '/auth/guest/verify-phone',
       body: {
-        'challengeId': challengeId,
         'phone': normalizeIndianPhone(phone),
-        'otp': otp.trim(),
+        if (challengeId != null) 'challengeId': challengeId,
+        if (otp != null) 'otp': otp.trim(),
+        if (email != null) 'email': normalizeEmail(email),
+        if (emailChallengeId != null) 'emailChallengeId': emailChallengeId,
+        if (emailOtp != null) 'emailOtp': emailOtp.trim(),
       },
       retry: false,
     );

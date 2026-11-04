@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:urban_tanker_app/app/app_controller.dart';
+import 'package:urban_tanker_app/app/auth_feature_flags.dart';
 import 'package:urban_tanker_app/models/session.dart';
 import 'package:urban_tanker_app/screens/auth/password_rules.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
@@ -104,12 +105,17 @@ void main() {
       expect(body, {'username': 'asha.kumar', 'password': 'Secret123'});
     });
 
-    test('signup returns null when the server asks for email confirmation',
+    test('signup returns a challenge when the server asks for an email code',
         () async {
       final api = _apiFor(
         MockClient(
           (_) async => http.Response(
-            jsonEncode({'requiresEmailVerification': true, 'emailSent': true}),
+            jsonEncode({
+              'requiresEmailVerification': true,
+              'emailSent': true,
+              'challengeId': 'challenge-1',
+              'resendAfterSeconds': 45,
+            }),
             201,
           ),
         ),
@@ -123,7 +129,9 @@ void main() {
         phone: '9876543210',
       );
 
-      expect(result, isNull);
+      expect(result.authResult, isNull);
+      expect(result.challengeId, 'challenge-1');
+      expect(result.resendAfterSeconds, 45);
     });
 
     test('signup stores the session when the server signs the user in',
@@ -141,7 +149,8 @@ void main() {
         phone: '9876543210',
       );
 
-      expect(result?.user.name, 'Asha Kumar');
+      expect(result.challengeId, isNull);
+      expect(result.authResult?.user.name, 'Asha Kumar');
       expect(storage.values['urban_tanker_refresh_token'], 'refresh-token');
     });
 
@@ -301,7 +310,7 @@ void main() {
           controller.errorMessage, AppController.emailCodesUnavailableMessage);
       expect(api.requestCalls, 1,
           reason: 'the second try never reaches the server');
-    });
+    }, skip: !AuthFeatureFlags.emailOtp);
 
     test('a 501 also turns email codes off', () async {
       api.requestError = ApiException('Not implemented', 501);
@@ -309,7 +318,7 @@ void main() {
       await controller.requestEmailAuthOtp('asha@example.com');
 
       expect(controller.emailOtpAvailable, isFalse);
-    });
+    }, skip: !AuthFeatureFlags.emailOtp);
 
     test('other failures keep codes available and show the server message',
         () async {
@@ -320,10 +329,11 @@ void main() {
       expect(controller.emailOtpAvailable, isTrue);
       expect(controller.errorMessage, 'Too many requests.');
       expect(controller.errorStatusCode, 429);
-    });
+    }, skip: !AuthFeatureFlags.emailOtp);
 
-    test('a sign-up that needs confirmation records the address', () async {
-      api.signupResult = null;
+    test('a sign-up that needs confirmation records the address and challenge',
+        () async {
+      api.signupRequiresVerification = true;
 
       await controller.signUp(
         email: ' Asha@Example.com ',
@@ -333,7 +343,29 @@ void main() {
       );
 
       expect(controller.pendingEmailVerification, 'asha@example.com');
+      expect(controller.emailOtpChallengeId, 'challenge-1');
       expect(controller.isSignedIn, isFalse);
+    });
+
+    test('the correct code completes a sign-up and clears the pending state',
+        () async {
+      api.signupRequiresVerification = true;
+      await controller.signUp(
+        email: 'asha@example.com',
+        password: 'Secret123',
+        name: 'Asha Kumar',
+        phone: '9876543210',
+      );
+
+      await controller.signInWithEmailAuthOtp(
+        email: 'asha@example.com',
+        otp: '123456',
+      );
+
+      expect(api.verifyCalls, 1);
+      expect(controller.pendingEmailVerification, isNull);
+      expect(controller.emailOtpChallengeId, isNull);
+      expect(controller.isSignedIn, isTrue);
     });
 
     test('a taken email records the 409 so the screen can offer sign-in',
@@ -379,7 +411,9 @@ class _FakeAuthApi extends ApiClient {
 
   ApiException? requestError;
   ApiException? signupError;
-  AuthResult? signupResult = const AuthResult(
+  bool signupRequiresVerification = false;
+  int verifyCalls = 0;
+  AuthResult signedInResult = const AuthResult(
     user: SessionUser(
       id: null,
       name: 'Asha Kumar',
@@ -398,7 +432,19 @@ class _FakeAuthApi extends ApiClient {
   }
 
   @override
-  Future<AuthResult?> signup({
+  Future<AuthResult> verifyEmailAuthOtp({
+    required String email,
+    required String challengeId,
+    required String otp,
+    String? name,
+    String? phone,
+  }) async {
+    verifyCalls++;
+    return signedInResult;
+  }
+
+  @override
+  Future<SignUpOutcome> signup({
     required String email,
     required String password,
     required String name,
@@ -406,6 +452,17 @@ class _FakeAuthApi extends ApiClient {
     String? themeMode,
   }) async {
     if (signupError != null) throw signupError!;
-    return signupResult;
+    if (signupRequiresVerification) {
+      return (
+        authResult: null,
+        challengeId: 'challenge-1',
+        resendAfterSeconds: 30,
+      );
+    }
+    return (
+      authResult: signedInResult,
+      challengeId: null,
+      resendAfterSeconds: 0,
+    );
   }
 }
