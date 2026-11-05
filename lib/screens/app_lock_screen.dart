@@ -66,8 +66,8 @@ class _AppLockScreenState extends State<AppLockScreen> {
       } else {
         _shakeSignal++;
         if (check.isLocked) {
-          _error =
-              'Too many wrong attempts. Sign in again with your phone number and OTP.';
+          _error = 'Too many wrong attempts. Wait for the cooldown to finish, '
+              'or sign in again with your phone number and OTP.';
         } else {
           final left = check.attemptsLeft;
           _error =
@@ -169,6 +169,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                           onSubmit: () => unawaited(_submit()),
                           shakeSignal: _shakeSignal,
                           onDark: true,
+                          submitLabel: 'Unlock',
                         ),
                       if (fingerprintOn) ...[
                         const SizedBox(height: AppSpace.lg),

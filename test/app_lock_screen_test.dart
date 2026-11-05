@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,13 +35,19 @@ class _MpinApi extends ApiClient {
   Future<void> deleteMpin() async {}
 }
 
+/// Stands in for PBKDF2 so widget tests don't wait on a background isolate,
+/// which fake-async never completes. The real derivation is covered in
+/// mpin_service_test.dart.
+Future<List<int>> _fastKdf(String pin, List<int> salt, int iterations) async =>
+    sha256.convert([...salt, ...utf8.encode(pin)]).bytes;
+
 Future<AppController> _lockedController() async {
   SharedPreferences.setMockInitialValues({});
   final preferences = await SharedPreferences.getInstance();
   final controller = AppController(
     api: _MpinApi(),
     preferences: preferences,
-    mpin: MpinService(store: _MemoryStore()),
+    mpin: MpinService(store: _MemoryStore(), kdf: _fastKdf),
   );
   await controller.setMpin('1234');
   controller.sessionLocked = true;
@@ -93,6 +102,7 @@ void main() {
     expect(find.text('Reset your MPIN'), findsOneWidget);
     expect(find.text('Choose a new 4 to 6 digit MPIN.'), findsOneWidget);
     expect(find.text('Continue'), findsOneWidget);
+    expect(find.byTooltip('Continue'), findsOneWidget);
   });
 
   testWidgets('phone recovery opens the reset screen after sign-in',

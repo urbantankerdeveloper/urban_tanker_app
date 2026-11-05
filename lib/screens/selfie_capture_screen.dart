@@ -158,7 +158,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
           if (photo == null) const OvalGuide(),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(AppSpace.lg),
+              padding: AppPageInsets.card,
               child: Align(
                 alignment: Alignment.topCenter,
                 child: _ScrimCard(
@@ -177,7 +177,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.all(AppSpace.lg),
+                padding: AppPageInsets.card,
                 child: _ScrimCard(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -244,7 +244,7 @@ class _ScrimCard extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(color: context.colors.scrim),
         child: Padding(
-          padding: const EdgeInsets.all(AppSpace.lg),
+          padding: AppPageInsets.card,
           child: child,
         ),
       ),

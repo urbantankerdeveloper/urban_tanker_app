@@ -59,7 +59,10 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(AppSpace.gutter),
+      padding: AppPageInsets.withSafeAreaBottom(
+        context,
+        AppPageInsets.standard,
+      ),
       children: [
         SegmentedTabs(
           labels: _peopleTabs,

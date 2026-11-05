@@ -127,7 +127,10 @@ class _UnlockSetupScreenState extends State<UnlockSetupScreen> {
     return AppScaffold(
       title: title,
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpace.gutter),
+        padding: AppPageInsets.withSafeAreaBottom(
+          context,
+          AppPageInsets.standard,
+        ),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 360),
@@ -164,6 +167,11 @@ class _UnlockSetupScreenState extends State<UnlockSetupScreen> {
                   onDelete: _deleteDigit,
                   onSubmit: _continue,
                   shakeSignal: _shakeSignal,
+                  submitLabel: _confirming
+                      ? widget.isReset
+                          ? 'Reset MPIN'
+                          : 'Save MPIN'
+                      : 'Continue',
                 ),
                 const SizedBox(height: AppSpace.xl),
                 PrimaryButton(

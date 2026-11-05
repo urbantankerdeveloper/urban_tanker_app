@@ -65,7 +65,10 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       body: ListenableBuilder(
         listenable: controller,
         builder: (context, _) => ListView(
-          padding: const EdgeInsets.all(AppSpace.gutter),
+          padding: AppPageInsets.withSafeAreaBottom(
+            context,
+            AppPageInsets.standard,
+          ),
           children: [
             SurfaceCard(
               padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),

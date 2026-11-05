@@ -75,11 +75,9 @@ class _NotificationInboxState extends State<NotificationInbox> {
           return RefreshIndicator(
             onRefresh: () async => _reload(),
             child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpace.gutter,
-                AppSpace.lg,
-                AppSpace.gutter,
-                AppSpace.xxxl,
+              padding: AppPageInsets.withSafeAreaBottom(
+                context,
+                AppPageInsets.standard,
               ),
               itemCount: groups.length,
               separatorBuilder: (context, index) =>

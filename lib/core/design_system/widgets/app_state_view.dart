@@ -9,6 +9,21 @@ class AppPageInsets {
 
   static const EdgeInsets standard = EdgeInsets.fromLTRB(20, 16, 20, 24);
   static const EdgeInsets status = EdgeInsets.fromLTRB(24, 24, 24, 24);
+  static const EdgeInsets section = EdgeInsets.symmetric(
+    horizontal: AppSpace.gutter,
+    vertical: AppSpace.md,
+  );
+  static const EdgeInsets card = EdgeInsets.all(AppSpace.lg);
+  static const EdgeInsets compact = EdgeInsets.all(AppSpace.sm);
+  static const EdgeInsets listBottom = EdgeInsets.only(bottom: AppSpace.xxl);
+
+  static EdgeInsets withSafeAreaBottom(
+    BuildContext context,
+    EdgeInsets insets,
+  ) =>
+      insets.copyWith(
+        bottom: insets.bottom + MediaQuery.of(context).padding.bottom,
+      );
 }
 
 class AppStateView extends StatelessWidget {

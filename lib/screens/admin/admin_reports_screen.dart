@@ -31,7 +31,10 @@ class AdminReportsScreen extends ConsumerWidget {
       ),
       data: (items) {
         return ListView(
-          padding: const EdgeInsets.all(AppSpace.gutter),
+          padding: AppPageInsets.withSafeAreaBottom(
+            context,
+            AppPageInsets.standard,
+          ),
           children: [
             Text(
               'Reports',

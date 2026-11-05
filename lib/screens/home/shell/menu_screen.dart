@@ -30,11 +30,9 @@ class MenuScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = controller.user;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.gutter,
-        AppSpace.lg,
-        AppSpace.gutter,
-        AppSpace.xxxl,
+      padding: AppPageInsets.withSafeAreaBottom(
+        context,
+        AppPageInsets.standard,
       ),
       children: [
         if (user != null)

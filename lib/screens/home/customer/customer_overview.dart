@@ -55,11 +55,9 @@ class CustomerOverview extends ConsumerWidget {
         await onRetry();
       },
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpace.gutter,
-          AppSpace.lg,
-          AppSpace.gutter,
-          AppSpace.xxxl,
+        padding: AppPageInsets.withSafeAreaBottom(
+          context,
+          AppPageInsets.standard,
         ),
         children: [
           AppHeader(
@@ -404,6 +402,7 @@ class _RecentBookings extends StatelessWidget {
             SizedBox(
               height: 128,
               child: ListView.separated(
+                padding: AppPageInsets.section.copyWith(top: 0, bottom: 0),
                 scrollDirection: Axis.horizontal,
                 itemCount: items.length,
                 separatorBuilder: (context, index) =>

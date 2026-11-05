@@ -30,7 +30,7 @@ class _VendorOrderCardState extends State<VendorOrderCard> {
         builder: (_) => OrderActionsSheet(order: order),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpace.lg),
+        padding: AppPageInsets.card,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

@@ -55,7 +55,7 @@ class _AttendanceCardState extends ConsumerState<AttendanceCard> {
             }
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Padding(
-                padding: EdgeInsets.all(AppSpace.lg),
+                padding: AppPageInsets.card,
                 child: SkeletonBox(height: 48),
               );
             }

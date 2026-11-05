@@ -23,6 +23,7 @@ class PinPad extends StatefulWidget {
     this.canSubmit = false,
     this.shakeSignal = 0,
     this.onDark = false,
+    this.submitLabel = 'Submit',
   });
 
   final int entered;
@@ -32,6 +33,7 @@ class PinPad extends StatefulWidget {
   final bool canSubmit;
   final int shakeSignal;
   final bool onDark;
+  final String submitLabel;
 
   static const _rows = [
     ['1', '2', '3'],
@@ -169,6 +171,7 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
                   ),
                   _SubmitKey(
                     enabled: widget.canSubmit,
+                    label: widget.submitLabel,
                     onPressed: _submit,
                   ),
                 ],
@@ -226,16 +229,21 @@ class _PinKey extends StatelessWidget {
 }
 
 class _SubmitKey extends StatelessWidget {
-  const _SubmitKey({required this.enabled, required this.onPressed});
+  const _SubmitKey({
+    required this.enabled,
+    required this.label,
+    required this.onPressed,
+  });
 
   final bool enabled;
+  final String label;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Tooltip(
-      message: 'Unlock',
+      message: label,
       child: Opacity(
         opacity: enabled ? 1 : 0.45,
         child: Material(

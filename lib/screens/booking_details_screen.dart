@@ -190,11 +190,9 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpace.gutter,
-              AppSpace.lg,
-              AppSpace.gutter,
-              AppSpace.xxxl,
+            padding: AppPageInsets.withSafeAreaBottom(
+              context,
+              AppPageInsets.standard,
             ),
             sliver: SliverList.list(
               children: [
@@ -694,7 +692,7 @@ class _Notice extends StatelessWidget {
         border: Border.all(color: tone.border),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpace.lg),
+        padding: AppPageInsets.card,
         child: Row(
           children: [
             Icon(icon, color: tone.fg),

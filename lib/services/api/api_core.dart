@@ -17,20 +17,35 @@ class ApiCore {
     required FlutterSecureStorage storage,
     required this.baseUrl,
     required Future<String?> Function() tokenReader,
+    Duration getTimeout = _defaultGetTimeout,
+    Duration requestTimeout = _defaultRequestTimeout,
+    Duration getRetryBudget = _defaultGetRetryBudget,
+    List<Duration> retryDelays = _defaultRetryDelays,
   })  : _client = client,
         _storage = storage,
-        _tokenReader = tokenReader;
+        _tokenReader = tokenReader,
+        _getTimeout = getTimeout,
+        _requestTimeout = requestTimeout,
+        _getRetryBudget = getRetryBudget,
+        _retryDelays = retryDelays;
 
-  static const _retryDelays = [
-    Duration(milliseconds: 500),
-    Duration(seconds: 1),
-    Duration(seconds: 2),
+  static const _defaultGetTimeout = Duration(seconds: 8);
+  static const _defaultRequestTimeout = Duration(seconds: 20);
+  static const _defaultGetRetryBudget = Duration(seconds: 12);
+  static const _slowRequestThreshold = Duration(seconds: 2);
+  static const _defaultRetryDelays = [
+    Duration(milliseconds: 400),
+    Duration(milliseconds: 1200),
   ];
   static const _retryableStatusCodes = {502, 503, 504};
 
   final http.Client _client;
   final FlutterSecureStorage _storage;
   final Future<String?> Function() _tokenReader;
+  final Duration _getTimeout;
+  final Duration _requestTimeout;
+  final Duration _getRetryBudget;
+  final List<Duration> _retryDelays;
   final String baseUrl;
   Future<String?>? _refreshOperation;
 
@@ -85,21 +100,83 @@ class ApiCore {
     List<int>? bodyBytes,
     String contentType = 'application/json',
     bool retry = true,
-  }) =>
-      _requestOnce(
+    Duration? timeout,
+  }) async {
+    final requestTimeout = timeout ??
+        (method.toUpperCase() == 'GET' ? _getTimeout : _requestTimeout);
+    final stopwatch = Stopwatch()..start();
+    int? statusCode;
+    try {
+      final response = await _requestOnce(
         method,
         path,
         body: body,
         bodyBytes: bodyBytes,
         contentType: contentType,
         retry: retry,
+        timeout: requestTimeout,
       );
+      statusCode = response.statusCode;
+      return response;
+    } on ApiException catch (error) {
+      statusCode = error.statusCode;
+      rethrow;
+    } finally {
+      _logSlowRequest(
+        method,
+        Uri.parse('$baseUrl$path'),
+        stopwatch,
+        statusCode,
+      );
+    }
+  }
 
   Future<http.Response> sendRequest(
     http.BaseRequest request, {
     Duration timeout = const Duration(seconds: 20),
   }) =>
-      _client.send(request).then(http.Response.fromStream).timeout(timeout);
+      _sendRequest(request, timeout: timeout, logSlowRequest: true);
+
+  Future<http.Response> _sendRequest(
+    http.BaseRequest request, {
+    required Duration timeout,
+    required bool logSlowRequest,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    int? statusCode;
+    try {
+      final response = await _client
+          .send(request)
+          .then(http.Response.fromStream)
+          .timeout(timeout);
+      statusCode = response.statusCode;
+      return response;
+    } finally {
+      if (logSlowRequest) {
+        _logSlowRequest(
+          request.method,
+          request.url,
+          stopwatch,
+          statusCode,
+        );
+      }
+    }
+  }
+
+  void _logSlowRequest(
+    String method,
+    Uri uri,
+    Stopwatch stopwatch,
+    int? statusCode,
+  ) {
+    if (!kDebugMode || stopwatch.elapsed < _slowRequestThreshold) return;
+    final result =
+        statusCode == null ? 'without a response' : '(HTTP $statusCode)';
+    debugPrint(
+      'Slow HTTP request: $method ${uri.path} $result '
+      'in ${stopwatch.elapsed.inMilliseconds}ms',
+    );
+  }
 
   Future<http.Response> _requestOnce(
     String method,
@@ -108,6 +185,7 @@ class ApiCore {
     List<int>? bodyBytes,
     String contentType = 'application/json',
     bool retry = true,
+    required Duration timeout,
   }) async {
     final response = await _sendWithRetries(
       method,
@@ -115,6 +193,7 @@ class ApiCore {
       body: body,
       bodyBytes: bodyBytes,
       contentType: contentType,
+      timeout: timeout,
     );
 
     if (response.statusCode == 401 && retry && path != '/auth/mobile-refresh') {
@@ -127,6 +206,7 @@ class ApiCore {
           bodyBytes: bodyBytes,
           contentType: contentType,
           retry: false,
+          timeout: timeout,
         );
       }
     }
@@ -166,7 +246,7 @@ class ApiCore {
     return response;
   }
 
-  /// Sends the request. Only GET requests are retried, after timeouts, network
+  /// Sends the request. Only GET requests are retried after timeouts, network
   /// errors and 502/503/504 responses. Writes are never sent twice.
   Future<http.Response> _sendWithRetries(
     String method,
@@ -174,9 +254,18 @@ class ApiCore {
     Map<String, dynamic>? body,
     List<int>? bodyBytes,
     required String contentType,
+    required Duration timeout,
   }) async {
+    final isGet = method.toUpperCase() == 'GET';
+    final stopwatch = Stopwatch()..start();
     for (var attempt = 0;; attempt++) {
-      final canRetry = method == 'GET' && attempt < _retryDelays.length;
+      final canRetry = isGet && attempt < _retryDelays.length;
+      final remainingBudget = _getRetryBudget - stopwatch.elapsed;
+      if (isGet && remainingBudget <= Duration.zero) {
+        throw TimeoutException('GET request exceeded its retry time budget.');
+      }
+      final attemptTimeout =
+          isGet && remainingBudget < timeout ? remainingBudget : timeout;
       try {
         final response = await _sendOnce(
           method,
@@ -184,14 +273,20 @@ class ApiCore {
           body: body,
           bodyBytes: bodyBytes,
           contentType: contentType,
+          timeout: attemptTimeout,
         );
         if (!canRetry || !_retryableStatusCodes.contains(response.statusCode)) {
           return response;
         }
+        final delay = _retryDelays[attempt];
+        if (stopwatch.elapsed + delay >= _getRetryBudget) return response;
+        await Future<void>.delayed(delay);
       } catch (error) {
         if (!canRetry || !_isNetworkFailure(error)) rethrow;
+        final delay = _retryDelays[attempt];
+        if (stopwatch.elapsed + delay >= _getRetryBudget) rethrow;
+        await Future<void>.delayed(delay);
       }
-      await Future<void>.delayed(_retryDelays[attempt]);
     }
   }
 
@@ -204,6 +299,7 @@ class ApiCore {
     Map<String, dynamic>? body,
     List<int>? bodyBytes,
     required String contentType,
+    required Duration timeout,
   }) async {
     final token = await _tokenReader();
     final headers = <String, String>{
@@ -220,7 +316,11 @@ class ApiCore {
     } else {
       httpRequest.body = body == null ? '' : jsonEncode(body);
     }
-    return sendRequest(httpRequest);
+    return _sendRequest(
+      httpRequest,
+      timeout: timeout,
+      logSlowRequest: false,
+    );
   }
 
   Future<String?> _refreshAccessToken() {

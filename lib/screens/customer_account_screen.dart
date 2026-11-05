@@ -23,11 +23,9 @@ class CustomerAccountScreen extends ConsumerWidget {
     final profile = ref.watch(customerProfileProvider);
     return SecureScope(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpace.gutter,
-          AppSpace.lg,
-          AppSpace.gutter,
-          AppSpace.xxxl,
+        padding: AppPageInsets.withSafeAreaBottom(
+          context,
+          AppPageInsets.standard,
         ),
         children: [
           profile.when(
@@ -808,7 +806,7 @@ class _MembershipSection extends ConsumerWidget {
       children: [
         membership.when(
           loading: () => const Padding(
-            padding: EdgeInsets.all(AppSpace.lg),
+            padding: AppPageInsets.card,
             child: SkeletonBox(height: 48),
           ),
           error: (error, _) => _AccountError(
@@ -980,7 +978,7 @@ class _AccountSection extends ConsumerWidget {
       children: [
         records.when(
           loading: () => const Padding(
-            padding: EdgeInsets.all(AppSpace.lg),
+            padding: AppPageInsets.card,
             child: SkeletonBox(height: 48),
           ),
           error: (error, _) => _AccountError(

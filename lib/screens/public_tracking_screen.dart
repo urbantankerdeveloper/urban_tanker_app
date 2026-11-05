@@ -130,7 +130,7 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen>
             child: Align(
               alignment: Alignment.topCenter,
               child: Padding(
-                padding: const EdgeInsets.all(AppSpace.lg),
+                padding: AppPageInsets.card,
                 child: _TopBar(reference: tracking.bookingReference),
               ),
             ),
@@ -416,11 +416,9 @@ class _Sheet extends StatelessWidget {
       ),
       child: ListView(
         controller: controller,
-        padding: const EdgeInsets.fromLTRB(
-          AppSpace.gutter,
-          AppSpace.md,
-          AppSpace.gutter,
-          AppSpace.xxxl,
+        padding: AppPageInsets.withSafeAreaBottom(
+          context,
+          AppPageInsets.standard,
         ),
         children: [
           Center(

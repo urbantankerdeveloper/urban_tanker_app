@@ -94,11 +94,9 @@ class VendorFleetScreen extends ConsumerWidget {
             ref.invalidate(vendorAttendanceProvider);
           },
           child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpace.gutter,
-              AppSpace.lg,
-              AppSpace.gutter,
-              AppSpace.xxxl,
+            padding: AppPageInsets.withSafeAreaBottom(
+              context,
+              AppPageInsets.standard,
             ),
             itemCount: entries.length,
             itemBuilder: (_, index) => entries[index](),

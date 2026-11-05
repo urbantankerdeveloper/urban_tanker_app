@@ -79,11 +79,9 @@ class _DispatcherAlertsScreenState
           onRefresh: () async =>
               ref.invalidate(dispatcherAlertsProvider(status)),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpace.gutter,
-              AppSpace.lg,
-              AppSpace.gutter,
-              AppSpace.xxxl,
+            padding: AppPageInsets.withSafeAreaBottom(
+              context,
+              AppPageInsets.standard,
             ),
             children: [
               DropdownButtonFormField<String?>(
@@ -223,7 +221,7 @@ class _AlertCard extends StatelessWidget {
       AlertSeverity.info => colors.info,
     };
     return SurfaceCard(
-      padding: const EdgeInsets.all(AppSpace.lg),
+      padding: AppPageInsets.card,
       onTap: onDetails,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

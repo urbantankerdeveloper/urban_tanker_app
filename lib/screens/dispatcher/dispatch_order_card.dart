@@ -42,7 +42,7 @@ class DispatchOrderCard extends ConsumerWidget {
     };
     final canAssign = !order.isAssigned && order.status == 'pending_vendor';
     return SurfaceCard(
-      padding: const EdgeInsets.all(AppSpace.lg),
+      padding: AppPageInsets.card,
       onTap: () => showOrderDetails(context, raw),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

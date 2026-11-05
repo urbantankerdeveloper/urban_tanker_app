@@ -53,7 +53,10 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
       _ => _partners,
     };
     return ListView(
-      padding: const EdgeInsets.all(AppSpace.gutter),
+      padding: AppPageInsets.withSafeAreaBottom(
+        context,
+        AppPageInsets.standard,
+      ),
       children: [
         SegmentedTabs(
           labels: _financeTabs,

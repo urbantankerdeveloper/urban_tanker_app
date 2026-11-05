@@ -112,7 +112,7 @@ class _DispatcherLiveScreenState extends ConsumerState<DispatcherLiveScreen> {
               child: Align(
                 alignment: Alignment.topCenter,
                 child: Padding(
-                  padding: const EdgeInsets.all(AppSpace.lg),
+                  padding: AppPageInsets.card,
                   child: _Header(
                     count: shown.length,
                     selected: _filterIndex,
@@ -278,11 +278,9 @@ class _ListSheet extends StatelessWidget {
       ),
       child: ListView(
         controller: controller,
-        padding: const EdgeInsets.fromLTRB(
-          AppSpace.gutter,
-          AppSpace.md,
-          AppSpace.gutter,
-          AppSpace.xxxl,
+        padding: AppPageInsets.withSafeAreaBottom(
+          context,
+          AppPageInsets.standard,
         ),
         children: [
           Center(

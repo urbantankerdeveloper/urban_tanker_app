@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:urban_tanker_app/services/mpin_service.dart';
 
@@ -13,6 +16,25 @@ class _MemoryStore implements MpinStore {
   @override
   Future<void> delete(String key) async => values.remove(key);
 }
+
+/// Writes an MPIN in the unversioned format used before v2 (separate salt
+/// key, 10,000-step HMAC chain) so migration can be tested.
+void _seedLegacyRecord(_MemoryStore store, String pin, List<int> salt) {
+  final hmac = Hmac(sha256, utf8.encode(pin));
+  var block = hmac.convert([...salt, 0, 0, 0, 1]).bytes;
+  final output = List<int>.of(block);
+  for (var i = 1; i < 10000; i++) {
+    block = hmac.convert(block).bytes;
+    for (var j = 0; j < output.length; j++) {
+      output[j] ^= block[j];
+    }
+  }
+  store.values['urban_tanker_mpin_salt'] = base64Encode(salt);
+  store.values['urban_tanker_mpin_hash'] = base64Encode(output);
+}
+
+Future<List<int>> _fastKdf(String pin, List<int> salt, int iterations) async =>
+    sha256.convert([...salt, ...utf8.encode(pin)]).bytes;
 
 void main() {
   late _MemoryStore store;
@@ -68,5 +90,73 @@ void main() {
     await mpin.clear();
     expect(await mpin.isSet(), isFalse);
     expect(store.values, isEmpty);
+  });
+
+  test('stores a versioned record with its iteration count', () async {
+    await mpin.setPin('4821');
+    expect(store.values['urban_tanker_mpin_hash'], startsWith('v2\$100000\$'));
+    expect(store.values.containsKey('urban_tanker_mpin_salt'), isFalse);
+  });
+
+  test('rejects near-miss PINs of the same length', () async {
+    await mpin.setPin('4821');
+    for (final guess in ['4820', '4812', '3821', '4821 ']) {
+      expect((await mpin.verify(guess)).isAccepted, isFalse, reason: guess);
+    }
+    expect((await mpin.verify('4821')).isAccepted, isTrue);
+  });
+
+  test('an unversioned record still verifies and is upgraded to v2', () async {
+    final salt = List<int>.generate(16, (i) => i * 7 + 1);
+    _seedLegacyRecord(store, '4821', salt);
+
+    final wrong = await mpin.verify('0000');
+    expect(wrong.isAccepted, isFalse);
+    expect(store.values['urban_tanker_mpin_hash'], isNot(startsWith('v2\$')));
+
+    expect((await mpin.verify('4821')).isAccepted, isTrue);
+    expect(store.values['urban_tanker_mpin_hash'], startsWith('v2\$100000\$'));
+    expect(store.values.containsKey('urban_tanker_mpin_salt'), isFalse);
+    expect((await mpin.verify('4821')).isAccepted, isTrue);
+  });
+
+  test('escalates persisted cooldowns and resets escalation after success',
+      () async {
+    final service = MpinService(store: store, kdf: _fastKdf);
+    await service.setPin('4821');
+    const cooldownKey = 'urban_tanker_mpin_cooldown_until';
+    const lockoutLevelKey = 'urban_tanker_mpin_lockout_level';
+    const cooldowns = [30000, 60000, 300000];
+
+    for (final cooldownMs in cooldowns) {
+      if (store.values.containsKey(cooldownKey)) {
+        store.values[cooldownKey] =
+            '${DateTime.now().millisecondsSinceEpoch - 1}';
+      }
+      for (var attempt = 0; attempt < MpinService.maxAttempts; attempt++) {
+        final check = await service.verify('0000');
+        if (attempt < MpinService.maxAttempts - 1) {
+          expect(check.isLocked, isFalse);
+        } else {
+          expect(check.isLocked, isTrue);
+        }
+      }
+      final until = int.parse(store.values[cooldownKey]!);
+      final remaining =
+          until - DateTime.now().millisecondsSinceEpoch;
+      expect(remaining, inInclusiveRange(cooldownMs - 1000, cooldownMs));
+      expect((await service.verify('4821')).isLocked, isTrue);
+    }
+
+    store.values[cooldownKey] = '${DateTime.now().millisecondsSinceEpoch - 1}';
+    expect((await service.verify('4821')).isAccepted, isTrue);
+    expect(store.values.containsKey(lockoutLevelKey), isFalse);
+
+    for (var attempt = 0; attempt < MpinService.maxAttempts; attempt++) {
+      await service.verify('0000');
+    }
+    final until = int.parse(store.values[cooldownKey]!);
+    final remaining = until - DateTime.now().millisecondsSinceEpoch;
+    expect(remaining, inInclusiveRange(29000, 30000));
   });
 }

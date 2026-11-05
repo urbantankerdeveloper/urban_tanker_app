@@ -48,6 +48,10 @@ void main() {
     expect(find.text('1 to review'), findsOneWidget);
     expect(find.text('bookings'), findsOneWidget);
     expect(find.text('Configuration warnings'), findsOneWidget);
+    expect(
+      tester.widget<ListView>(find.byType(ListView)).padding,
+      AppPageInsets.standard,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -73,5 +77,9 @@ void main() {
     expect(find.text('Last 30 days'), findsOneWidget);
     expect(find.text('Run report'), findsOneWidget);
     expect(find.text('Registered vendors (0)'), findsOneWidget);
+    expect(
+      tester.widget<ListView>(find.byType(ListView)).padding,
+      AppPageInsets.standard,
+    );
   });
 }

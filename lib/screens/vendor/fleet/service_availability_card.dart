@@ -19,7 +19,7 @@ class ServiceAvailabilityCard extends ConsumerWidget {
       children: [
         services.when(
           loading: () => const Padding(
-            padding: EdgeInsets.all(AppSpace.lg),
+            padding: AppPageInsets.card,
             child: SkeletonBox(height: 48),
           ),
           error: (error, _) => AppListRow(

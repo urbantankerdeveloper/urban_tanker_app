@@ -41,11 +41,9 @@ class _SupportRequestBody extends StatelessWidget {
     final timeline = item.timeline;
     final status = item.status.isEmpty ? 'Unknown status' : item.status;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.gutter,
-        AppSpace.lg,
-        AppSpace.gutter,
-        AppSpace.xxxl,
+      padding: AppPageInsets.withSafeAreaBottom(
+        context,
+        AppPageInsets.standard,
       ),
       children: [
         Text(item.title, style: theme.textTheme.headlineMedium),

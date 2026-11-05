@@ -73,11 +73,9 @@ class _InvoiceBody extends StatelessWidget {
         if (_isTotalLine(entry.key)) entry,
     ];
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.gutter,
-        AppSpace.lg,
-        AppSpace.gutter,
-        AppSpace.xxxl,
+      padding: AppPageInsets.withSafeAreaBottom(
+        context,
+        AppPageInsets.standard,
       ),
       children: [
         SurfaceCard(

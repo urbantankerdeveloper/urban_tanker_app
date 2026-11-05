@@ -120,11 +120,9 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(vendorPayoutsProvider),
           child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpace.gutter,
-              AppSpace.lg,
-              AppSpace.gutter,
-              AppSpace.xxxl,
+            padding: AppPageInsets.withSafeAreaBottom(
+              context,
+              AppPageInsets.standard,
             ),
             itemCount: header.length + (items.isEmpty ? 1 : items.length),
             itemBuilder: (_, index) {

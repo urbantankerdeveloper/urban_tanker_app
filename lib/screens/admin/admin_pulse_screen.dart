@@ -36,7 +36,10 @@ class AdminPulseScreen extends ConsumerWidget {
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(adminHealthProvider),
           child: ListView(
-            padding: const EdgeInsets.all(AppSpace.gutter),
+            padding: AppPageInsets.withSafeAreaBottom(
+              context,
+              AppPageInsets.standard,
+            ),
             children: [
               Text('Platform pulse', style: theme.textTheme.headlineMedium),
               const SizedBox(height: AppSpace.lg),

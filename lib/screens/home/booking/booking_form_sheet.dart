@@ -1237,8 +1237,7 @@ Future<void> openBookingForm(
                 Offstage(
                   offstage: !isLast,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                        AppSpace.lg, 0, AppSpace.lg, 0),
+                    padding: AppPageInsets.section.copyWith(top: 0, bottom: 0),
                     child: LiveQuoteSummary(
                       api: controller.api,
                       services: phoneVerified &&
@@ -1257,11 +1256,9 @@ Future<void> openBookingForm(
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpace.lg,
-                    AppSpace.md,
-                    AppSpace.lg,
-                    AppSpace.lg,
+                  padding: AppPageInsets.section.copyWith(
+                    top: AppSpace.md,
+                    bottom: AppSpace.lg,
                   ),
                   child: GlassCard(
                     padding: const EdgeInsets.all(AppSpace.md),

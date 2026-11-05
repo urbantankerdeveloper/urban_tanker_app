@@ -223,11 +223,9 @@ class _DispatcherDispatchScreenState
     return RefreshIndicator(
       onRefresh: () async => ref.invalidate(dispatcherOrdersProvider(filter)),
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpace.gutter,
-          AppSpace.lg,
-          AppSpace.gutter,
-          AppSpace.xxxl,
+        padding: AppPageInsets.withSafeAreaBottom(
+          context,
+          AppPageInsets.standard,
         ),
         itemCount: header.length + body.length,
         itemBuilder: (_, index) {

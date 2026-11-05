@@ -97,11 +97,9 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                       onRefresh: () async => ref.invalidate(bookingsProvider),
                       child: ListView.separated(
                         controller: _scrollController,
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpace.gutter,
-                          AppSpace.sm,
-                          AppSpace.gutter,
-                          AppSpace.xxxl,
+                        padding: AppPageInsets.withSafeAreaBottom(
+                          context,
+                          AppPageInsets.standard,
                         ),
                         itemCount: shown.length + (page.hasMore ? 1 : 0),
                         separatorBuilder: (context, index) =>
@@ -198,7 +196,7 @@ class _BookingCard extends StatelessWidget {
       if (booking.deliveryDate != null) formatBookingDate(booking.deliveryDate),
     ];
     return SurfaceCard(
-      padding: const EdgeInsets.all(AppSpace.lg),
+      padding: AppPageInsets.card,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => BookingDetailsScreen(booking: booking),

@@ -150,11 +150,9 @@ class _VendorOperationsScreenState
               ..invalidate(vendorDashboardProvider);
           },
           child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpace.gutter,
-              AppSpace.lg,
-              AppSpace.gutter,
-              AppSpace.xxxl,
+            padding: AppPageInsets.withSafeAreaBottom(
+              context,
+              AppPageInsets.standard,
             ),
             itemCount: header.length + rowCount + footer.length,
             itemBuilder: (_, index) {
