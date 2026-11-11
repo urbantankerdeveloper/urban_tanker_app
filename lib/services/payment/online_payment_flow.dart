@@ -23,31 +23,26 @@ class OnlinePaymentOutcome {
   final String? bookingId;
 }
 
-/// Drives one online payment: create the Razorpay order, open checkout, then
-/// verify the signature with the backend. Pass a [bookingId] to pay an existing
-/// booking, or a [checkoutId] to pay before the booking exists.
+/// Drives one online payment for an existing booking: create the Razorpay
+/// order, open checkout, then verify the signature with the backend.
 class OnlinePaymentFlow {
-  OnlinePaymentFlow({required ApiClient api, required PaymentCheckout checkout})
-      : _api = api,
-        _checkout = checkout;
+OnlinePaymentFlow({required ApiClient api, required PaymentCheckout checkout})
+    : _api = api,
+      _checkout = checkout;
 
-  final ApiClient _api;
-  final PaymentCheckout _checkout;
+final ApiClient _api;
+final PaymentCheckout _checkout;
 
   Future<OnlinePaymentOutcome> pay({
-    String? bookingId,
-    String? checkoutId,
+  required String bookingId,
     required String name,
     required String description,
     String? contact,
     String? email,
   }) async {
-    assert((bookingId == null) != (checkoutId == null));
     final RazorpayOrder order;
     try {
-      order = checkoutId != null
-          ? await _api.createCheckoutRazorpayOrder(checkoutId)
-          : await _api.createRazorpayOrder(bookingId!);
+    order = await _api.createRazorpayOrder(bookingId);
     } on ApiException catch (error) {
       return OnlinePaymentOutcome(
         OnlinePaymentStatus.failed,

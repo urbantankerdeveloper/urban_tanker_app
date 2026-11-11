@@ -131,18 +131,7 @@ class CustomerApi {
     return RazorpayOrder.fromJson(await mapResponse(response, 'payment order'));
   }
 
-  /// Creates the Razorpay order for a checkout. The booking does not exist
-  /// until the payment is verified, so the order is tied to the checkout.
-  Future<RazorpayOrder> createCheckoutRazorpayOrder(String checkoutId) async {
-    final response = await _api.request(
-      'POST',
-      '/payment/razorpay/order',
-      body: {'checkoutId': checkoutId},
-    );
-    return RazorpayOrder.fromJson(await mapResponse(response, 'payment order'));
-  }
-
-  /// Confirms a completed checkout with the server and returns the booking id
+  /// Confirms a completed payment with the server and returns the booking id
   /// it created. A payment the webhook already settled counts as verified; the
   /// legacy booking path may not return an id, so the result can be null.
   Future<String?> verifyRazorpayPayment({
@@ -171,31 +160,16 @@ class CustomerApi {
     }
   }
 
-  /// Books a checkout as cash on delivery. This is the only way a booking is
-  /// created without a successful online payment, apart from wallet payment.
-  Future<Map<String, dynamic>> payCheckoutOnDelivery(String checkoutId) async {
-    final response = await _api.request(
+  /// Removes an unpaid online-payment booking after the customer cancels the
+  /// Razorpay checkout. The server refuses paid or already accepted bookings.
+  Future<void> cancelOnlinePayment(String bookingId, {String? couponCode}) async {
+    await _api.request(
       'POST',
-      '/customer/checkouts/$checkoutId/cash-on-delivery',
+      '/customer/bookings/$bookingId/cancel-online-payment',
+      body: {
+        if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
+      },
     );
-    final decoded = decodeBody(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('The booking response was invalid.');
-    }
-    return decoded;
-  }
-
-  /// Returns the booking's payment receipt, or null when no payment has been
-  /// started yet.
-  Future<PaymentReceipt?> getPaymentDetails(String bookingId) async {
-    try {
-      final response =
-          await _api.request('GET', '/customer/payments/$bookingId');
-      return PaymentReceipt.fromJson(await mapResponse(response, 'payment'));
-    } on ApiException catch (error) {
-      if (error.statusCode == 404) return null;
-      rethrow;
-    }
   }
 
   /// Moves an unpaid online-payment booking to cash on delivery.
@@ -211,6 +185,17 @@ class CustomerApi {
   /// this once the driver has started collecting cash.
   Future<void> switchBookingToOnline(String bookingId) async {
     await _api.request('POST', '/customer/orders/$bookingId/payment-method/online');
+  }
+
+  /// Loads the payment receipt for a booking, or null when no payment exists.
+  Future<PaymentReceipt?> getPaymentDetails(String bookingId) async {
+    try {
+      final response = await _api.request('GET', '/customer/payments/$bookingId');
+      return PaymentReceipt.fromJson(await mapResponse(response, 'payment details'));
+    } on ApiException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
+    }
   }
 
   /// Loads every booking by following `nextOffset` from the server.

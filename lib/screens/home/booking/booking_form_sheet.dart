@@ -530,6 +530,9 @@ Future<void> openBookingForm(
                         .firstWhere((service) => service.id == serviceId)
                         .name,
                 };
+                booking['coupon_code'] = validatedCoupon == null
+                    ? null
+                    : couponController.text.trim();
                 if (context.mounted) Navigator.pop(context, booking);
                 return;
               } on ApiException catch (error) {
@@ -1361,7 +1364,7 @@ Future<void> openBookingForm(
     Map<String, dynamic> booking = result;
     var resolvedMethod = chosenMethod;
     String? paidNote;
-    if (booking['status'] == 'awaiting_payment') {
+    if (chosenMethod == 'gateway' && booking['id'] != null) {
       final payment = await _runOnlinePaymentStep(
         context,
         controller.api,
@@ -1399,28 +1402,28 @@ enum _PaymentChoice {
   retryConfirmation,
   cashOnDelivery,
   payLater,
-  cancelBooking,
 }
 
-/// Runs Razorpay checkout for a checkout that is not yet a booking. The booking
-/// is created only after the payment is verified, or when the user chooses
-/// cash on delivery. Returns a null [booking] when nothing was booked.
+/// Runs Razorpay checkout for a booking that was just created. Cancelling the
+/// checkout removes the booking. A failed or unconfirmed payment keeps it, so
+/// the customer can retry or switch to cash on delivery. Returns a null
+/// [booking] when no booking was kept.
 Future<({Map<String, dynamic>? booking, String method, String? note})>
     _runOnlinePaymentStep(
   BuildContext context,
   ApiClient api,
-  Map<String, dynamic> checkout,
+  Map<String, dynamic> booking,
   String phone,
   String email,
 ) async {
-  final checkoutId = checkout['checkoutId']?.toString();
-  if (checkoutId == null || checkoutId.isEmpty) {
+  final bookingId = booking['id']?.toString();
+  if (bookingId == null || bookingId.isEmpty) {
     return (booking: null, method: 'gateway', note: 'Booking was not created.');
   }
   final flow = OnlinePaymentFlow(api: api, checkout: RazorpayPaymentCheckout());
 
   Future<OnlinePaymentOutcome> startPayment() => flow.pay(
-        checkoutId: checkoutId,
+        bookingId: bookingId,
         name: 'Urban Tanker',
         description: 'Urban Tanker booking',
         contact: phone.isEmpty ? null : phone,
@@ -1432,16 +1435,8 @@ Future<({Map<String, dynamic>? booking, String method, String? note})>
   while (true) {
     switch (outcome.status) {
       case OnlinePaymentStatus.paid:
-        final bookingId = outcome.bookingId;
-        if (bookingId == null) {
-          return (
-            booking: null,
-            method: 'gateway',
-            note: 'Payment received. Your booking will appear shortly.',
-          );
-        }
         return (
-          booking: {...checkout, 'id': bookingId},
+          booking: booking,
           method: 'gateway',
           note: await _paidNote(flow, bookingId),
         );
@@ -1470,27 +1465,40 @@ Future<({Map<String, dynamic>? booking, String method, String? note})>
         outcome = await flow.confirm(outcome.pendingSuccess!);
         continue;
       case OnlinePaymentStatus.cancelled:
+        try {
+          await api.cancelOnlinePayment(
+            bookingId,
+            couponCode: booking['coupon_code']?.toString(),
+          );
+        } on Object catch (error) {
+          return (booking: null, method: 'gateway', note: friendlyError(error));
+        }
+        return (
+          booking: null,
+          method: 'gateway',
+          note: 'Payment was cancelled, so the booking was not created.',
+        );
       case OnlinePaymentStatus.failed:
         if (!context.mounted) {
-          return (booking: null, method: 'gateway', note: null);
+          return (booking: booking, method: 'gateway', note: null);
         }
         final choice = await _showPaymentRecoveryDialog(
           context,
           title: 'Payment not completed',
           message: outcome.message ??
-              'Your booking is not created until payment succeeds. Try again or choose cash on delivery.',
+              'Your booking is saved. Try again or choose cash on delivery.',
           options: const [
             (_PaymentChoice.retryPayment, 'Try again'),
             (_PaymentChoice.cashOnDelivery, 'Cash on delivery'),
-            (_PaymentChoice.cancelBooking, 'Cancel booking'),
+            (_PaymentChoice.payLater, 'Pay later'),
           ],
         );
         if (choice == _PaymentChoice.retryPayment) {
           outcome = await startPayment();
         } else if (choice == _PaymentChoice.cashOnDelivery) {
           try {
-            final booking = await api.payCheckoutOnDelivery(checkoutId);
-            return (booking: {...checkout, ...booking}, method: 'cod', note: null);
+            await api.switchBookingToCashOnDelivery(bookingId);
+            return (booking: booking, method: 'cod', note: null);
           } on Object catch (error) {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -1500,9 +1508,10 @@ Future<({Map<String, dynamic>? booking, String method, String? note})>
           }
         } else {
           return (
-            booking: null,
+            booking: booking,
             method: 'gateway',
-            note: 'Booking was not created because payment was not completed.',
+            note:
+                'Your booking is saved with payment pending. You can pay from My Bookings.',
           );
         }
         continue;

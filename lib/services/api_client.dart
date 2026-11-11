@@ -268,9 +268,6 @@ class ApiClient implements ApiTransport {
   Future<RazorpayOrder> createRazorpayOrder(String bookingId) =>
       _customer.createRazorpayOrder(bookingId);
 
-  Future<RazorpayOrder> createCheckoutRazorpayOrder(String checkoutId) =>
-      _customer.createCheckoutRazorpayOrder(checkoutId);
-
   Future<String?> verifyRazorpayPayment({
     required String orderId,
     required String paymentId,
@@ -282,8 +279,8 @@ class ApiClient implements ApiTransport {
         signature: signature,
       );
 
-  Future<Map<String, dynamic>> payCheckoutOnDelivery(String checkoutId) =>
-      _customer.payCheckoutOnDelivery(checkoutId);
+  Future<void> cancelOnlinePayment(String bookingId, {String? couponCode}) =>
+      _customer.cancelOnlinePayment(bookingId, couponCode: couponCode);
 
   Future<PaymentReceipt?> getPaymentDetails(String bookingId) =>
       _customer.getPaymentDetails(bookingId);
