@@ -207,6 +207,7 @@ void main() {
       location: '12 Main Street',
       deliveryDate: '2026-10-25',
       services: const [],
+      paymentMethod: 'cod',
       idempotencyKey: '6f1c2b1e-3d4a-4b5c-8d6e-7f8091a2b3c4',
     );
 

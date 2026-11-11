@@ -229,7 +229,7 @@ class ApiClient implements ApiTransport {
     required String deliveryDate,
     List<BookingServiceDetails>? services,
     String? notes,
-    String paymentMethod = 'cod',
+    required String paymentMethod,
     String? couponCode,
     String? phone,
     String? phoneVerificationChallengeId,
@@ -256,7 +256,10 @@ class ApiClient implements ApiTransport {
   Future<RazorpayOrder> createRazorpayOrder(String bookingId) =>
       _customer.createRazorpayOrder(bookingId);
 
-  Future<void> verifyRazorpayPayment({
+  Future<RazorpayOrder> createCheckoutRazorpayOrder(String checkoutId) =>
+      _customer.createCheckoutRazorpayOrder(checkoutId);
+
+  Future<String?> verifyRazorpayPayment({
     required String orderId,
     required String paymentId,
     required String signature,
@@ -266,6 +269,9 @@ class ApiClient implements ApiTransport {
         paymentId: paymentId,
         signature: signature,
       );
+
+  Future<Map<String, dynamic>> payCheckoutOnDelivery(String checkoutId) =>
+      _customer.payCheckoutOnDelivery(checkoutId);
 
   Future<PaymentReceipt?> getPaymentDetails(String bookingId) =>
       _customer.getPaymentDetails(bookingId);
@@ -283,7 +289,7 @@ class ApiClient implements ApiTransport {
     required String deliveryDate,
     List<BookingServiceDetails>? services,
     String? notes,
-    String paymentMethod = 'cod',
+    required String paymentMethod,
     String? couponCode,
     String? phone,
     String? phoneVerificationChallengeId,

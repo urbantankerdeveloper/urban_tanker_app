@@ -35,7 +35,7 @@ class CustomerApi {
     required String deliveryDate,
     List<BookingServiceDetails>? services,
     String? notes,
-    String paymentMethod = 'cod',
+    required String paymentMethod,
     String? couponCode,
     String? phone,
     String? phoneVerificationChallengeId,
@@ -84,7 +84,7 @@ class CustomerApi {
     required String deliveryDate,
     List<BookingServiceDetails>? services,
     String? notes,
-    String paymentMethod = 'cod',
+    required String paymentMethod,
     String? couponCode,
     String? phone,
     String? phoneVerificationChallengeId,
@@ -131,15 +131,27 @@ class CustomerApi {
     return RazorpayOrder.fromJson(await mapResponse(response, 'payment order'));
   }
 
-  /// Confirms a completed checkout with the server. A payment the webhook
-  /// already settled counts as verified.
-  Future<void> verifyRazorpayPayment({
+  /// Creates the Razorpay order for a checkout. The booking does not exist
+  /// until the payment is verified, so the order is tied to the checkout.
+  Future<RazorpayOrder> createCheckoutRazorpayOrder(String checkoutId) async {
+    final response = await _api.request(
+      'POST',
+      '/payment/razorpay/order',
+      body: {'checkoutId': checkoutId},
+    );
+    return RazorpayOrder.fromJson(await mapResponse(response, 'payment order'));
+  }
+
+  /// Confirms a completed checkout with the server and returns the booking id
+  /// it created. A payment the webhook already settled counts as verified; the
+  /// legacy booking path may not return an id, so the result can be null.
+  Future<String?> verifyRazorpayPayment({
     required String orderId,
     required String paymentId,
     required String signature,
   }) async {
     try {
-      await _api.request(
+      final response = await _api.request(
         'POST',
         '/payment/razorpay/verify',
         body: {
@@ -148,13 +160,29 @@ class CustomerApi {
           'signature': signature,
         },
       );
+      final decoded = decodeBody(response);
+      return decoded is Map<String, dynamic> ? decoded['orderId'] as String? : null;
     } on ApiException catch (error) {
       if (error.statusCode == 409 &&
           error.message.contains('already been processed')) {
-        return;
+        return null;
       }
       rethrow;
     }
+  }
+
+  /// Books a checkout as cash on delivery. This is the only way a booking is
+  /// created without a successful online payment, apart from wallet payment.
+  Future<Map<String, dynamic>> payCheckoutOnDelivery(String checkoutId) async {
+    final response = await _api.request(
+      'POST',
+      '/customer/checkouts/$checkoutId/cash-on-delivery',
+    );
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The booking response was invalid.');
+    }
+    return decoded;
   }
 
   /// Returns the booking's payment receipt, or null when no payment has been

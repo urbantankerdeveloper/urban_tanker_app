@@ -60,14 +60,28 @@ class _FakeApi extends ApiClient {
     );
   }
 
+  final List<String> checkoutOrders = [];
+
   @override
-  Future<void> verifyRazorpayPayment({
+  Future<RazorpayOrder> createCheckoutRazorpayOrder(String checkoutId) async {
+    checkoutOrders.add(checkoutId);
+    return RazorpayOrder(
+      id: 'order_1',
+      amountPaise: 50000,
+      currency: 'INR',
+      keyId: 'rzp_test_public',
+    );
+  }
+
+  @override
+  Future<String?> verifyRazorpayPayment({
     required String orderId,
     required String paymentId,
     required String signature,
   }) async {
     verified.add(paymentId);
     if (verifyError != null) throw verifyError!;
+    return 'b1';
   }
 
   @override
@@ -81,6 +95,36 @@ const _success = CheckoutSuccess(
 );
 
 void main() {
+  test('a verified checkout reports the booking it created', () async {
+    final api = _FakeApi();
+    final checkout = _FakeCheckout([_success]);
+    final outcome = await OnlinePaymentFlow(api: api, checkout: checkout).pay(
+      checkoutId: 'c1',
+      name: 'Urban Tanker',
+      description: 'Urban Tanker booking',
+    );
+
+    expect(api.checkoutOrders, ['c1']);
+    expect(outcome.status, OnlinePaymentStatus.paid);
+    expect(outcome.bookingId, 'b1');
+  });
+
+  test('a cancelled checkout does not verify or report a booking', () async {
+    final api = _FakeApi();
+    final checkout = _FakeCheckout([
+      const CheckoutFailure(message: 'Closed', cancelled: true),
+    ]);
+    final outcome = await OnlinePaymentFlow(api: api, checkout: checkout).pay(
+      checkoutId: 'c1',
+      name: 'Urban Tanker',
+      description: 'Urban Tanker booking',
+    );
+
+    expect(api.verified, isEmpty);
+    expect(outcome.status, OnlinePaymentStatus.cancelled);
+    expect(outcome.bookingId, isNull);
+  });
+
   test('a successful checkout is verified and reported as paid', () async {
     final api = _FakeApi();
     final checkout = _FakeCheckout([_success]);

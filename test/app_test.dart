@@ -308,6 +308,7 @@ void main() {
         ),
       ],
       couponCode: 'save10',
+      paymentMethod: 'cod',
     );
 
     expect(body['serviceId'], 'water_tanker');
@@ -342,6 +343,7 @@ void main() {
       location: 'Chennai',
       deliveryDate: '2026-10-25',
       phone: '+91 98765 43210',
+      paymentMethod: 'cod',
       phoneVerificationChallengeId: 'challenge-1',
       services: const [
         BookingServiceDetails(
@@ -364,6 +366,7 @@ void main() {
     final api = _RecordingApiClient();
 
     await api.createBooking(
+      paymentMethod: 'cod',
       serviceId: 'water_tanker',
       capacity: '5000',
       location: '12 Main Street',
@@ -398,6 +401,7 @@ void main() {
       capacity: '5000',
       location: '12 Main Street',
       deliveryDate: '2026-10-25',
+      paymentMethod: 'cod',
       services: const [
         BookingServiceDetails(
           serviceId: 'water_tanker',

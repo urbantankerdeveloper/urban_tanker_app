@@ -5,7 +5,12 @@ import 'payment_checkout.dart';
 enum OnlinePaymentStatus { paid, cancelled, failed, verificationPending }
 
 class OnlinePaymentOutcome {
-  const OnlinePaymentOutcome(this.status, {this.message, this.pendingSuccess});
+  const OnlinePaymentOutcome(
+    this.status, {
+    this.message,
+    this.pendingSuccess,
+    this.bookingId,
+  });
 
   final OnlinePaymentStatus status;
   final String? message;
@@ -13,10 +18,14 @@ class OnlinePaymentOutcome {
   /// Set only when the checkout succeeded but server verification did not.
   /// Keep it in memory so the user can retry confirmation without paying again.
   final CheckoutSuccess? pendingSuccess;
+
+  /// The booking created by a verified checkout, or the booking that was paid.
+  final String? bookingId;
 }
 
-/// Drives one online payment for an existing booking: create the Razorpay
-/// order, open checkout, then verify the signature with the backend.
+/// Drives one online payment: create the Razorpay order, open checkout, then
+/// verify the signature with the backend. Pass a [bookingId] to pay an existing
+/// booking, or a [checkoutId] to pay before the booking exists.
 class OnlinePaymentFlow {
   OnlinePaymentFlow({required ApiClient api, required PaymentCheckout checkout})
       : _api = api,
@@ -26,15 +35,19 @@ class OnlinePaymentFlow {
   final PaymentCheckout _checkout;
 
   Future<OnlinePaymentOutcome> pay({
-    required String bookingId,
+    String? bookingId,
+    String? checkoutId,
     required String name,
     required String description,
     String? contact,
     String? email,
   }) async {
+    assert((bookingId == null) != (checkoutId == null));
     final RazorpayOrder order;
     try {
-      order = await _api.createRazorpayOrder(bookingId);
+      order = checkoutId != null
+          ? await _api.createCheckoutRazorpayOrder(checkoutId)
+          : await _api.createRazorpayOrder(bookingId!);
     } on ApiException catch (error) {
       return OnlinePaymentOutcome(
         OnlinePaymentStatus.failed,
@@ -65,12 +78,12 @@ class OnlinePaymentFlow {
 
   Future<OnlinePaymentOutcome> confirm(CheckoutSuccess success) async {
     try {
-      await _api.verifyRazorpayPayment(
+      final bookingId = await _api.verifyRazorpayPayment(
         orderId: success.orderId,
         paymentId: success.paymentId,
         signature: success.signature,
       );
-      return const OnlinePaymentOutcome(OnlinePaymentStatus.paid);
+      return OnlinePaymentOutcome(OnlinePaymentStatus.paid, bookingId: bookingId);
     } on Object {
       return OnlinePaymentOutcome(
         OnlinePaymentStatus.verificationPending,

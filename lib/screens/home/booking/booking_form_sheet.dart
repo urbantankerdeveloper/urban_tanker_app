@@ -287,7 +287,7 @@ Future<void> openBookingForm(
   var submittingBooking = false;
   String? bookingKey;
   String? bookingKeyFingerprint;
-  var paymentMethod = 'cod';
+  String? paymentMethod;
   try {
     final savedPhone = await controller.api.phoneVerification();
     phoneController.text = savedPhone.phone;
@@ -392,6 +392,7 @@ Future<void> openBookingForm(
 
         bool canSubmit() => !(loadingPhoneVerification ||
             submittingBooking ||
+            paymentMethod == null ||
             selectedServices.isEmpty ||
             !phoneVerified ||
             selectedServices.any(serviceHasMissingFields));
@@ -405,6 +406,14 @@ Future<void> openBookingForm(
           }
           final form = stepKeys[step].currentState;
           if (form != null && !form.validate()) return;
+          final method = paymentMethod;
+          if (method == null) {
+            setSheetState(() {
+              bookingFormError = 'Choose a payment method.';
+              step = steps.indexOf('Payment');
+            });
+            return;
+          }
           setSheetState(() => submittingBooking = true);
           var bookingContactRecoveryUsed = false;
           try {
@@ -416,7 +425,7 @@ Future<void> openBookingForm(
               location: services.first.location ?? '',
               deliveryDate: services.first.deliveryDate ?? '',
               notes: notesController.text,
-              paymentMethod: paymentMethod,
+              paymentMethod: method,
               latitude: services.first.latitude,
               longitude: services.first.longitude,
               couponCode:
@@ -488,7 +497,7 @@ Future<void> openBookingForm(
                 notesController.text,
                 phoneController.text,
                 validatedCoupon == null ? null : couponController.text.trim(),
-                paymentMethod,
+                method,
                 phoneChallengeId,
               ]);
               if (keyFingerprint != bookingKeyFingerprint) {
@@ -503,7 +512,7 @@ Future<void> openBookingForm(
                   location: services.first.location ?? '',
                   deliveryDate: services.first.deliveryDate ?? '',
                   notes: notesController.text,
-                  paymentMethod: paymentMethod,
+                  paymentMethod: method,
                   latitude: services.first.latitude,
                   longitude: services.first.longitude,
                   couponCode: validatedCoupon == null
@@ -1065,8 +1074,11 @@ Future<void> openBookingForm(
                 const SizedBox(height: AppSpace.md),
                 DropdownButtonFormField<String>(
                   initialValue: paymentMethod,
+                  hint: const Text('Choose a payment method'),
                   decoration:
                       const InputDecoration(labelText: 'Payment method'),
+                  validator: (value) =>
+                      value == null ? 'Choose a payment method.' : null,
                   items: const [
                     DropdownMenuItem(value: 'wallet', child: Text('Wallet')),
                     DropdownMenuItem(
@@ -1079,7 +1091,7 @@ Future<void> openBookingForm(
                     ),
                   ],
                   onChanged: (value) => setSheetState(
-                    () => paymentMethod = value ?? 'cod',
+                    () => paymentMethod = value,
                   ),
                 ),
               ],
@@ -1243,6 +1255,7 @@ Future<void> openBookingForm(
                     child: LiveQuoteSummary(
                       api: controller.api,
                       services: phoneVerified &&
+                              paymentMethod != null &&
                               selectedServices.isNotEmpty &&
                               !selectedServices.any(serviceHasMissingFields)
                           ? buildServiceDetails()
@@ -1343,25 +1356,37 @@ Future<void> openBookingForm(
   for (final fields in serviceFields.values) {
     fields.dispose();
   }
-  if (result != null && context.mounted) {
-    final quote = result['quote'];
-    var resolvedMethod = paymentMethod;
+  final chosenMethod = paymentMethod;
+  if (result != null && context.mounted && chosenMethod != null) {
+    Map<String, dynamic> booking = result;
+    var resolvedMethod = chosenMethod;
     String? paidNote;
-    if (paymentMethod == 'gateway') {
+    if (booking['status'] == 'awaiting_payment') {
       final payment = await _runOnlinePaymentStep(
         context,
         controller.api,
-        result,
+        booking,
         contactPhone,
         contactEmail,
       );
       if (!context.mounted) return;
+      final paidBooking = payment.booking;
+      if (paidBooking == null) {
+        if (payment.note != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(payment.note!)),
+          );
+        }
+        return;
+      }
+      booking = paidBooking;
       resolvedMethod = payment.method;
       paidNote = payment.note;
     }
+    final quote = booking['quote'];
     await showBookingSuccess(
       context,
-      result,
+      booking,
       quote is Map<String, dynamic> ? quote : null,
       resolvedMethod,
       paidNote: paidNote,
@@ -1369,39 +1394,60 @@ Future<void> openBookingForm(
   }
 }
 
-enum _PaymentChoice { retryPayment, retryConfirmation, cashOnDelivery, payLater }
+enum _PaymentChoice {
+  retryPayment,
+  retryConfirmation,
+  cashOnDelivery,
+  payLater,
+  cancelBooking,
+}
 
-/// Runs Razorpay checkout for a booking that was just created with online
-/// payment. The booking already exists, so every failure path keeps it and
-/// offers retry, cash on delivery, or paying later.
-Future<({String method, String? note})> _runOnlinePaymentStep(
+/// Runs Razorpay checkout for a checkout that is not yet a booking. The booking
+/// is created only after the payment is verified, or when the user chooses
+/// cash on delivery. Returns a null [booking] when nothing was booked.
+Future<({Map<String, dynamic>? booking, String method, String? note})>
+    _runOnlinePaymentStep(
   BuildContext context,
   ApiClient api,
-  Map<String, dynamic> booking,
+  Map<String, dynamic> checkout,
   String phone,
   String email,
 ) async {
-  final bookingId = booking['id']?.toString();
-  if (bookingId == null || bookingId.isEmpty) {
-    return (method: 'gateway', note: 'Payment not started.');
+  final checkoutId = checkout['checkoutId']?.toString();
+  if (checkoutId == null || checkoutId.isEmpty) {
+    return (booking: null, method: 'gateway', note: 'Booking was not created.');
   }
   final flow = OnlinePaymentFlow(api: api, checkout: RazorpayPaymentCheckout());
-  final reference = booking['reference']?.toString();
-  var outcome = await flow.pay(
-    bookingId: bookingId,
-    name: 'Urban Tanker',
-    description: reference == null ? 'Booking payment' : 'Booking $reference',
-    contact: phone.isEmpty ? null : phone,
-    email: email.isEmpty ? null : email,
-  );
+
+  Future<OnlinePaymentOutcome> startPayment() => flow.pay(
+        checkoutId: checkoutId,
+        name: 'Urban Tanker',
+        description: 'Urban Tanker booking',
+        contact: phone.isEmpty ? null : phone,
+        email: email.isEmpty ? null : email,
+      );
+
+  var outcome = await startPayment();
 
   while (true) {
     switch (outcome.status) {
       case OnlinePaymentStatus.paid:
-        return (method: 'gateway', note: await _paidNote(flow, bookingId));
+        final bookingId = outcome.bookingId;
+        if (bookingId == null) {
+          return (
+            booking: null,
+            method: 'gateway',
+            note: 'Payment received. Your booking will appear shortly.',
+          );
+        }
+        return (
+          booking: {...checkout, 'id': bookingId},
+          method: 'gateway',
+          note: await _paidNote(flow, bookingId),
+        );
       case OnlinePaymentStatus.verificationPending:
         if (!context.mounted) {
-          return (method: 'gateway', note: 'Payment confirmation pending.');
+          return (booking: null, method: 'gateway', note: null);
         }
         final choice = await _showPaymentRecoveryDialog(
           context,
@@ -1415,8 +1461,10 @@ Future<({String method, String? note})> _runOnlinePaymentStep(
         if (choice != _PaymentChoice.retryConfirmation ||
             outcome.pendingSuccess == null) {
           return (
+            booking: null,
             method: 'gateway',
-            note: 'Payment confirmation pending.',
+            note:
+                'Payment received. Check My Bookings shortly to see your booking.',
           );
         }
         outcome = await flow.confirm(outcome.pendingSuccess!);
@@ -1424,42 +1472,38 @@ Future<({String method, String? note})> _runOnlinePaymentStep(
       case OnlinePaymentStatus.cancelled:
       case OnlinePaymentStatus.failed:
         if (!context.mounted) {
-          return (method: 'gateway', note: 'Payment not completed.');
+          return (booking: null, method: 'gateway', note: null);
         }
         final choice = await _showPaymentRecoveryDialog(
           context,
           title: 'Payment not completed',
           message: outcome.message ??
-              'Your booking is saved. You can pay now or choose cash on delivery.',
+              'Your booking is not created until payment succeeds. Try again or choose cash on delivery.',
           options: const [
             (_PaymentChoice.retryPayment, 'Try again'),
             (_PaymentChoice.cashOnDelivery, 'Cash on delivery'),
-            (_PaymentChoice.payLater, 'Pay later'),
+            (_PaymentChoice.cancelBooking, 'Cancel booking'),
           ],
         );
         if (choice == _PaymentChoice.retryPayment) {
-          outcome = await flow.pay(
-            bookingId: bookingId,
-            name: 'Urban Tanker',
-            description:
-                reference == null ? 'Booking payment' : 'Booking $reference',
-            contact: phone.isEmpty ? null : phone,
-            email: email.isEmpty ? null : email,
-          );
+          outcome = await startPayment();
         } else if (choice == _PaymentChoice.cashOnDelivery) {
           try {
-            await api.switchBookingToCashOnDelivery(bookingId);
-            return (method: 'cod', note: null);
+            final booking = await api.payCheckoutOnDelivery(checkoutId);
+            return (booking: {...checkout, ...booking}, method: 'cod', note: null);
           } on Object catch (error) {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text(friendlyError(error))),
               );
             }
-            return (method: 'gateway', note: 'Payment not completed.');
           }
         } else {
-          return (method: 'gateway', note: 'Payment pending.');
+          return (
+            booking: null,
+            method: 'gateway',
+            note: 'Booking was not created because payment was not completed.',
+          );
         }
         continue;
     }

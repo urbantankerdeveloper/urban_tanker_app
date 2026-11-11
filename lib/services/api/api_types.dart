@@ -24,7 +24,7 @@ Map<String, dynamic> buildBookingRequestBody({
   double? latitude,
   double? longitude,
   String? notes,
-  String paymentMethod = 'cod',
+  required String paymentMethod,
   String? couponCode,
   String? phone,
   String? phoneVerificationChallengeId,

@@ -38,7 +38,7 @@ class LiveQuoteSummary extends StatefulWidget {
   final ApiClient api;
   final List<BookingServiceDetails> services;
   final String phone;
-  final String paymentMethod;
+  final String? paymentMethod;
   final String? couponCode;
 
   /// Told the rupee total of each fresh quote, or null when there is none.
@@ -99,7 +99,7 @@ class _LiveQuoteSummaryState extends State<LiveQuoteSummary> {
     _lastKey = key;
     _debounce?.cancel();
     _error = null;
-    if (widget.services.isEmpty) {
+    if (widget.services.isEmpty || widget.paymentMethod == null) {
       _loading = false;
       _quote = null;
       return;
@@ -109,6 +109,8 @@ class _LiveQuoteSummaryState extends State<LiveQuoteSummary> {
   }
 
   Future<void> _fetch(String key) async {
+    final paymentMethod = widget.paymentMethod;
+    if (paymentMethod == null) return;
     final requestId = ++_requestCount;
     final first = widget.services.first;
     try {
@@ -118,7 +120,7 @@ class _LiveQuoteSummaryState extends State<LiveQuoteSummary> {
         services: widget.services,
         location: first.location ?? '',
         deliveryDate: first.deliveryDate ?? '',
-        paymentMethod: widget.paymentMethod,
+        paymentMethod: paymentMethod,
         latitude: first.latitude,
         longitude: first.longitude,
         couponCode: widget.couponCode,
