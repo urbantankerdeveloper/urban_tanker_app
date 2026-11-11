@@ -37,13 +37,24 @@ class AuthApi {
     required String name,
     required String phone,
     String? themeMode,
+    String role = 'customer',
+    String? businessName,
+    String? serviceZone,
+    double? latitude,
+    double? longitude,
+    String? selfieJpegBase64,
   }) async {
     final response = await _api.request('POST', '/auth/signup', body: {
       'email': email,
       'password': password,
       'name': name,
       'phone': phone,
-      'role': 'customer',
+      'role': role,
+      if (businessName != null) 'businessName': businessName,
+      if (serviceZone != null) 'serviceZone': serviceZone,
+      if (latitude != null && longitude != null) 'latitude': latitude,
+      if (latitude != null && longitude != null) 'longitude': longitude,
+      if (selfieJpegBase64 != null) 'selfieJpegBase64': selfieJpegBase64,
       if (themeMode != null) 'themeMode': themeMode,
     });
     final decoded = decodeBody(response);
@@ -301,7 +312,18 @@ class AuthApi {
       },
       retry: false,
     );
-    return _saveAuthResult(decodeBody(response));
+    final decoded = decodeBody(response);
+    if (decoded is Map<String, dynamic> && decoded['approvalPending'] == true) {
+      throw AdminApprovalPendingException(_approvalMessage(decoded));
+    }
+    return _saveAuthResult(decoded);
+  }
+
+  static String _approvalMessage(Map<String, dynamic> decoded) {
+    final message = decoded['message'];
+    return message is String && message.isNotEmpty
+        ? message
+        : 'Your admin account is waiting for approval from an existing admin.';
   }
 
   Future<void> updateThemePreference(String themeMode) async {

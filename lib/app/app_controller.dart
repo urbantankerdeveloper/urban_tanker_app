@@ -186,17 +186,23 @@ class AppController extends ChangeNotifier {
       if (challengeId == null) {
         throw StateError('Request a verification code before signing in.');
       }
-      final result = await api.verifyEmailAuthOtp(
-        email: email,
-        challengeId: challengeId,
-        otp: otp,
-        name: name,
-        phone: phone,
-      );
-      emailOtpChallengeId = null;
-      pendingEmailVerification = null;
-      _setSession(result);
-      pendingUnlockSetup = !quickUnlockEnabled && !biometricPromptOffered;
+      try {
+        final result = await api.verifyEmailAuthOtp(
+          email: email,
+          challengeId: challengeId,
+          otp: otp,
+          name: name,
+          phone: phone,
+        );
+        emailOtpChallengeId = null;
+        pendingEmailVerification = null;
+        _setSession(result);
+        pendingUnlockSetup = !quickUnlockEnabled && !biometricPromptOffered;
+      } on AdminApprovalPendingException catch (error) {
+        emailOtpChallengeId = null;
+        pendingEmailVerification = null;
+        successMessage = error.message;
+      }
     });
   }
 
@@ -293,6 +299,12 @@ class AppController extends ChangeNotifier {
     required String password,
     required String name,
     required String phone,
+    String role = 'customer',
+    String? businessName,
+    String? serviceZone,
+    double? latitude,
+    double? longitude,
+    String? selfieJpegBase64,
   }) async {
     await _run(() async {
       final outcome = await api.signup(
@@ -301,6 +313,12 @@ class AppController extends ChangeNotifier {
         name: name.trim(),
         phone: phone.trim(),
         themeMode: themeMode.name,
+        role: role,
+        businessName: businessName?.trim(),
+        serviceZone: serviceZone?.trim(),
+        latitude: latitude,
+        longitude: longitude,
+        selfieJpegBase64: selfieJpegBase64,
       );
       final authResult = outcome.authResult;
       if (authResult == null) {

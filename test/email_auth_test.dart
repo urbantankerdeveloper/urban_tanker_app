@@ -450,6 +450,12 @@ class _FakeAuthApi extends ApiClient {
     required String name,
     required String phone,
     String? themeMode,
+    String role = 'customer',
+    String? businessName,
+    String? serviceZone,
+    double? latitude,
+    double? longitude,
+    String? selfieJpegBase64,
   }) async {
     if (signupError != null) throw signupError!;
     if (signupRequiresVerification) {

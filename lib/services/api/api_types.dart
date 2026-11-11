@@ -72,6 +72,17 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// Thrown when an admin account was created but an existing admin has not
+/// approved it yet. The server sends no session in that case.
+class AdminApprovalPendingException implements Exception {
+  const AdminApprovalPendingException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Result of sign-up. Exactly one of [authResult] or [challengeId] is set:
 /// [challengeId] means the account needs an email code before it can sign in.
 typedef SignUpOutcome = ({

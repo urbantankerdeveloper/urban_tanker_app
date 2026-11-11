@@ -131,6 +131,12 @@ class ApiClient implements ApiTransport {
     required String name,
     required String phone,
     String? themeMode,
+    String role = 'customer',
+    String? businessName,
+    String? serviceZone,
+    double? latitude,
+    double? longitude,
+    String? selfieJpegBase64,
   }) =>
       _auth.signup(
         email: email,
@@ -138,6 +144,12 @@ class ApiClient implements ApiTransport {
         name: name,
         phone: phone,
         themeMode: themeMode,
+        role: role,
+        businessName: businessName,
+        serviceZone: serviceZone,
+        latitude: latitude,
+        longitude: longitude,
+        selfieJpegBase64: selfieJpegBase64,
       );
 
   Future<void> requestPasswordReset(String email) =>

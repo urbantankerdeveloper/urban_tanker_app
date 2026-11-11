@@ -9,7 +9,7 @@ import 'package:urban_tanker_app/app/providers.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
 
 void main() {
-  testWidgets('app opens registration with a login option when signed out',
+  testWidgets('app opens sign-in with a create-account option when signed out',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final controller = AppController(
@@ -26,9 +26,8 @@ void main() {
       ),
     );
 
-    expect(find.text('Create your account.'), findsOneWidget);
-    expect(find.text('Sign in'), findsOneWidget);
-    expect(find.text('Create account'), findsOneWidget);
+    expect(find.text('Welcome back.'), findsOneWidget);
+    expect(find.text('New here? Create an account'), findsOneWidget);
     expect(find.text('Send verification code'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });

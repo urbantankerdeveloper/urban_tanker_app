@@ -57,7 +57,7 @@ class _AuthScreenState extends State<AuthScreen> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
-    _mode = _isMpinRecovery ? _AuthMode.login : _AuthMode.register;
+    _mode = _AuthMode.login;
     _method = _isMpinRecovery
         ? _AuthMethod.phone
         : _methodFromName(widget.controller.lastAuthMethod) ??
@@ -291,18 +291,6 @@ class _AuthScreenState extends State<AuthScreen> {
                       )
                     else ...[
                       if (!_isMpinRecovery) ...[
-                        SegmentedTabs(
-                          labels: const ['Sign in', 'Create account'],
-                          selectedIndex: _isRegistration ? 1 : 0,
-                          onChanged: controller.busy
-                              ? null
-                              : (index) => _selectMode(
-                                    index == 1
-                                        ? _AuthMode.register
-                                        : _AuthMode.login,
-                                  ),
-                        ),
-                        const SizedBox(height: AppSpace.md),
                         Wrap(
                           alignment: WrapAlignment.center,
                           spacing: AppSpace.sm,
@@ -340,6 +328,24 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                         ),
                       ),
+                      if (!_isMpinRecovery)
+                        Align(
+                          alignment: AlignmentDirectional.center,
+                          child: TextButton(
+                            onPressed: controller.busy
+                                ? null
+                                : () => _selectMode(
+                                      _isRegistration
+                                          ? _AuthMode.login
+                                          : _AuthMode.register,
+                                    ),
+                            child: Text(
+                              _isRegistration
+                                  ? 'Already have an account? Sign in'
+                                  : 'New here? Create an account',
+                            ),
+                          ),
+                        ),
                     ],
                   ],
                 ),

@@ -1,12 +1,23 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../app/app_controller.dart';
 import '../../app/auth_feature_flags.dart';
 import '../../core/design_system/design_system.dart';
 import '../../services/api/api_types.dart';
 import '../../services/email_rules.dart';
+import '../../services/photo_permissions.dart';
 import 'password_rules.dart';
 import 'resend_cooldown.dart';
+
+const _signUpRoles = <String, String>{
+  'customer': 'Customer',
+  'vendor': 'Vendor',
+  'admin': 'Admin (needs approval)',
+};
 
 /// Email sign-up for customer accounts. Password mode is the default. Code mode
 /// collects the same details and then checks a one-time code sent to the
@@ -36,10 +47,19 @@ class _EmailSignUpFormState extends State<EmailSignUpForm> {
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   final _otp = TextEditingController();
+  final _businessName = TextEditingController();
+  final _serviceZone = TextEditingController();
   final _cooldown = ResendCooldown();
   bool _useCode = false;
   bool _obscurePassword = true;
   String? _lastChallengeId;
+  String _role = 'customer';
+  double? _latitude;
+  double? _longitude;
+  bool _capturingLocation = false;
+  String? _locationMessage;
+  XFile? _photo;
+  String? _photoError;
 
   @override
   void initState() {
@@ -58,6 +78,8 @@ class _EmailSignUpFormState extends State<EmailSignUpForm> {
     _password.dispose();
     _confirm.dispose();
     _otp.dispose();
+    _businessName.dispose();
+    _serviceZone.dispose();
     super.dispose();
   }
 
@@ -70,8 +92,11 @@ class _EmailSignUpFormState extends State<EmailSignUpForm> {
   }
 
   String? _validateName(String? value) => (value ?? '').trim().length < 2
-      ? 'Enter your name to create a customer account.'
+      ? 'Enter your name to create an account.'
       : null;
+
+  String? _validateVendorField(String? value, String message) =>
+      _role == 'vendor' && (value ?? '').trim().length < 2 ? message : null;
 
   String? _validateEmail(String? value) =>
       isValidEmail(value ?? '') ? null : 'Enter a valid email address.';
@@ -97,12 +122,79 @@ class _EmailSignUpFormState extends State<EmailSignUpForm> {
 
   Future<void> _createAccount() async {
     if (!_formKey.currentState!.validate()) return;
+    final isVendor = _role == 'vendor';
+    final photo = _photo;
     await widget.controller.signUp(
       email: normalizeEmail(_email.text),
       password: _password.text,
       name: _name.text,
       phone: normalizeIndianPhone(_phone.text),
+      role: _role,
+      businessName: isVendor ? _businessName.text : null,
+      serviceZone: isVendor ? _serviceZone.text : null,
+      latitude: isVendor ? _latitude : null,
+      longitude: isVendor ? _longitude : null,
+      selfieJpegBase64:
+          photo == null ? null : base64Encode(await photo.readAsBytes()),
     );
+  }
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    try {
+      final photo = await ImagePicker().pickImage(
+        source: source,
+        preferredCameraDevice: CameraDevice.front,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 80,
+        requestFullMetadata: pickerRequestsFullMetadata,
+      );
+      if (photo == null || !mounted) return;
+      setState(() {
+        _photo = photo;
+        _photoError = null;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _photoError = 'The photo could not be opened. Try again.');
+      }
+    }
+  }
+
+  Future<void> _captureLocation() async {
+    setState(() {
+      _capturingLocation = true;
+      _locationMessage = null;
+    });
+    String message;
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        message = 'Turn on location services to add your location.';
+      } else if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        message = 'Allow location access to add your location.';
+      } else {
+        final position = await Geolocator.getCurrentPosition();
+        if (mounted) {
+          _latitude = position.latitude;
+          _longitude = position.longitude;
+        }
+        message = 'Location added.';
+      }
+    } catch (_) {
+      _latitude = null;
+      _longitude = null;
+      message = 'Could not read your location. You can add it later.';
+    }
+    if (!mounted) return;
+    setState(() {
+      _capturingLocation = false;
+      _locationMessage = message;
+    });
   }
 
   Future<void> _sendCode() async {
@@ -188,6 +280,98 @@ class _EmailSignUpFormState extends State<EmailSignUpForm> {
                   validator: _validatePhone,
                 ),
                 if (!showCode) ...[
+                  const SizedBox(height: AppSpace.md),
+                  DropdownButtonFormField<String>(
+                    initialValue: _role,
+                    decoration: const InputDecoration(
+                      labelText: 'Account type',
+                      prefixIcon: Icon(Icons.badge_outlined),
+                    ),
+                    items: [
+                      for (final entry in _signUpRoles.entries)
+                        DropdownMenuItem(
+                          value: entry.key,
+                          child: Text(entry.value),
+                        ),
+                    ],
+                    onChanged: busy
+                        ? null
+                        : (value) => setState(() => _role = value ?? 'customer'),
+                  ),
+                  if (_role == 'vendor') ...[
+                    const SizedBox(height: AppSpace.md),
+                    AppTextField(
+                      controller: _businessName,
+                      enabled: !busy,
+                      label: 'Business name',
+                      prefix: const Icon(Icons.storefront_outlined),
+                      textCapitalization: TextCapitalization.words,
+                      textInputAction: TextInputAction.next,
+                      validator: (value) => _validateVendorField(
+                        value,
+                        'Enter your business name.',
+                      ),
+                    ),
+                    const SizedBox(height: AppSpace.md),
+                    AppTextField(
+                      controller: _serviceZone,
+                      enabled: !busy,
+                      label: 'Service zone (city or area)',
+                      prefix: const Icon(Icons.map_outlined),
+                      textInputAction: TextInputAction.next,
+                      validator: (value) => _validateVendorField(
+                        value,
+                        'Enter the area you serve.',
+                      ),
+                    ),
+                    const SizedBox(height: AppSpace.xs),
+                    GhostButton(
+                      label: _latitude == null
+                          ? 'Use my current location (optional)'
+                          : 'Location added',
+                      onPressed: busy || _capturingLocation
+                          ? null
+                          : _captureLocation,
+                    ),
+                    if (_locationMessage != null)
+                      Text(
+                        _locationMessage!,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                  ],
+                  const SizedBox(height: AppSpace.md),
+                  Text(
+                    _photo == null
+                        ? 'Profile photo (optional)'
+                        : 'Profile photo added',
+                    style: theme.textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: AppSpace.xs),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GhostButton(
+                          label: 'Take a selfie',
+                          onPressed: busy
+                              ? null
+                              : () => _pickPhoto(ImageSource.camera),
+                        ),
+                      ),
+                      Expanded(
+                        child: GhostButton(
+                          label: 'Choose a photo',
+                          onPressed: busy
+                              ? null
+                              : () => _pickPhoto(ImageSource.gallery),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_photoError != null)
+                    Text(
+                      _photoError!,
+                      style: TextStyle(color: colors.danger.fg),
+                    ),
                   const SizedBox(height: AppSpace.md),
                   AppTextField(
                     controller: _password,

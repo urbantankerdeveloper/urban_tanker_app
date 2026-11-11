@@ -76,6 +76,12 @@ class _FakeApiClient extends ApiClient {
     required String name,
     required String phone,
     String? themeMode,
+    String role = 'customer',
+    String? businessName,
+    String? serviceZone,
+    double? latitude,
+    double? longitude,
+    String? selfieJpegBase64,
   }) async {
     signupCalls++;
     requestedEmail = email;
@@ -118,14 +124,13 @@ Finder _otpInput() => find.descendant(
       matching: find.byType(TextField),
     );
 
-/// The sign-in / create-account tabs. "Sign in" is also a button label, so
-/// tabs are found inside SegmentedTabs.
-Finder _tab(String label) => find.descendant(
-      of: find.byType(SegmentedTabs),
-      matching: find.text(label),
-    );
-
 Finder _chip(String label) => find.widgetWithText(ChoiceChip, label);
+
+/// The sign-in screen links to create-account; tests open that form first.
+Future<void> _openCreateAccount(WidgetTester tester) async {
+  await tester.tap(find.text('New here? Create an account'));
+  await tester.pumpAndSettle();
+}
 
 Finder _button(String label) => find.descendant(
       of: find.byType(PrimaryButton),
@@ -161,19 +166,33 @@ void main() {
     );
   }
 
-  testWidgets('create account opens on phone, with email and tabs offered',
+  testWidgets('sign-in is the first screen, with a link to create account',
       (tester) async {
     await showAuthScreen(tester);
 
-    expect(find.text('Create your account.'), findsOneWidget);
-    expect(_tab('Sign in'), findsOneWidget);
-    expect(_tab('Create account'), findsOneWidget);
+    expect(find.text('Welcome back.'), findsOneWidget);
+    expect(find.byType(SegmentedTabs), findsNothing);
+    expect(find.text('New here? Create an account'), findsOneWidget);
     expect(_chip('Phone'), findsOneWidget);
     expect(_chip('Email'), findsOneWidget);
-    expect(_chip('Username'), findsNothing);
+    expect(_chip('Username'), findsOneWidget);
     expect(find.text('10-digit mobile number'), findsOneWidget);
     expect(find.text('Send verification code'), findsOneWidget);
     expect(find.text('Password'), findsNothing);
+  });
+
+  testWidgets('the create-account link opens the sign-up form and back',
+      (tester) async {
+    await showAuthScreen(tester);
+    await _openCreateAccount(tester);
+
+    expect(find.text('Create your account.'), findsOneWidget);
+    expect(find.text('Already have an account? Sign in'), findsOneWidget);
+
+    await tester.tap(find.text('Already have an account? Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome back.'), findsOneWidget);
   });
 
   testWidgets('MPIN recovery requires phone OTP sign-in', (tester) async {
@@ -197,8 +216,6 @@ void main() {
       (tester) async {
     api.loginError = 'Invalid credentials';
     await showAuthScreen(tester);
-    await tester.tap(_tab('Sign in'));
-    await tester.pumpAndSettle();
     await tester.tap(_chip('Username'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -216,6 +233,7 @@ void main() {
 
   testWidgets('requests an OTP for a valid mobile number', (tester) async {
     await showAuthScreen(tester);
+    await _openCreateAccount(tester);
     await tester.enterText(
       find.byType(TextFormField).first,
       '9876543210',
@@ -233,6 +251,7 @@ void main() {
       (tester) async {
     api.verifyError = 'The verification code is incorrect.';
     await showAuthScreen(tester);
+    await _openCreateAccount(tester);
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
     await tester.tap(find.text('Send verification code'));
     await tester.pumpAndSettle();
@@ -252,8 +271,6 @@ void main() {
       (tester) async {
     api.verifyError = 'The verification code is incorrect.';
     await showAuthScreen(tester);
-    await tester.tap(_tab('Sign in'));
-    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
     await tester.tap(find.text('Send verification code'));
     await tester.pumpAndSettle();
@@ -301,8 +318,6 @@ void main() {
       (tester) async {
     api.loginError = 'Incorrect email or password.';
     await showAuthScreen(tester);
-    await tester.tap(_tab('Sign in'));
-    await tester.pumpAndSettle();
     await tester.tap(_chip('Email'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -320,8 +335,6 @@ void main() {
 
   testWidgets('forgot password opens the reset sheet', (tester) async {
     await showAuthScreen(tester);
-    await tester.tap(_tab('Sign in'));
-    await tester.pumpAndSettle();
     await tester.tap(_chip('Email'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Forgot password?'));
@@ -335,8 +348,6 @@ void main() {
       skip: !AuthFeatureFlags.emailOtp, (tester) async {
     api.emailVerifyError = ApiException('The code is incorrect.', 400);
     await showAuthScreen(tester);
-    await tester.tap(_tab('Sign in'));
-    await tester.pumpAndSettle();
     await tester.tap(_chip('Email'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Email me a code'));
@@ -361,8 +372,6 @@ void main() {
       skip: !AuthFeatureFlags.emailOtp, (tester) async {
     api.emailRequestError = ApiException('Not found', 404);
     await showAuthScreen(tester);
-    await tester.tap(_tab('Sign in'));
-    await tester.pumpAndSettle();
     await tester.tap(_chip('Email'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Email me a code'));
@@ -383,6 +392,7 @@ void main() {
   testWidgets('a weak password is refused before the account is created',
       (tester) async {
     await showAuthScreen(tester);
+    await _openCreateAccount(tester);
     await tester.tap(_chip('Email'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'Asha Kumar');
@@ -407,6 +417,7 @@ void main() {
       (tester) async {
     api.signupRequiresVerification = true;
     await showAuthScreen(tester);
+    await _openCreateAccount(tester);
     await tester.tap(_chip('Email'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'Asha Kumar');
@@ -428,6 +439,7 @@ void main() {
       (tester) async {
     api.signupError = ApiException('This email is already registered.', 409);
     await showAuthScreen(tester);
+    await _openCreateAccount(tester);
     await tester.tap(_chip('Email'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'Asha Kumar');
@@ -451,6 +463,6 @@ void main() {
     await showAuthScreen(tester);
     await tester.pumpAndSettle();
 
-    expect(find.text('Create your account.'), findsOneWidget);
+    expect(find.text('Welcome back.'), findsOneWidget);
   });
 }
