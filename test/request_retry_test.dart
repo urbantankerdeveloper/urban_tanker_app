@@ -37,6 +37,29 @@ ApiCore _core(
       retryDelays: retryDelays,
     );
 
+class _ApiCoreWithRefreshToken extends ApiCore {
+  _ApiCoreWithRefreshToken(http.Client client)
+      : super(
+          client: client,
+          storage: const FlutterSecureStorage(),
+          baseUrl: 'https://example.test/api',
+          tokenReader: () async => null,
+          getTimeout: const Duration(milliseconds: 40),
+          requestTimeout: const Duration(milliseconds: 120),
+          getRetryBudget: const Duration(milliseconds: 90),
+          retryDelays: const [
+            Duration(milliseconds: 10),
+            Duration(milliseconds: 10),
+          ],
+        );
+
+  @override
+  Future<String?> readRefreshToken() async => 'refresh-token';
+
+  @override
+  Future<void> clearTokens() async {}
+}
+
 void main() {
   test('GET requests retry on 503 and then succeed', () async {
     var calls = 0;
@@ -101,6 +124,29 @@ void main() {
         Duration(milliseconds: 10),
         Duration(milliseconds: 10),
       ],
+    );
+    final stopwatch = Stopwatch()..start();
+
+    await expectLater(
+      api.request('GET', '/health'),
+      throwsA(isA<TimeoutException>()),
+    );
+
+    expect(calls, 2);
+    expect(stopwatch.elapsed, lessThan(const Duration(milliseconds: 300)));
+  });
+
+  test('GET authorization refresh stays inside the retry timeout budget',
+      () async {
+    var calls = 0;
+    final api = _ApiCoreWithRefreshToken(
+      MockClient((request) {
+        calls++;
+        if (request.method == 'GET') {
+          return Future.value(http.Response('unauthorized', 401));
+        }
+        return Completer<http.Response>().future;
+      }),
     );
     final stopwatch = Stopwatch()..start();
 

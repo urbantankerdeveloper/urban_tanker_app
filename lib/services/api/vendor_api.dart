@@ -357,6 +357,7 @@ class VendorApi {
       '/vendor/services/$serviceCode/availability',
       body: {'enabled': enabled},
     );
+    _api.invalidateReadCache(path: '/vendor/services');
     return mapResponse(response, 'service availability');
   }
 

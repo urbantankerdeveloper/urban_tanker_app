@@ -262,14 +262,24 @@ class _MapArea extends StatefulWidget {
 
 class _MapAreaState extends State<_MapArea> {
   final _controller = MapController();
+  bool _mapReady = false;
+  bool _followVehicle = true;
+  LatLng? _pendingCenter;
 
   @override
   void didUpdateWidget(covariant _MapArea oldWidget) {
     super.didUpdateWidget(oldWidget);
     final before = _location(oldWidget.tracking);
     final after = _location(widget.tracking);
-    if (after != null && after != before) {
-      _controller.move(after, 15);
+    if (after == null) {
+      _mapReady = false;
+      _pendingCenter = null;
+    } else if (after != before && _followVehicle) {
+      if (_mapReady) {
+        _controller.move(after, _controller.camera.zoom);
+      } else {
+        _pendingCenter = after;
+      }
     }
   }
 
@@ -279,14 +289,54 @@ class _MapAreaState extends State<_MapArea> {
     super.dispose();
   }
 
+  void _onMapReady() {
+    _mapReady = true;
+    final pendingCenter = _pendingCenter;
+    _pendingCenter = null;
+    if (pendingCenter != null && _followVehicle) {
+      _controller.move(pendingCenter, _controller.camera.zoom);
+    }
+  }
+
+  void _onPositionChanged(MapCamera _, bool hasGesture) {
+    if (hasGesture && _followVehicle) {
+      setState(() => _followVehicle = false);
+    }
+  }
+
+  void _centerOnVehicle() {
+    final vehicle = _location(widget.tracking);
+    if (vehicle == null) return;
+    setState(() => _followVehicle = true);
+    if (_mapReady) {
+      _controller.move(vehicle, _controller.camera.zoom);
+    } else {
+      _pendingCenter = vehicle;
+    }
+  }
+
   static LatLng? _location(PublicTrackingSnapshot tracking) {
     final location = tracking.lastLocation;
     final latitude = location?.latitude;
     final longitude = location?.longitude;
-    if (!tracking.trackingAvailable || latitude == null || longitude == null) {
+    if (!tracking.trackingAvailable ||
+        latitude == null ||
+        longitude == null ||
+        !latitude.isFinite ||
+        !longitude.isFinite ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180) {
       return null;
     }
     return LatLng(latitude, longitude);
+  }
+
+  static double? _accuracy(PublicTrackingSnapshot tracking) {
+    final accuracy = tracking.lastLocation?.accuracy;
+    if (accuracy == null || !accuracy.isFinite || accuracy <= 0) return null;
+    return accuracy.clamp(1, 2000).toDouble();
   }
 
   @override
@@ -297,19 +347,47 @@ class _MapAreaState extends State<_MapArea> {
       return DecoratedBox(
         decoration: BoxDecoration(gradient: colors.softSurfaceGradient),
         child: Center(
-          child: Icon(
-            Icons.local_shipping_outlined,
-            size: 96,
-            color: colors.primary.withValues(alpha: 0.35),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.local_shipping_outlined,
+                size: 80,
+                color: colors.primary.withValues(alpha: 0.35),
+              ),
+              const SizedBox(height: AppSpace.md),
+              Text(
+                'Waiting for vehicle location',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
           ),
         ),
       );
     }
     final map = FlutterMap(
       mapController: _controller,
-      options: MapOptions(initialCenter: vehicle, initialZoom: 15),
+      options: MapOptions(
+        initialCenter: vehicle,
+        initialZoom: 15,
+        onMapReady: _onMapReady,
+        onPositionChanged: _onPositionChanged,
+      ),
       children: [
         const MapTileLayer(),
+        if (_accuracy(widget.tracking) case final accuracy?)
+          CircleLayer(
+            circles: [
+              CircleMarker(
+                point: vehicle,
+                radius: accuracy,
+                useRadiusInMeter: true,
+                color: colors.primary.withValues(alpha: 0.12),
+                borderColor: colors.primary.withValues(alpha: 0.55),
+                borderStrokeWidth: 1.5,
+              ),
+            ],
+          ),
         MarkerLayer(
           markers: [
             Marker(
@@ -323,9 +401,27 @@ class _MapAreaState extends State<_MapArea> {
         const MapAttribution(),
       ],
     );
-    return Semantics(
-      label: 'Map showing the vehicle location',
-      child: map,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Semantics(
+          label: 'Map showing the vehicle location',
+          child: map,
+        ),
+        if (!_followVehicle)
+          Positioned(
+            top: AppSpace.xxxl + 64,
+            right: AppSpace.xl,
+            child: SafeArea(
+              child: FloatingActionButton.small(
+                heroTag: 'center-on-vehicle',
+                tooltip: 'Center on vehicle',
+                onPressed: _centerOnVehicle,
+                child: const Icon(Icons.my_location),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -407,6 +503,7 @@ class _Sheet extends StatelessWidget {
     final colors = context.colors;
     final theme = Theme.of(context);
     final location = tracking.lastLocation;
+    final hasVehicleLocation = _MapAreaState._location(tracking) != null;
     final events = tracking.events;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -464,18 +561,14 @@ class _Sheet extends StatelessWidget {
                 const Divider(height: 1),
                 AppListRow(
                   leading: Icon(
-                    tracking.trackingAvailable &&
-                            location?.latitude != null &&
-                            location?.longitude != null
+                    hasVehicleLocation
                         ? Icons.location_on_outlined
                         : Icons.location_off_outlined,
                   ),
-                  title: tracking.trackingAvailable &&
-                          location?.latitude != null &&
-                          location?.longitude != null
+                  title: hasVehicleLocation
                       ? 'Vehicle location shared'
                       : 'Location not available yet',
-                  subtitle: location?.recordedAt == null
+                  subtitle: !hasVehicleLocation || location?.recordedAt == null
                       ? 'The latest vehicle location will appear here when shared.'
                       : 'Updated ${_formatDateTime(location!.recordedAt)}',
                 ),

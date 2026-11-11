@@ -19,7 +19,7 @@ class NotificationApi {
         ),
     };
     final response = await _api.request('GET', path);
-    final decoded = decodeBody(response);
+    final decoded = await decodeBodyAsync(response);
     if (decoded is! List) {
       throw const FormatException('The notifications response was invalid.');
     }

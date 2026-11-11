@@ -12,6 +12,16 @@ import 'fleet_forms.dart';
 import 'fleet_rows.dart';
 import 'service_availability_card.dart';
 
+void _refreshVendorFleet(WidgetRef ref) {
+  ref.read(apiProvider).invalidateReadCache(path: '/vendor/services');
+  ref
+    ..invalidate(vendorDashboardProvider)
+    ..invalidate(vendorServicesProvider)
+    ..invalidate(vendorAttendanceProvider)
+    ..invalidate(vendorComplaintsProvider)
+    ..invalidate(vendorDocumentsProvider);
+}
+
 /// Vendor fleet tab: vehicles and drivers as cards, then availability,
 /// complaints, documents and attendance.
 class VendorFleetScreen extends ConsumerWidget {
@@ -19,12 +29,17 @@ class VendorFleetScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref
+      ..watch(vendorServicesProvider)
+      ..watch(vendorAttendanceProvider(DateUtils.dateOnly(DateTime.now())))
+      ..watch(vendorComplaintsProvider)
+      ..watch(vendorDocumentsProvider);
     final dashboard = ref.watch(vendorDashboardProvider);
     return dashboard.when(
       loading: () => const LoadingState(message: 'Loading your fleet...'),
       error: (error, _) => VendorError(
         message: friendlyError(error),
-        retry: () => ref.invalidate(vendorDashboardProvider),
+        retry: () => _refreshVendorFleet(ref),
       ),
       data: (value) {
         final availableVehicles =
@@ -89,10 +104,7 @@ class VendorFleetScreen extends ConsumerWidget {
           () => AttendanceCard(drivers: value.drivers),
         ];
         return RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(vendorDashboardProvider);
-            ref.invalidate(vendorAttendanceProvider);
-          },
+          onRefresh: () async => _refreshVendorFleet(ref),
           child: ListView.builder(
             padding: AppPageInsets.withSafeAreaBottom(
               context,

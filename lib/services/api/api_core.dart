@@ -10,7 +10,8 @@ import 'api_decode.dart';
 import 'api_types.dart';
 
 /// The HTTP layer every endpoint shares: the bearer token, one token refresh at
-/// a time, GET-only retries, the slow-server flag and error messages.
+/// a time, GET-only retries and de-duplication, short read caching, slow-server
+/// diagnostics and error messages.
 class ApiCore {
   ApiCore({
     required http.Client client,
@@ -21,18 +22,29 @@ class ApiCore {
     Duration requestTimeout = _defaultRequestTimeout,
     Duration getRetryBudget = _defaultGetRetryBudget,
     List<Duration> retryDelays = _defaultRetryDelays,
+    Duration readCacheTtl = _defaultReadCacheTtl,
+    DateTime Function()? clock,
   })  : _client = client,
         _storage = storage,
         _tokenReader = tokenReader,
         _getTimeout = getTimeout,
         _requestTimeout = requestTimeout,
         _getRetryBudget = getRetryBudget,
-        _retryDelays = retryDelays;
+        _retryDelays = retryDelays,
+        _readCacheTtl = readCacheTtl,
+        _clock = clock ?? DateTime.now;
 
   static const _defaultGetTimeout = Duration(seconds: 8);
   static const _defaultRequestTimeout = Duration(seconds: 20);
   static const _defaultGetRetryBudget = Duration(seconds: 12);
+  static const _defaultReadCacheTtl = Duration(seconds: 90);
   static const _slowRequestThreshold = Duration(seconds: 2);
+  static const _cacheableGetPaths = {
+    '/customer/services',
+    '/customer/offers',
+    '/customer/membership-plans',
+    '/vendor/services',
+  };
   static const _defaultRetryDelays = [
     Duration(milliseconds: 400),
     Duration(milliseconds: 1200),
@@ -46,8 +58,13 @@ class ApiCore {
   final Duration _requestTimeout;
   final Duration _getRetryBudget;
   final List<Duration> _retryDelays;
+  final Duration _readCacheTtl;
+  final DateTime Function() _clock;
   final String baseUrl;
+  final _readCache = <String, _CachedResponse>{};
+  final _inflightGetRequests = <String, Future<http.Response>>{};
   Future<String?>? _refreshOperation;
+  int _readCacheGeneration = 0;
 
   Future<void> saveAccessToken(String token) => _storage.write(
         key: 'urban_tanker_access_token',
@@ -62,6 +79,28 @@ class ApiCore {
   Future<void> clearTokens() async {
     await _storage.delete(key: 'urban_tanker_access_token');
     await _storage.delete(key: 'urban_tanker_refresh_token');
+    invalidateReadCache();
+  }
+
+  void invalidateReadCache({String? path}) {
+    _readCacheGeneration++;
+    if (path == null) {
+      _readCache.clear();
+      _inflightGetRequests.clear();
+      return;
+    }
+    final key = _cacheKey(path);
+    final requestKeys = _readCache.keys
+        .where(
+            (requestKey) => requestKey == key || requestKey.startsWith('$key?'))
+        .toList();
+    for (final requestKey in requestKeys) {
+      _readCache.remove(requestKey);
+    }
+    _inflightGetRequests.removeWhere(
+      (requestKey, _) =>
+          requestKey.startsWith('$key::') || requestKey.startsWith('$key?'),
+    );
   }
 
   /// Keeps the signed-in user profile in secure storage, not SharedPreferences.
@@ -101,9 +140,66 @@ class ApiCore {
     String contentType = 'application/json',
     bool retry = true,
     Duration? timeout,
-  }) async {
+  }) {
     final requestTimeout = timeout ??
         (method.toUpperCase() == 'GET' ? _getTimeout : _requestTimeout);
+    final uri = Uri.parse('$baseUrl$path');
+    final cacheKey = _cacheKey(path);
+    final isGet = method.toUpperCase() == 'GET';
+    final isBodylessGet = isGet && body == null && bodyBytes == null;
+    final isCacheable =
+        isBodylessGet && _cacheableGetPaths.contains(_endpointPath(uri));
+    if (isCacheable) {
+      final cached = _readCache[cacheKey];
+      if (cached != null) {
+        if (_clock().isBefore(cached.expiresAt)) {
+          return Future<http.Response>.value(cached.response);
+        }
+        _readCache.remove(cacheKey);
+      }
+    }
+
+    final flightKey = '$cacheKey::$retry::${requestTimeout.inMicroseconds}';
+    if (isBodylessGet) {
+      final active = _inflightGetRequests[flightKey];
+      if (active != null) return active;
+    }
+
+    final generation = _readCacheGeneration;
+    final requestFuture = _performRequest(
+      method,
+      path,
+      body: body,
+      bodyBytes: bodyBytes,
+      contentType: contentType,
+      retry: retry,
+      timeout: requestTimeout,
+      cacheKey: isCacheable ? cacheKey : null,
+      cacheGeneration: generation,
+    );
+    if (!isBodylessGet) return requestFuture;
+
+    late final Future<http.Response> sharedFuture;
+    sharedFuture = requestFuture.whenComplete(() {
+      if (identical(_inflightGetRequests[flightKey], sharedFuture)) {
+        _inflightGetRequests.remove(flightKey);
+      }
+    });
+    _inflightGetRequests[flightKey] = sharedFuture;
+    return sharedFuture;
+  }
+
+  Future<http.Response> _performRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    List<int>? bodyBytes,
+    required String contentType,
+    required bool retry,
+    required Duration timeout,
+    required String? cacheKey,
+    required int cacheGeneration,
+  }) async {
     final stopwatch = Stopwatch()..start();
     int? statusCode;
     try {
@@ -114,9 +210,19 @@ class ApiCore {
         bodyBytes: bodyBytes,
         contentType: contentType,
         retry: retry,
-        timeout: requestTimeout,
+        timeout: timeout,
+        stopwatch: stopwatch,
       );
       statusCode = response.statusCode;
+      if (cacheKey != null &&
+          response.statusCode >= 200 &&
+          response.statusCode < 300 &&
+          _readCacheGeneration == cacheGeneration) {
+        _readCache[cacheKey] = _CachedResponse(
+          response: response,
+          expiresAt: _clock().add(_readCacheTtl),
+        );
+      }
       return response;
     } on ApiException catch (error) {
       statusCode = error.statusCode;
@@ -129,6 +235,16 @@ class ApiCore {
         statusCode,
       );
     }
+  }
+
+  String _cacheKey(String path) => Uri.parse('$baseUrl$path').toString();
+
+  String _endpointPath(Uri uri) {
+    final basePath = Uri.parse(baseUrl).path;
+    if (basePath.isEmpty || !uri.path.startsWith('$basePath/')) {
+      return uri.path;
+    }
+    return uri.path.substring(basePath.length);
   }
 
   Future<http.Response> sendRequest(
@@ -186,6 +302,7 @@ class ApiCore {
     String contentType = 'application/json',
     bool retry = true,
     required Duration timeout,
+    required Stopwatch stopwatch,
   }) async {
     final response = await _sendWithRetries(
       method,
@@ -194,10 +311,17 @@ class ApiCore {
       bodyBytes: bodyBytes,
       contentType: contentType,
       timeout: timeout,
+      stopwatch: stopwatch,
     );
 
     if (response.statusCode == 401 && retry && path != '/auth/mobile-refresh') {
-      final newToken = await _refreshAccessToken();
+      final refreshTimeout = method.toUpperCase() == 'GET'
+          ? _getRetryBudget - stopwatch.elapsed
+          : null;
+      if (refreshTimeout != null && refreshTimeout <= Duration.zero) {
+        throw TimeoutException('GET request exceeded its retry time budget.');
+      }
+      final newToken = await _refreshAccessToken(timeout: refreshTimeout);
       if (newToken != null) {
         return _requestOnce(
           method,
@@ -207,6 +331,7 @@ class ApiCore {
           contentType: contentType,
           retry: false,
           timeout: timeout,
+          stopwatch: stopwatch,
         );
       }
     }
@@ -255,9 +380,9 @@ class ApiCore {
     List<int>? bodyBytes,
     required String contentType,
     required Duration timeout,
+    required Stopwatch stopwatch,
   }) async {
     final isGet = method.toUpperCase() == 'GET';
-    final stopwatch = Stopwatch()..start();
     for (var attempt = 0;; attempt++) {
       final canRetry = isGet && attempt < _retryDelays.length;
       final remainingBudget = _getRetryBudget - stopwatch.elapsed;
@@ -323,15 +448,19 @@ class ApiCore {
     );
   }
 
-  Future<String?> _refreshAccessToken() {
+  Future<String?> _refreshAccessToken({Duration? timeout}) {
     final active = _refreshOperation;
-    if (active != null) return active;
-    final operation = _performRefresh();
+    if (active != null) {
+      return timeout == null ? active : active.timeout(timeout);
+    }
+    final operation = _performRefresh(timeout: timeout);
     _refreshOperation = operation;
-    return operation.whenComplete(() => _refreshOperation = null);
+    final sharedOperation =
+        operation.whenComplete(() => _refreshOperation = null);
+    return timeout == null ? sharedOperation : sharedOperation.timeout(timeout);
   }
 
-  Future<String?> _performRefresh() async {
+  Future<String?> _performRefresh({Duration? timeout}) async {
     try {
       final refreshToken = await readRefreshToken();
       if (refreshToken == null || refreshToken.isEmpty) return null;
@@ -340,6 +469,7 @@ class ApiCore {
         '/auth/mobile-refresh',
         body: {'refreshToken': refreshToken},
         retry: false,
+        timeout: timeout,
       );
       final decoded = decodeBody(response);
       if (decoded is! Map<String, dynamic>) return null;
@@ -360,4 +490,11 @@ class ApiCore {
       return null;
     }
   }
+}
+
+class _CachedResponse {
+  const _CachedResponse({required this.response, required this.expiresAt});
+
+  final http.Response response;
+  final DateTime expiresAt;
 }

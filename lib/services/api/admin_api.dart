@@ -286,6 +286,7 @@ class AdminApi {
 
   Future<AccountRecord> createAdminCoupon(Map<String, dynamic> body) async {
     final response = await _api.request('POST', '/admin/coupons', body: body);
+    _api.invalidateReadCache(path: '/customer/offers');
     return AccountRecord(await mapResponse(response, 'admin coupon'));
   }
 
@@ -293,11 +294,13 @@ class AdminApi {
       String id, Map<String, dynamic> body) async {
     final response =
         await _api.request('PATCH', '/admin/coupons/$id', body: body);
+    _api.invalidateReadCache(path: '/customer/offers');
     return AccountRecord(await mapResponse(response, 'admin coupon update'));
   }
 
   Future<void> deleteAdminCoupon(String id) async {
     await _api.request('DELETE', '/admin/coupons/$id');
+    _api.invalidateReadCache(path: '/customer/offers');
   }
 
   Future<List<AccountRecord>> adminServices() async =>
@@ -305,6 +308,7 @@ class AdminApi {
 
   Future<AccountRecord> createAdminService(Map<String, dynamic> body) async {
     final response = await _api.request('POST', '/admin/services', body: body);
+    _invalidateServiceCatalogs();
     return AccountRecord(await mapResponse(response, 'admin service'));
   }
 
@@ -312,7 +316,13 @@ class AdminApi {
       String id, Map<String, dynamic> body) async {
     final response =
         await _api.request('PATCH', '/admin/services/$id', body: body);
+    _invalidateServiceCatalogs();
     return AccountRecord(await mapResponse(response, 'admin service update'));
+  }
+
+  void _invalidateServiceCatalogs() {
+    _api.invalidateReadCache(path: '/customer/services');
+    _api.invalidateReadCache(path: '/vendor/services');
   }
 
   Future<List<AccountRecord>> adminPayouts() async {

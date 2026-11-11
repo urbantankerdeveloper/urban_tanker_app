@@ -27,7 +27,12 @@ class ServiceAvailabilityCard extends ConsumerWidget {
             subtitle: friendlyError(error),
             trailing: IconButton(
               tooltip: 'Refresh',
-              onPressed: () => ref.invalidate(vendorServicesProvider),
+              onPressed: () {
+                ref
+                    .read(apiProvider)
+                    .invalidateReadCache(path: '/vendor/services');
+                ref.invalidate(vendorServicesProvider);
+              },
               icon: const Icon(Icons.refresh),
             ),
           ),

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/design_system/design_system.dart';
-import '../../../services/api_client.dart';
-import '../../../app/providers.dart';
 import '../../../services/friendly_error.dart';
 
 /// Expandable card shell for a fleet section, with an optional trailing action.
@@ -48,11 +46,11 @@ class FleetCardShell extends StatelessWidget {
 
 /// A fleet card that lists records from [loader]. The records load once per
 /// mounted card, so rebuilds do not call the API again.
-class VendorRecordsCard extends ConsumerStatefulWidget {
+class VendorRecordsCard extends StatelessWidget {
   const VendorRecordsCard({
     required this.title,
     required this.icon,
-    required this.loader,
+    required this.records,
     required this.emptyMessage,
     super.key,
     this.action,
@@ -61,54 +59,40 @@ class VendorRecordsCard extends ConsumerStatefulWidget {
 
   final String title;
   final IconData icon;
-  final Future<List<Map<String, dynamic>>> Function(ApiClient api) loader;
+  final AsyncValue<List<Map<String, dynamic>>> records;
   final String emptyMessage;
   final VoidCallback? action;
   final void Function(Map<String, dynamic> record)? onTap;
 
   @override
-  ConsumerState<VendorRecordsCard> createState() => _VendorRecordsCardState();
-}
-
-class _VendorRecordsCardState extends ConsumerState<VendorRecordsCard> {
-  late final Future<List<Map<String, dynamic>>> _records =
-      widget.loader(ref.read(apiProvider));
-
-  @override
   Widget build(BuildContext context) {
     return FleetCardShell(
-      title: widget.title,
-      icon: widget.icon,
-      action: widget.action == null
+      title: title,
+      icon: icon,
+      action: action == null
           ? null
           : IconButton(
               tooltip: 'Add',
-              onPressed: widget.action,
+              onPressed: action,
               icon: const Icon(Icons.add),
             ),
       children: [
-        FutureBuilder<List<Map<String, dynamic>>>(
-          future: _records,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Padding(
-                padding: AppPageInsets.card,
-                child: SkeletonBox(height: 48),
-              );
-            }
-            if (snapshot.hasError) {
-              return AppListRow(
-                title: 'Could not load ${widget.title}',
-                subtitle: friendlyError(snapshot.error!),
-              );
-            }
-            final records = snapshot.data ?? const [];
-            if (records.isEmpty) {
-              return AppListRow(title: widget.emptyMessage);
+        records.when(
+          loading: () => const Padding(
+            padding: AppPageInsets.card,
+            child: SkeletonBox(height: 48),
+          ),
+          error: (error, _) => AppListRow(
+            title: 'Could not load $title',
+            subtitle: friendlyError(error),
+          ),
+          data: (items) {
+            if (items.isEmpty) {
+              return AppListRow(title: emptyMessage);
             }
             return Column(
               children: [
-                for (final record in records)
+                for (final record in items)
                   AppListRow(
                     title: (record['subject'] ??
                             record['document_type'] ??
@@ -121,9 +105,7 @@ class _VendorRecordsCardState extends ConsumerState<VendorRecordsCard> {
                             record['objectKey'] ??
                             '')
                         .toString(),
-                    onTap: widget.onTap == null
-                        ? null
-                        : () => widget.onTap!(record),
+                    onTap: onTap == null ? null : () => onTap!(record),
                   ),
               ],
             );

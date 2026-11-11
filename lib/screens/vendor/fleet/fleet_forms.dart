@@ -141,7 +141,11 @@ void invalidateVendorFleet(WidgetRef ref) {
   ref
     ..invalidate(vendorDashboardProvider)
     ..invalidate(vendorVehiclesProvider)
-    ..invalidate(vendorDriversProvider);
+    ..invalidate(vendorDriversProvider)
+    ..invalidate(vendorServicesProvider)
+    ..invalidate(vendorAttendanceProvider)
+    ..invalidate(vendorComplaintsProvider)
+    ..invalidate(vendorDocumentsProvider);
 }
 
 Future<void> setVehicleActive(

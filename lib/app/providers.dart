@@ -222,6 +222,18 @@ final vendorServicesProvider =
   return ref.watch(apiProvider).vendorServices();
 });
 
+final vendorComplaintsProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
+  ref.watch(sessionUserIdProvider);
+  return ref.watch(apiProvider).vendorComplaints();
+});
+
+final vendorDocumentsProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
+  ref.watch(sessionUserIdProvider);
+  return ref.watch(apiProvider).vendorDocuments();
+});
+
 final vendorPayoutsProvider =
     FutureProvider.autoDispose<List<VendorPayout>>((ref) {
   ref.watch(sessionUserIdProvider);

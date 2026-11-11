@@ -58,6 +58,7 @@ class _VendorOperationsScreenState
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(vendorOfflineMutationsProvider);
     final orders = ref.watch(vendorOrdersProvider);
     return orders.when(
       loading: () => const LoadingState(message: 'Loading your orders...'),

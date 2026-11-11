@@ -21,6 +21,16 @@ class CustomerAccountScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(customerProfileProvider);
+    ref
+      ..watch(customerUsageProvider)
+      ..watch(customerMembershipProvider)
+      ..watch(customerOffersProvider)
+      ..watch(customerWalletProvider)
+      ..watch(customerInvoicesProvider)
+      ..watch(customerSubscriptionsProvider)
+      ..watch(customerContractsProvider)
+      ..watch(customerAddressesProvider)
+      ..watch(customerSupportProvider);
     return SecureScope(
       child: ListView(
         padding: AppPageInsets.withSafeAreaBottom(
@@ -50,7 +60,12 @@ class CustomerAccountScreen extends ConsumerWidget {
             title: 'Offers',
             icon: Icons.local_offer_outlined,
             provider: (ref) => ref.watch(customerOffersProvider),
-            retry: (ref) => ref.invalidate(customerOffersProvider),
+            retry: (ref) {
+              ref
+                  .read(apiProvider)
+                  .invalidateReadCache(path: '/customer/offers');
+              ref.invalidate(customerOffersProvider);
+            },
             empty: 'No active offers.',
           ),
           const SizedBox(height: AppSpace.xl),

@@ -19,6 +19,8 @@ abstract interface class ApiTransport {
     Duration timeout = const Duration(seconds: 20),
   });
 
+  void invalidateReadCache({String? path});
+
   Future<void> saveAccessToken(String token);
 
   Future<void> saveRefreshToken(String token);

@@ -23,7 +23,7 @@ class DocumentsCard extends ConsumerWidget {
     return VendorRecordsCard(
       title: 'Documents',
       icon: Icons.description_outlined,
-      loader: (api) => api.vendorDocuments(),
+      records: ref.watch(vendorDocumentsProvider),
       emptyMessage: 'No documents submitted.',
       action: () => _openSheet(context, ref),
       onTap: (record) => _openSheet(context, ref, record),

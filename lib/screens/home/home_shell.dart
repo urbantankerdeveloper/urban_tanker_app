@@ -103,7 +103,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
   }
 
-  Future<void> _loadServices() async {
+  Future<void> _loadServices({bool bypassCache = false}) async {
+    if (bypassCache) {
+      widget.controller.api.invalidateReadCache(path: '/customer/services');
+    }
     setState(() {
       _loadingServices = true;
       _serviceError = null;
@@ -245,7 +248,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             services: _services,
             loading: _loadingServices,
             error: _serviceError,
-            onRetry: _loadServices,
+            onRetry: () => _loadServices(bypassCache: true),
             onBook: _services.isEmpty ? null : _createBooking,
             onBookAgain: (booking) => _createBooking(previousBooking: booking),
             onOpenBookings: () => _selectPage(ShellPage.bookings),

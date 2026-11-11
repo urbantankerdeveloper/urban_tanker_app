@@ -19,7 +19,7 @@ class AttendanceCard extends ConsumerStatefulWidget {
 }
 
 class _AttendanceCardState extends ConsumerState<AttendanceCard> {
-  DateTime selectedDate = DateTime.now();
+  DateTime selectedDate = DateUtils.dateOnly(DateTime.now());
 
   @override
   Widget build(BuildContext context) {

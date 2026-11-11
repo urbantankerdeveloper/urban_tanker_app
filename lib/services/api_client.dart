@@ -88,6 +88,13 @@ class ApiClient implements ApiTransport {
   }) =>
       _core.sendRequest(request, timeout: timeout);
 
+  /// Evicts cached read-mostly GET responses, optionally for one endpoint.
+  ///
+  /// Use before invalidating a provider from a manual refresh action.
+  @override
+  void invalidateReadCache({String? path}) =>
+      _core.invalidateReadCache(path: path);
+
   @override
   Future<void> saveAccessToken(String token) => _core.saveAccessToken(token);
 

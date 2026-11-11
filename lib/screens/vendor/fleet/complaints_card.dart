@@ -20,7 +20,7 @@ class ComplaintsCard extends ConsumerWidget {
     return VendorRecordsCard(
       title: 'Complaints',
       icon: Icons.report_problem_outlined,
-      loader: (api) => api.vendorComplaints(),
+      records: ref.watch(vendorComplaintsProvider),
       emptyMessage: 'No complaints recorded.',
       action: () => _createComplaint(context, ref),
       onTap: (record) => _showComplaint(context, ref, record),
@@ -66,6 +66,7 @@ class ComplaintsCard extends ConsumerWidget {
     subject.dispose();
     message.dispose();
     if (saved && context.mounted) {
+      ref.invalidate(vendorComplaintsProvider);
       showAppSnack(
         context,
         'Complaint submitted.',
@@ -121,6 +122,7 @@ class ComplaintsCard extends ConsumerWidget {
             status: status,
             resolution: resolution.text,
           );
+      ref.invalidate(vendorComplaintsProvider);
       if (context.mounted) {
         showAppSnack(
           context,

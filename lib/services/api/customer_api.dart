@@ -16,7 +16,7 @@ class CustomerApi {
 
   Future<List<TankerService>> services() async {
     final response = await _api.request('GET', '/customer/services');
-    final decoded = decodeBody(response);
+    final decoded = await decodeBodyAsync(response);
     if (decoded is! List) {
       throw const FormatException('The services response was invalid.');
     }
@@ -140,7 +140,7 @@ class CustomerApi {
       'GET',
       '/customer/orders?offset=$offset&pageSize=${pageSize.clamp(1, 100)}',
     );
-    final decoded = decodeBody(response);
+    final decoded = await decodeBodyAsync(response);
     if (decoded is! Map<String, dynamic> || decoded['rows'] is! List) {
       throw const FormatException('The bookings response was invalid.');
     }
