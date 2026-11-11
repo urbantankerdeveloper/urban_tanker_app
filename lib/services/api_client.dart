@@ -6,6 +6,7 @@ import '../models/booking.dart';
 import '../models/booking_service_details.dart';
 import '../models/dispatcher.dart';
 import '../models/notification.dart';
+import '../models/payment.dart';
 import '../models/service.dart';
 import '../models/session.dart';
 import '../models/vendor.dart';
@@ -251,6 +252,29 @@ class ApiClient implements ApiTransport {
         longitude: longitude,
         idempotencyKey: idempotencyKey,
       );
+
+  Future<RazorpayOrder> createRazorpayOrder(String bookingId) =>
+      _customer.createRazorpayOrder(bookingId);
+
+  Future<void> verifyRazorpayPayment({
+    required String orderId,
+    required String paymentId,
+    required String signature,
+  }) =>
+      _customer.verifyRazorpayPayment(
+        orderId: orderId,
+        paymentId: paymentId,
+        signature: signature,
+      );
+
+  Future<PaymentReceipt?> getPaymentDetails(String bookingId) =>
+      _customer.getPaymentDetails(bookingId);
+
+  Future<void> switchBookingToCashOnDelivery(String bookingId) =>
+      _customer.switchBookingToCashOnDelivery(bookingId);
+
+  Future<void> switchBookingToOnline(String bookingId) =>
+      _customer.switchBookingToOnline(bookingId);
 
   Future<Map<String, dynamic>> previewBookingQuote({
     required String serviceId,

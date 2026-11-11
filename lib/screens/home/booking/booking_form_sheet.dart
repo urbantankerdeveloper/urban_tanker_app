@@ -11,6 +11,8 @@ import '../../../models/booking_service_form.dart';
 import '../../../models/service.dart';
 import '../../../services/api_client.dart';
 import '../../../services/friendly_error.dart';
+import '../../../services/payment/online_payment_flow.dart';
+import '../../../services/payment/payment_checkout.dart';
 import '../../../services/service_area.dart';
 import '../../booking_details_screen.dart';
 import 'booking_fields.dart';
@@ -1330,6 +1332,8 @@ Future<void> openBookingForm(
       },
     ),
   );
+  final contactPhone = phoneController.text.trim();
+  final contactEmail = emailController.text.trim();
   couponController.dispose();
   notesController.dispose();
   phoneController.dispose();
@@ -1341,14 +1345,160 @@ Future<void> openBookingForm(
   }
   if (result != null && context.mounted) {
     final quote = result['quote'];
+    var resolvedMethod = paymentMethod;
+    String? paidNote;
+    if (paymentMethod == 'gateway') {
+      final payment = await _runOnlinePaymentStep(
+        context,
+        controller.api,
+        result,
+        contactPhone,
+        contactEmail,
+      );
+      if (!context.mounted) return;
+      resolvedMethod = payment.method;
+      paidNote = payment.note;
+    }
     await showBookingSuccess(
       context,
       result,
       quote is Map<String, dynamic> ? quote : null,
-      paymentMethod,
+      resolvedMethod,
+      paidNote: paidNote,
     );
   }
 }
+
+enum _PaymentChoice { retryPayment, retryConfirmation, cashOnDelivery, payLater }
+
+/// Runs Razorpay checkout for a booking that was just created with online
+/// payment. The booking already exists, so every failure path keeps it and
+/// offers retry, cash on delivery, or paying later.
+Future<({String method, String? note})> _runOnlinePaymentStep(
+  BuildContext context,
+  ApiClient api,
+  Map<String, dynamic> booking,
+  String phone,
+  String email,
+) async {
+  final bookingId = booking['id']?.toString();
+  if (bookingId == null || bookingId.isEmpty) {
+    return (method: 'gateway', note: 'Payment not started.');
+  }
+  final flow = OnlinePaymentFlow(api: api, checkout: RazorpayPaymentCheckout());
+  final reference = booking['reference']?.toString();
+  var outcome = await flow.pay(
+    bookingId: bookingId,
+    name: 'Urban Tanker',
+    description: reference == null ? 'Booking payment' : 'Booking $reference',
+    contact: phone.isEmpty ? null : phone,
+    email: email.isEmpty ? null : email,
+  );
+
+  while (true) {
+    switch (outcome.status) {
+      case OnlinePaymentStatus.paid:
+        return (method: 'gateway', note: await _paidNote(flow, bookingId));
+      case OnlinePaymentStatus.verificationPending:
+        if (!context.mounted) {
+          return (method: 'gateway', note: 'Payment confirmation pending.');
+        }
+        final choice = await _showPaymentRecoveryDialog(
+          context,
+          title: 'Payment confirmation pending',
+          message: outcome.message ?? 'Please retry confirmation.',
+          options: const [
+            (_PaymentChoice.retryConfirmation, 'Retry confirmation'),
+            (_PaymentChoice.payLater, 'Later'),
+          ],
+        );
+        if (choice != _PaymentChoice.retryConfirmation ||
+            outcome.pendingSuccess == null) {
+          return (
+            method: 'gateway',
+            note: 'Payment confirmation pending.',
+          );
+        }
+        outcome = await flow.confirm(outcome.pendingSuccess!);
+        continue;
+      case OnlinePaymentStatus.cancelled:
+      case OnlinePaymentStatus.failed:
+        if (!context.mounted) {
+          return (method: 'gateway', note: 'Payment not completed.');
+        }
+        final choice = await _showPaymentRecoveryDialog(
+          context,
+          title: 'Payment not completed',
+          message: outcome.message ??
+              'Your booking is saved. You can pay now or choose cash on delivery.',
+          options: const [
+            (_PaymentChoice.retryPayment, 'Try again'),
+            (_PaymentChoice.cashOnDelivery, 'Cash on delivery'),
+            (_PaymentChoice.payLater, 'Pay later'),
+          ],
+        );
+        if (choice == _PaymentChoice.retryPayment) {
+          outcome = await flow.pay(
+            bookingId: bookingId,
+            name: 'Urban Tanker',
+            description:
+                reference == null ? 'Booking payment' : 'Booking $reference',
+            contact: phone.isEmpty ? null : phone,
+            email: email.isEmpty ? null : email,
+          );
+        } else if (choice == _PaymentChoice.cashOnDelivery) {
+          try {
+            await api.switchBookingToCashOnDelivery(bookingId);
+            return (method: 'cod', note: null);
+          } on Object catch (error) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(friendlyError(error))),
+              );
+            }
+            return (method: 'gateway', note: 'Payment not completed.');
+          }
+        } else {
+          return (method: 'gateway', note: 'Payment pending.');
+        }
+        continue;
+    }
+  }
+}
+
+Future<String?> _paidNote(OnlinePaymentFlow flow, String bookingId) async {
+  try {
+    final receipt = await flow.receipt(bookingId);
+    if (receipt == null || !receipt.isPaid) return 'Payment received.';
+    return 'Paid ${formatRupees(receipt.amountPaise / 100)} via ${receipt.methodLabel}';
+  } on Object {
+    return 'Payment received.';
+  }
+}
+
+Future<_PaymentChoice?> _showPaymentRecoveryDialog(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required List<(_PaymentChoice, String)> options,
+}) {
+  return showDialog<_PaymentChoice>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        for (final (choice, label) in options)
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, choice),
+            child: Text(label),
+          ),
+      ],
+    ),
+  );
+}
+
 
 /// Rupee text for amounts shown on the booking flow.
 String formatRupees(double value) => '₹${value.toStringAsFixed(2)}';
@@ -1359,8 +1509,9 @@ Future<void> showBookingSuccess(
   BuildContext context,
   Map<String, dynamic> booking,
   Map<String, dynamic>? quote,
-  String paymentMethod,
-) async {
+  String paymentMethod, {
+  String? paidNote,
+}) async {
   String? money(Object? value) {
     if (value is! num) return null;
     return '₹${(value / 100).toStringAsFixed(2)}';
@@ -1460,6 +1611,7 @@ Future<void> showBookingSuccess(
                       ),
                   const SizedBox(height: AppSpace.xs),
                   Text('Payment: ${_paymentMethodLabel(paymentMethod)}'),
+                  if (paidNote != null) Text(paidNote),
                 ],
               ),
             ),

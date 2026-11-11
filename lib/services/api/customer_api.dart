@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../../models/account.dart';
 import '../../models/booking.dart';
 import '../../models/booking_service_details.dart';
+import '../../models/payment.dart';
 import '../../models/service.dart';
 import 'api_decode.dart';
 import 'api_transport.dart';
@@ -119,6 +120,69 @@ class CustomerApi {
       throw const FormatException('The booking quote response was invalid.');
     }
     return decoded;
+  }
+
+  Future<RazorpayOrder> createRazorpayOrder(String bookingId) async {
+    final response = await _api.request(
+      'POST',
+      '/payment/razorpay/order',
+      body: {'bookingId': bookingId},
+    );
+    return RazorpayOrder.fromJson(await mapResponse(response, 'payment order'));
+  }
+
+  /// Confirms a completed checkout with the server. A payment the webhook
+  /// already settled counts as verified.
+  Future<void> verifyRazorpayPayment({
+    required String orderId,
+    required String paymentId,
+    required String signature,
+  }) async {
+    try {
+      await _api.request(
+        'POST',
+        '/payment/razorpay/verify',
+        body: {
+          'orderId': orderId,
+          'paymentId': paymentId,
+          'signature': signature,
+        },
+      );
+    } on ApiException catch (error) {
+      if (error.statusCode == 409 &&
+          error.message.contains('already been processed')) {
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  /// Returns the booking's payment receipt, or null when no payment has been
+  /// started yet.
+  Future<PaymentReceipt?> getPaymentDetails(String bookingId) async {
+    try {
+      final response =
+          await _api.request('GET', '/customer/payments/$bookingId');
+      return PaymentReceipt.fromJson(await mapResponse(response, 'payment'));
+    } on ApiException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// Moves an unpaid online-payment booking to cash on delivery.
+  Future<void> switchBookingToCashOnDelivery(String bookingId) async {
+    await _api.request(
+      'POST',
+      '/customer/orders/$bookingId/payment-method',
+      body: {'paymentMethod': 'cod'},
+    );
+  }
+
+  /// Moves a cash-on-delivery booking to online payment. The server rejects
+  /// this once the driver has started collecting cash.
+  Future<void> switchBookingToOnline(String bookingId) async {
+    await _api.request('POST', '/customer/orders/$bookingId/payment-method/online');
   }
 
   /// Loads every booking by following `nextOffset` from the server.

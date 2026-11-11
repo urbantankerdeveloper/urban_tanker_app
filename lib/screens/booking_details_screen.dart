@@ -8,7 +8,10 @@ import '../app/providers.dart';
 import '../core/design_system/design_system.dart';
 import '../models/booking.dart';
 import '../models/booking_service_form.dart';
+import '../models/payment.dart';
 import '../services/friendly_error.dart';
+import '../services/payment/online_payment_flow.dart';
+import '../services/payment/payment_checkout.dart';
 import '../services/realtime_service.dart';
 import 'common/booking_format.dart';
 import 'common/brand_map.dart';
@@ -35,6 +38,10 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
   bool _liveUpdatesConnected = false;
   bool _inForeground = true;
   String? _liveUpdatesError;
+  Future<PaymentReceipt?>? _receiptFuture;
+  bool _payingOnline = false;
+
+  static const _payOnlineStatuses = {'pending_vendor', 'vendor_assigned', 'accepted'};
 
   @override
   void initState() {
@@ -42,6 +49,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     WidgetsBinding.instance.addObserver(this);
     _connectRealtime();
     _startRefreshTimer();
+    _receiptFuture = _loadReceipt();
   }
 
   /// Polling is only a fallback. It runs while the live connection is down and
@@ -114,6 +122,16 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
   void _refreshTracking() {
     if (!mounted) return;
     ref.invalidate(bookingTrackingProvider(widget.booking.id));
+  }
+
+  /// Payment detail for a receipt. A failed lookup is not fatal: the booking
+  /// still shows its stored status and the user can retry the check.
+  Future<PaymentReceipt?> _loadReceipt() =>
+      ref.read(appControllerProvider).api.getPaymentDetails(widget.booking.id);
+
+  void _refreshReceipt() {
+    if (!mounted) return;
+    setState(() => _receiptFuture = _loadReceipt());
   }
 
   @override
@@ -317,6 +335,12 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                           booking.normalizedPaymentStatus,
                         ),
                       ),
+                    if (booking.normalizedPaymentStatus != 'cod')
+                      _PaymentReceiptSection(
+                        future: _receiptFuture,
+                        showCheckAction: booking.normalizedPaymentStatus != 'paid',
+                        onCheck: _refreshReceipt,
+                      ),
                   ]),
                 ),
                 const SizedBox(height: AppSpace.xl),
@@ -340,6 +364,17 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                       ),
                   ],
                 ),
+                if (booking.normalizedPaymentStatus == 'cod' &&
+                    _payOnlineStatuses.contains(currentStatus)) ...[
+                  const SizedBox(height: AppSpace.md),
+                  PrimaryButton(
+                    label: _payingOnline ? 'Processing payment…' : 'Pay online now',
+                    icon: Icons.credit_card_outlined,
+                    onPressed: _payingOnline
+                        ? null
+                        : () => _payOnlineNow(context, ref),
+                  ),
+                ],
                 if (currentStatus == 'arrived') ...[
                   const SizedBox(height: AppSpace.md),
                   PrimaryButton(
@@ -362,6 +397,81 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _payOnlineNow(BuildContext context, WidgetRef ref) async {
+    final controller = ref.read(appControllerProvider);
+    final flow = OnlinePaymentFlow(
+      api: controller.api,
+      checkout: RazorpayPaymentCheckout(),
+    );
+    final description = 'Booking ${booking.reference}';
+    final email = controller.user?.email?.trim();
+    setState(() => _payingOnline = true);
+
+    var outcome = await flow.payAfterCodSwitch(
+      bookingId: booking.id,
+      name: 'Urban Tanker',
+      description: description,
+      email: email == null || email.isEmpty ? null : email,
+    );
+    while (true) {
+      switch (outcome.status) {
+        case OnlinePaymentStatus.paid:
+          if (mounted) setState(() => _payingOnline = false);
+          _onPaymentSettled();
+          if (context.mounted) {
+            showAppSnack(
+              context,
+              'Payment received. The vendor and driver have been told not to collect cash.',
+            );
+          }
+          return;
+        case OnlinePaymentStatus.verificationPending:
+          final retry = context.mounted &&
+              await showAppConfirmDialog(
+                context,
+                title: 'Payment confirmation pending',
+                message: outcome.message ?? 'Please retry confirmation.',
+                confirmLabel: 'Retry confirmation',
+                cancelLabel: 'Later',
+              );
+          if (!retry || outcome.pendingSuccess == null) {
+            if (mounted) setState(() => _payingOnline = false);
+            _onPaymentSettled();
+            return;
+          }
+          outcome = await flow.confirm(outcome.pendingSuccess!);
+        case OnlinePaymentStatus.cancelled:
+        case OnlinePaymentStatus.failed:
+          final retry = context.mounted &&
+              await showAppConfirmDialog(
+                context,
+                title: 'Payment not completed',
+                message: outcome.message ??
+                    'Your booking is still cash on delivery. You can try again.',
+                confirmLabel: 'Try again',
+                cancelLabel: 'Keep cash on delivery',
+              );
+          if (!retry) {
+            if (mounted) setState(() => _payingOnline = false);
+            _onPaymentSettled();
+            return;
+          }
+          outcome = await flow.payAfterCodSwitch(
+            bookingId: booking.id,
+            name: 'Urban Tanker',
+            description: description,
+            email: email == null || email.isEmpty ? null : email,
+          );
+      }
+    }
+  }
+
+  void _onPaymentSettled() {
+    ref.invalidate(bookingsProvider);
+    ref.invalidate(bookingTrackingProvider(widget.booking.id));
+    _refreshReceipt();
   }
 
   Future<void> _cancel(BuildContext context, WidgetRef ref) async {
@@ -526,6 +636,80 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
 
 /// Gradient header behind the collapsing app bar. Shows the status and the
 /// delivery place.
+/// Payment detail under the booking's payment status: amount, method and
+/// paid time once Razorpay has captured the payment, plus a manual check for
+/// online payments that are not yet confirmed (for example, when the app was
+/// closed mid-checkout).
+class _PaymentReceiptSection extends StatelessWidget {
+  const _PaymentReceiptSection({
+    required this.future,
+    required this.showCheckAction,
+    required this.onCheck,
+  });
+
+  final Future<PaymentReceipt?>? future;
+  final bool showCheckAction;
+  final VoidCallback onCheck;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PaymentReceipt?>(
+      future: future,
+      builder: (context, snapshot) {
+        final receipt = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data
+            : null;
+        final paidAt = receipt?.capturedAt;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (receipt != null && receipt.isPaid) ...[
+              AppListRow(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: 'Amount paid',
+                trailing: AmountText(
+                  _formatRupees(receipt.amountPaise / 100),
+                ),
+              ),
+              AppListRow(
+                leading: const Icon(Icons.credit_card_outlined),
+                title: 'Paid via',
+                subtitle: receipt.methodLabel,
+              ),
+              if (paidAt != null)
+                AppListRow(
+                  leading: const Icon(Icons.schedule_outlined),
+                  title: 'Paid at',
+                  subtitle: _formatPaidAt(paidAt),
+                ),
+            ],
+            if (showCheckAction)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpace.sm),
+                child: SecondaryButton(
+                  label: 'Check payment status',
+                  icon: Icons.refresh_outlined,
+                  expand: false,
+                  onPressed: onCheck,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+String _formatRupees(double value) => '₹${value.toStringAsFixed(2)}';
+
+String _formatPaidAt(DateTime value) {
+  final local = value.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(local.day)}/${two(local.month)}/${local.year} '
+      '${two(local.hour)}:${two(local.minute)}';
+}
+
 class _Header extends StatelessWidget {
   const _Header({
     required this.location,
