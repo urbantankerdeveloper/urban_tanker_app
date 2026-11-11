@@ -15,7 +15,7 @@ import 'resend_cooldown.dart';
 
 const _signUpRoles = <String, String>{
   'customer': 'Customer',
-  'vendor': 'Vendor',
+  'vendor': 'Vendor (needs approval)',
   'admin': 'Admin (needs approval)',
 };
 

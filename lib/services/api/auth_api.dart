@@ -323,7 +323,7 @@ class AuthApi {
     final message = decoded['message'];
     return message is String && message.isNotEmpty
         ? message
-        : 'Your admin account is waiting for approval from an existing admin.';
+        : 'Your account is waiting for approval from an existing admin.';
   }
 
   Future<void> updateThemePreference(String themeMode) async {
