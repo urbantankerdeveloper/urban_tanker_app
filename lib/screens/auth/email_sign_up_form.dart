@@ -283,6 +283,7 @@ class _EmailSignUpFormState extends State<EmailSignUpForm> {
                   const SizedBox(height: AppSpace.md),
                   DropdownButtonFormField<String>(
                     initialValue: _role,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Account type',
                       prefixIcon: Icon(Icons.badge_outlined),
