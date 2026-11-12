@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:urban_tanker_app/app/providers.dart';
 import 'package:urban_tanker_app/core/design_system/theme.dart';
 import 'package:urban_tanker_app/models/session.dart';
+import 'package:urban_tanker_app/models/vendor.dart';
 import 'package:urban_tanker_app/screens/home/shell/realtime_notice_listener.dart';
 import 'package:urban_tanker_app/services/realtime_notice.dart';
 import 'package:urban_tanker_app/services/realtime_service.dart';
@@ -80,23 +83,40 @@ void main() {
 
     Future<void> pumpListener(
       WidgetTester tester,
-      WorkspaceRole role,
-    ) async {
+      WorkspaceRole role, {
+      List<VendorOrder> orders = const [],
+    }) async {
       await tester.pumpWidget(
-        MaterialApp(
-          theme: buildLightTheme(),
-          home: Scaffold(
-            body: RealtimeNoticeListener(
-              events: events.stream,
-              role: role,
-              child: const SizedBox(),
+        ProviderScope(
+          overrides: [
+            vendorOrdersProvider.overrideWith((ref) async => orders),
+          ],
+          child: MaterialApp(
+            theme: buildLightTheme(),
+            home: Scaffold(
+              body: RealtimeNoticeListener(
+                events: events.stream,
+                role: role,
+                child: const SizedBox(),
+              ),
             ),
           ),
         ),
       );
     }
 
-    testWidgets('shows a new-order snackbar with the alert icon for vendors',
+    VendorOrder order(String id) => VendorOrder(
+          id: id,
+          reference: 'UT-$id',
+          serviceCode: '',
+          address: '',
+          status: 'pending_vendor',
+          amountPaise: 0,
+          createdAt: null,
+          scheduledFor: null,
+        );
+
+    testWidgets('new-order offer stays open with Accept and Reject for vendors',
         (tester) async {
       await pumpListener(tester, WorkspaceRole.vendor);
 
@@ -113,8 +133,103 @@ void main() {
         find.byIcon(Icons.notifications_active_outlined),
         findsOneWidget,
       );
+      expect(find.text('Accept'), findsOneWidget);
+      expect(find.text('Reject'), findsOneWidget);
+
+      // The offer must not auto-dismiss like other notices.
+      await tester.pump(const Duration(seconds: 10));
+      expect(find.textContaining('New order UT-4'), findsOneWidget);
     });
 
+    testWidgets('notices appear in the top-right corner', (tester) async {
+      await pumpListener(tester, WorkspaceRole.customer);
+
+      events.add(
+        const RealtimeEvent('booking.delivered', {
+          'bookingId': 'b8',
+          'reference': 'UT-8',
+        }),
+      );
+      await tester.pump();
+
+      final message = find.text('Your delivery is complete.');
+      final size = tester.view.physicalSize / tester.view.devicePixelRatio;
+      expect(tester.getTopRight(message).dx, greaterThan(size.width / 2));
+      expect(tester.getTopRight(message).dy, lessThan(size.height / 4));
+
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('Accept opens the order sheet for the offered order',
+        (tester) async {
+      await pumpListener(
+        tester,
+        WorkspaceRole.vendor,
+        orders: [order('b9')],
+      );
+
+      events.add(
+        const RealtimeEvent('vendor.order.created', {
+          'bookingId': 'b9',
+          'reference': 'UT-b9',
+        }),
+      );
+      await tester.pump();
+      await tester.tap(find.text('Accept'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Assign vehicle and driver'), findsOneWidget);
+    });
+
+    testWidgets('Reject opens the reason prompt for the offered order',
+        (tester) async {
+      await pumpListener(
+        tester,
+        WorkspaceRole.vendor,
+        orders: [order('b10')],
+      );
+
+      events.add(
+        const RealtimeEvent('vendor.order.created', {
+          'bookingId': 'b10',
+          'reference': 'UT-b10',
+        }),
+      );
+      await tester.pump();
+      await tester.tap(find.text('Reject'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Reason'), findsOneWidget);
+    });
+
+    testWidgets('taken closes the open offer for the same booking',
+        (tester) async {
+      await pumpListener(tester, WorkspaceRole.vendor);
+
+      events
+        ..add(
+          const RealtimeEvent('vendor.order.created', {
+            'bookingId': 'b11',
+            'reference': 'UT-11',
+          }),
+        )
+        ..add(
+          const RealtimeEvent('vendor.order.taken', {
+            'bookingId': 'b11',
+            'reference': 'UT-11',
+          }),
+        );
+      await tester.pump();
+
+      expect(find.textContaining('New order UT-11'), findsNothing);
+      expect(find.text('Accept'), findsNothing);
+      expect(
+        find.text('Order UT-11 was accepted by another vendor.'),
+        findsOneWidget,
+      );
+
+      await tester.pump(const Duration(seconds: 5));
+    });
     testWidgets('shows one notice when accepted arrives twice', (tester) async {
       await pumpListener(tester, WorkspaceRole.customer);
 
@@ -135,6 +250,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('Your vendor accepted the booking.'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
     });
 
     testWidgets('does not show vendor order notices to customers',

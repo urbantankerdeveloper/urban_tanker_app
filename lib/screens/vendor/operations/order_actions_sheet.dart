@@ -14,9 +14,17 @@ import '../../../services/temporary_photo.dart';
 /// Actions for one vendor order: assign a vehicle and driver, accept, move the
 /// order along, share live location, reject, and verify delivery.
 class OrderActionsSheet extends ConsumerStatefulWidget {
-  const OrderActionsSheet({required this.order, super.key});
+  const OrderActionsSheet({
+    required this.order,
+    this.startWithReject = false,
+    super.key,
+  });
 
   final VendorOrder order;
+
+  /// Opens the reject-reason prompt straight away, for the Reject button on a
+  /// new-order offer.
+  final bool startWithReject;
 
   @override
   ConsumerState<OrderActionsSheet> createState() => _OrderActionsSheetState();
@@ -41,6 +49,11 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.startWithReject) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reject(context, ref);
+      });
+    }
   }
 
   @override
@@ -429,7 +442,7 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
         ..invalidate(vendorOrdersProvider)
         ..invalidate(vendorDashboardProvider);
       if (context.mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context, true);
         showAppSnack(
           context,
           'Order updated successfully.',

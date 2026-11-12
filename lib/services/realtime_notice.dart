@@ -9,6 +9,8 @@ class RealtimeNotice {
     required this.message,
     this.variant = AppSnackVariant.info,
     this.isNewOrder = false,
+    this.bookingId,
+    this.closesKey,
   });
 
   /// Identifies the underlying business fact. Two events describing the same
@@ -17,7 +19,16 @@ class RealtimeNotice {
   final String key;
   final String message;
   final AppSnackVariant variant;
+
+  /// New-order offers stay open until acted on, and carry action buttons.
   final bool isNewOrder;
+
+  /// The booking this notice is about, when the event names one.
+  final String? bookingId;
+
+  /// Key of an earlier notice that this event makes obsolete, such as an
+  /// open new-order offer once another vendor takes the order.
+  final String? closesKey;
 }
 
 const _customerStatusMessages = <String, String>{
@@ -61,17 +72,22 @@ RealtimeNotice? realtimeNoticeFor(WorkspaceRole role, RealtimeEvent event) {
       return switch (event.name) {
         'vendor.order.created' => RealtimeNotice(
             key: 'offer:$bookingId',
-            message: 'New order $label is available. Open Operations to accept.',
+            message: 'New order $label is available.',
             isNewOrder: true,
+            bookingId: bookingId,
           ),
         'vendor.order.taken' => RealtimeNotice(
             key: 'taken:$bookingId',
             message: payload['message']?.toString() ??
                 'Order $label was accepted by another vendor.',
+            bookingId: bookingId,
+            closesKey: 'offer:$bookingId',
           ),
         'vendor.order.declined' => RealtimeNotice(
             key: 'declined:$bookingId',
             message: 'Order $label was declined.',
+            bookingId: bookingId,
+            closesKey: 'offer:$bookingId',
           ),
         _ => null,
       };
