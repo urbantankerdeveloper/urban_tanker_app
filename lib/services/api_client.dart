@@ -536,7 +536,7 @@ class ApiClient implements ApiTransport {
 
   Future<VendorOrder> verifyVendorDelivery({
     required String orderId,
-    required String otp,
+    String? otp,
     String? proofPath,
   }) =>
       _vendor.verifyVendorDelivery(

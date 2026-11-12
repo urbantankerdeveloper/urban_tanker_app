@@ -503,7 +503,7 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
       if (photo != null) await discardTemporaryPhotoFile(photo.path);
       await ref.read(appControllerProvider).api.verifyVendorDelivery(
             orderId: widget.order.id,
-            otp: request.otp,
+            otp: request.otp.isEmpty ? null : request.otp,
             proofPath: proofPath,
           );
       ref
@@ -652,7 +652,7 @@ class _RejectSheetState extends State<_RejectSheet> {
   }
 }
 
-/// What the verify sheet returns: the six-digit OTP and an optional photo.
+/// What the verify sheet returns: an OTP or the photo used for an SMS fallback.
 class _VerifyRequest {
   const _VerifyRequest({required this.otp, this.photo});
 
@@ -729,9 +729,22 @@ class _VerifySheetState extends State<_VerifySheet> {
               label: 'Six-digit delivery OTP',
               keyboardType: TextInputType.number,
               maxLength: 6,
-              validator: (value) => RegExp(r'^\d{6}$').hasMatch(value ?? '')
-                  ? null
-                  : 'Enter the six-digit OTP.',
+              validator: (value) {
+                final otp = (value ?? '').trim();
+                if (otp.isEmpty && _photo == null) {
+                  return 'Enter the OTP or capture a photo if its SMS was not sent.';
+                }
+                if (otp.isNotEmpty && !RegExp(r'^\d{6}$').hasMatch(otp)) {
+                  return 'Enter the six-digit OTP.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: AppSpace.sm),
+            Text(
+              'Photo proof is optional with a valid OTP. Use it instead only '
+              'when the OTP SMS was not sent.',
+              style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: AppSpace.sm),
             SecondaryButton(

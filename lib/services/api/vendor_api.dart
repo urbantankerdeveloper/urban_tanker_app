@@ -134,14 +134,14 @@ class VendorApi {
 
   Future<VendorOrder> verifyVendorDelivery({
     required String orderId,
-    required String otp,
+    String? otp,
     String? proofPath,
   }) async {
     final response = await _api.request(
       'POST',
       '/vendor/orders/$orderId/delivery/verify',
       body: {
-        'otp': otp,
+        if (otp != null && otp.trim().isNotEmpty) 'otp': otp.trim(),
         if (proofPath != null && proofPath.trim().isNotEmpty)
           'proofPath': proofPath.trim(),
       },
