@@ -13,6 +13,7 @@ void showAppSnack(
   AppSnackVariant variant = AppSnackVariant.info,
   String? actionLabel,
   VoidCallback? onAction,
+  IconData? icon,
 }) {
   final colors = context.colors;
   final tone = switch (variant) {
@@ -20,11 +21,12 @@ void showAppSnack(
     AppSnackVariant.error => colors.danger,
     AppSnackVariant.info => colors.info,
   };
-  final icon = switch (variant) {
-    AppSnackVariant.success => Icons.check_circle_outline,
-    AppSnackVariant.error => Icons.error_outline,
-    AppSnackVariant.info => Icons.info_outline,
-  };
+  final resolvedIcon = icon ??
+      switch (variant) {
+        AppSnackVariant.success => Icons.check_circle_outline,
+        AppSnackVariant.error => Icons.error_outline,
+        AppSnackVariant.info => Icons.info_outline,
+      };
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       behavior: SnackBarBehavior.floating,
@@ -35,7 +37,7 @@ void showAppSnack(
       ),
       content: Row(
         children: [
-          Icon(icon, color: tone.fg, size: 20),
+          Icon(resolvedIcon, color: tone.fg, size: 20),
           const SizedBox(width: AppSpace.md),
           Expanded(
             child: Text(message, style: TextStyle(color: tone.fg)),

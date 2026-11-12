@@ -590,9 +590,7 @@ void main() {
 
     expect(api.trackingCalls, greaterThan(initialTrackingCalls));
     expect(
-      find.text(
-        'Your vendor accepted the booking. Booking details are updating automatically.',
-      ),
+      find.text('Your vendor accepted the booking.'),
       findsOneWidget,
     );
   });

@@ -31,6 +31,7 @@ import 'booking/booking_form_sheet.dart';
 import 'customer/customer_overview.dart';
 import 'shell/menu_screen.dart';
 import 'shell/notification_routing.dart';
+import 'shell/realtime_notice_listener.dart';
 import 'shell/role_tabs.dart';
 import 'shell/unlock_offer.dart';
 
@@ -52,7 +53,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   late Future<List<NotificationItem>>? _notifications;
   StreamSubscription<RealtimeEvent>? _realtimeSubscription;
   final _operationsFocus = ValueNotifier<OperationsFocus?>(null);
-  final Set<String> _acceptedBookingNotices = <String>{};
 
   WorkspaceRole get role =>
       widget.controller.user?.role ?? WorkspaceRole.customer;
@@ -70,16 +70,24 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       if (!mounted) return;
       switch (event.name) {
         case 'booking.created':
+          ref.invalidate(bookingsProvider);
         case 'booking.updated':
-        case 'booking.rejected':
         case 'booking.vendor_accepted':
         case 'booking.delivered':
           ref.invalidate(bookingsProvider);
-          if (event.name == 'booking.updated') {
-            _handleAcceptedBookingUpdate(event.payload);
-          }
+          _refreshBookingTracking(event.payload);
+          _reloadNotifications();
         case 'notification.created':
           ref.invalidate(bookingsProvider);
+          _reloadNotifications();
+        case 'vendor.order.created':
+        case 'vendor.order.taken':
+        case 'vendor.order.declined':
+          // Refresh here too, so a vendor on another tab sees the new order
+          // without opening the operations screen first.
+          ref
+            ..invalidate(vendorOrdersProvider)
+            ..invalidate(vendorDashboardProvider);
           _reloadNotifications();
       }
     });
@@ -88,23 +96,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
   }
 
-  void _handleAcceptedBookingUpdate(dynamic payload) {
-    if (role != WorkspaceRole.customer ||
-        payload is! Map ||
-        payload['status']?.toString().toLowerCase() != 'accepted') {
-      return;
-    }
+  void _refreshBookingTracking(dynamic payload) {
+    if (role != WorkspaceRole.customer || payload is! Map) return;
     final bookingId =
         (payload['bookingId'] ?? payload['orderId'] ?? payload['id'])
             ?.toString();
     if (bookingId != null && bookingId.isNotEmpty) {
       ref.invalidate(bookingTrackingProvider(bookingId));
-    }
-    if (_acceptedBookingNotices.add(bookingId ?? 'accepted-booking-update')) {
-      showAppSnack(
-        context,
-        'Your vendor accepted the booking. Booking details are updating automatically.',
-      );
     }
   }
 
@@ -227,9 +225,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           _notificationBell(),
         ],
       ),
-      body: IndexedStack(
-        index: _index,
-        children: [for (final tab in tabs) _pageFor(tab.page, user)],
+      body: RealtimeNoticeListener(
+        events: widget.controller.realtime?.events,
+        role: role,
+        child: IndexedStack(
+          index: _index,
+          children: [for (final tab in tabs) _pageFor(tab.page, user)],
+        ),
       ),
       floatingActionButton: isCustomer && _index == 0
           ? FloatingActionButton.extended(
