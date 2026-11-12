@@ -38,9 +38,10 @@ class AppToast {
   }
 }
 
-/// Shows a toast in the top-right corner of the root overlay. Unlike
-/// [showAppSnack], it can stay open until dismissed and carry action buttons,
-/// which is needed for new-order offers.
+/// Shows a toast in the top-right corner of the root overlay, or in the
+/// bottom-right when [atBottom] is true. Unlike [showAppSnack], it can stay
+/// open until dismissed and carry action buttons, which is needed for
+/// new-order offers. [bottomClearance] lifts a bottom toast above the nav bar.
 AppToast showAppToast(
   BuildContext context,
   String message, {
@@ -49,6 +50,8 @@ AppToast showAppToast(
   List<AppToastAction> actions = const [],
   Duration? autoDismissAfter = const Duration(seconds: 4),
   VoidCallback? onDismissed,
+  bool atBottom = false,
+  double bottomClearance = 0,
 }) {
   final toast = AppToast._(onDismissed);
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
@@ -67,10 +70,12 @@ AppToast showAppToast(
         AppSnackVariant.info => Icons.info_outline,
       };
   final top = MediaQuery.paddingOf(context).top + AppSpace.md;
+  final bottom = MediaQuery.paddingOf(context).bottom + AppSpace.md + bottomClearance;
 
   final entry = OverlayEntry(
     builder: (_) => Positioned(
-      top: top,
+      top: atBottom ? null : top,
+      bottom: atBottom ? bottom : null,
       right: AppSpace.md,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),

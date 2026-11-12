@@ -18,8 +18,9 @@ import '../../vendor/operations/order_actions_sheet.dart';
 /// orders) for each relevant realtime event. Runs only while the app is in the
 /// foreground; background alerts come from push notifications.
 ///
-/// New-order offers stay open with Accept and Reject buttons. Accept opens the
-/// order sheet for assigning and accepting, and Reject opens its reason prompt.
+/// New-order offers stay open in the bottom-right with Accept and Reject
+/// buttons. Accept opens the order sheet for assigning and accepting, and
+/// Reject opens its reason prompt.
 class RealtimeNoticeListener extends ConsumerStatefulWidget {
   const RealtimeNoticeListener({
     required this.events,
@@ -42,6 +43,8 @@ class _RealtimeNoticeListenerState
   StreamSubscription<RealtimeEvent>? _subscription;
   final Set<String> _shownKeys = <String>{};
   final Map<String, AppToast> _toasts = <String, AppToast>{};
+  // Lifts the bottom-right offer above the floating bottom nav bar.
+  static const double _navClearance = 88;
 
   @override
   void initState() {
@@ -106,6 +109,8 @@ class _RealtimeNoticeListenerState
       notice.message,
       icon: Icons.notifications_active_outlined,
       autoDismissAfter: null,
+      atBottom: true,
+      bottomClearance: _navClearance,
       actions: [
         AppToastAction(
           label: 'Accept',

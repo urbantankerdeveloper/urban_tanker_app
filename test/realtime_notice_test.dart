@@ -136,7 +136,11 @@ void main() {
       expect(find.text('Accept'), findsOneWidget);
       expect(find.text('Reject'), findsOneWidget);
 
-      // The offer must not auto-dismiss like other notices.
+      final size = tester.view.physicalSize / tester.view.devicePixelRatio;
+      final accept = tester.getCenter(find.text('Accept'));
+      expect(accept.dx, greaterThan(size.width / 2));
+      expect(accept.dy, greaterThan(size.height / 2));
+
       await tester.pump(const Duration(seconds: 10));
       expect(find.textContaining('New order UT-4'), findsOneWidget);
     });
