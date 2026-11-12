@@ -16,6 +16,10 @@ class Booking {
     this.serviceId,
     this.quotedAmount,
     this.paymentStatus,
+    this.paymentMethod,
+    this.customerName,
+    this.customerPhone,
+    this.customerEmail,
     this.services = const [],
   });
 
@@ -29,6 +33,10 @@ class Booking {
   final String? serviceId;
   final String? quotedAmount;
   final String? paymentStatus;
+  final String? paymentMethod;
+  final String? customerName;
+  final String? customerPhone;
+  final String? customerEmail;
   final List<BookingServiceDetails> services;
   final double? latitude;
   final double? longitude;
@@ -49,6 +57,7 @@ class Booking {
   }
 
   factory Booking.fromJson(Map<String, dynamic> json) {
+    final customer = json['customer'];
     return Booking(
       id: (json['id'] ?? '').toString(),
       reference: (json['reference'] ?? json['order_number'] ?? json['id'] ?? '')
@@ -75,6 +84,20 @@ class Booking {
       serviceId: (json['service_code'] ?? json['service_id'] ?? '').toString(),
       quotedAmount: json['quoted_amount_paise']?.toString(),
       paymentStatus: json['payment_status']?.toString(),
+      paymentMethod:
+          (json['payment_method'] ?? json['paymentMethod'])?.toString(),
+      customerName: (json['customer_name'] ??
+              json['customerName'] ??
+              (customer is Map ? customer['name'] : null))
+          ?.toString(),
+      customerPhone: (json['customer_phone_e164'] ??
+              json['customer_phone'] ??
+              json['customerPhone'] ??
+              json['phone'])
+          ?.toString(),
+      customerEmail:
+          (json['customer_email'] ?? json['customerEmail'] ?? json['email'])
+              ?.toString(),
       services: (json['service_details'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(BookingServiceDetails.fromJson)

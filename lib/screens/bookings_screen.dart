@@ -118,7 +118,14 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                           }
                           return _BookingCard(
                             booking: shown[index],
-                            onBookAgain: widget.onBookAgain,
+                            onOpen: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => BookingDetailsScreen(
+                                  booking: shown[index],
+                                  onBookAgain: widget.onBookAgain,
+                                ),
+                              ),
+                            ),
                           );
                         },
                       ),
@@ -182,10 +189,13 @@ class _BookingsFooterState extends State<_BookingsFooter> {
 }
 
 class _BookingCard extends StatelessWidget {
-  const _BookingCard({required this.booking, this.onBookAgain});
+  const _BookingCard({
+    required this.booking,
+    required this.onOpen,
+  });
 
   final Booking booking;
-  final Future<void> Function(Booking booking)? onBookAgain;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -197,22 +207,29 @@ class _BookingCard extends StatelessWidget {
     ];
     return SurfaceCard(
       padding: AppPageInsets.card,
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => BookingDetailsScreen(booking: booking),
-        ),
-      ),
+      onTap: onOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Expanded(
-                child: Text(
-                  booking.reference,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium,
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton(
+                    onPressed: onOpen,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      booking.reference,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpace.sm),
@@ -230,26 +247,15 @@ class _BookingCard extends StatelessWidget {
                 style: theme.textTheme.bodyMedium,
               ),
             ),
-          if (amount != null || onBookAgain != null)
+          if (amount != null)
             Padding(
               padding: const EdgeInsets.only(top: AppSpace.sm),
               child: Row(
                 children: [
-                  if (amount != null)
-                    AmountText(
-                      '₹${amount.toStringAsFixed(2)}',
-                      style: theme.textTheme.titleMedium,
-                    ),
-                  const Spacer(),
-                  if (onBookAgain != null)
-                    Tooltip(
-                      message: 'Book these services again',
-                      child: TextButton.icon(
-                        onPressed: () => onBookAgain!(booking),
-                        icon: const Icon(Icons.replay_outlined, size: 18),
-                        label: const Text('Book again'),
-                      ),
-                    ),
+                  AmountText(
+                    '₹${amount.toStringAsFixed(2)}',
+                    style: theme.textTheme.titleMedium,
+                  ),
                 ],
               ),
             ),

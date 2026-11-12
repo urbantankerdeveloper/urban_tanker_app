@@ -6,6 +6,7 @@ class BookingServiceDetails {
     this.waterType,
     this.tankerCount,
     this.deliveryDate,
+    this.preferredTime,
     this.location,
     this.latitude,
     this.longitude,
@@ -19,6 +20,7 @@ class BookingServiceDetails {
   final String? waterType;
   final String? tankerCount;
   final String? deliveryDate;
+  final String? preferredTime;
   final String? location;
   final double? latitude;
   final double? longitude;
@@ -35,6 +37,8 @@ class BookingServiceDetails {
         'details': details.trim(),
         if (deliveryDate != null && deliveryDate!.trim().isNotEmpty)
           'deliveryDate': deliveryDate!.trim(),
+        if (preferredTime != null && preferredTime!.trim().isNotEmpty)
+          'preferredTime': preferredTime!.trim(),
         if (location != null && location!.trim().isNotEmpty)
           'location': location!.trim(),
         if (latitude != null) 'latitude': latitude,
@@ -52,6 +56,7 @@ class BookingServiceDetails {
       waterType: json['waterType']?.toString(),
       tankerCount: json['tankerCount']?.toString(),
       deliveryDate: json['deliveryDate']?.toString(),
+      preferredTime: json['preferredTime']?.toString(),
       location: json['location']?.toString(),
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),

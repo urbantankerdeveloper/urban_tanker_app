@@ -52,6 +52,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   late Future<List<NotificationItem>>? _notifications;
   StreamSubscription<RealtimeEvent>? _realtimeSubscription;
   final _operationsFocus = ValueNotifier<OperationsFocus?>(null);
+  final Set<String> _acceptedBookingNotices = <String>{};
 
   WorkspaceRole get role =>
       widget.controller.user?.role ?? WorkspaceRole.customer;
@@ -74,6 +75,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         case 'booking.vendor_accepted':
         case 'booking.delivered':
           ref.invalidate(bookingsProvider);
+          if (event.name == 'booking.updated') {
+            _handleAcceptedBookingUpdate(event.payload);
+          }
         case 'notification.created':
           ref.invalidate(bookingsProvider);
           _reloadNotifications();
@@ -82,6 +86,26 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) offerUnlockSetup(context, widget.controller);
     });
+  }
+
+  void _handleAcceptedBookingUpdate(dynamic payload) {
+    if (role != WorkspaceRole.customer ||
+        payload is! Map ||
+        payload['status']?.toString().toLowerCase() != 'accepted') {
+      return;
+    }
+    final bookingId =
+        (payload['bookingId'] ?? payload['orderId'] ?? payload['id'])
+            ?.toString();
+    if (bookingId != null && bookingId.isNotEmpty) {
+      ref.invalidate(bookingTrackingProvider(bookingId));
+    }
+    if (_acceptedBookingNotices.add(bookingId ?? 'accepted-booking-update')) {
+      showAppSnack(
+        context,
+        'Your vendor accepted the booking. Booking details are updating automatically.',
+      );
+    }
   }
 
   @override
@@ -129,6 +153,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         controller: widget.controller,
         serviceCatalog: _services,
         previousBooking: previousBooking,
+        onReturnHome: () {
+          if (mounted) setState(() => _index = 0);
+        },
+        onBookingCompleted: () {
+          if (mounted) ref.invalidate(bookingsProvider);
+        },
       );
     } finally {
       if (mounted) setState(() => _bookingFormOpening = false);
@@ -250,7 +280,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             error: _serviceError,
             onRetry: () => _loadServices(bypassCache: true),
             onBook: _services.isEmpty ? null : _createBooking,
-            onBookAgain: (booking) => _createBooking(previousBooking: booking),
             onOpenBookings: () => _selectPage(ShellPage.bookings),
             onOpenAccount: () => _selectPage(ShellPage.account),
           ),

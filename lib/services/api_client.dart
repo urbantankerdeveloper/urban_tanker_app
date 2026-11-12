@@ -341,7 +341,9 @@ class ApiClient implements ApiTransport {
   ) =>
       _customer.rescheduleBooking(bookingId, scheduledFor);
 
-  Future<DateTime> requestDeliveryOtp(String bookingId) =>
+  Future<({String otp, DateTime expiresAt, bool smsSent})> requestDeliveryOtp(
+    String bookingId,
+  ) =>
       _customer.requestDeliveryOtp(bookingId);
 
   Future<void> rateBooking(

@@ -18,7 +18,6 @@ class CustomerOverview extends ConsumerWidget {
     required this.loading,
     required this.onRetry,
     required this.onBook,
-    required this.onBookAgain,
     required this.onOpenBookings,
     required this.onOpenAccount,
     super.key,
@@ -33,7 +32,6 @@ class CustomerOverview extends ConsumerWidget {
 
   /// Null while services are loading or empty; disables every booking entry.
   final VoidCallback? onBook;
-  final void Function(Booking booking) onBookAgain;
   final VoidCallback onOpenBookings;
   final VoidCallback onOpenAccount;
 
@@ -48,7 +46,6 @@ class CustomerOverview extends ConsumerWidget {
         break;
       }
     }
-    final latest = items.isEmpty ? null : items.first;
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(bookingsProvider);
@@ -72,11 +69,9 @@ class CustomerOverview extends ConsumerWidget {
             children: [
               Expanded(
                 child: _QuickAction(
-                  icon: Icons.replay,
-                  label: 'Book again',
-                  onTap: latest == null || onBook == null
-                      ? null
-                      : () => onBookAgain(latest),
+                  icon: Icons.local_shipping_outlined,
+                  label: 'Book a service',
+                  onTap: onBook,
                 ),
               ),
               const SizedBox(width: AppSpace.md),

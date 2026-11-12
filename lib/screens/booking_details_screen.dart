@@ -16,12 +16,24 @@ import '../services/realtime_service.dart';
 import 'common/booking_format.dart';
 import 'common/brand_map.dart';
 
+String _paymentMethodLabel(String? method) => switch (method) {
+      'wallet' => 'Urban Tanker wallet',
+      'gateway' => 'Online payment',
+      'cod' => 'Cash on delivery',
+      _ => 'Not provided',
+    };
+
 /// One booking: progress, delivery location, driver, live tracking, order
 /// summary, and the actions that the status allows.
 class BookingDetailsScreen extends ConsumerStatefulWidget {
-  const BookingDetailsScreen({required this.booking, super.key});
+  const BookingDetailsScreen({
+    required this.booking,
+    this.onBookAgain,
+    super.key,
+  });
 
   final Booking booking;
+  final Future<void> Function(Booking booking)? onBookAgain;
 
   @override
   ConsumerState<BookingDetailsScreen> createState() =>
@@ -40,8 +52,13 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
   String? _liveUpdatesError;
   Future<PaymentReceipt?>? _receiptFuture;
   bool _payingOnline = false;
+  bool _cancelling = false;
 
-  static const _payOnlineStatuses = {'pending_vendor', 'vendor_assigned', 'accepted'};
+  static const _payOnlineStatuses = {
+    'pending_vendor',
+    'vendor_assigned',
+    'accepted'
+  };
 
   @override
   void initState() {
@@ -165,12 +182,16 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     final theme = Theme.of(context);
     final tracking = ref.watch(bookingTrackingProvider(booking.id));
     final snapshot = tracking.value;
-    final currentStatus = snapshot?.status ?? booking.status;
+    final currentStatus = (snapshot?.status ?? booking.status).toLowerCase();
     final progress = bookingProgressIndex(currentStatus);
     final finished = progress == bookingProgressSteps.length - 1;
     final latitude = booking.latitude;
     final longitude = booking.longitude;
-    final changesAllowed = !['delivered', 'cancelled'].contains(currentStatus);
+    final changesAllowed = !{'delivered', 'cancelled', 'canceled', 'rejected'}
+        .contains(currentStatus);
+    final canCancel = canCancelBookingStatus(currentStatus);
+    final canBookAgain =
+        canBookAgainStatus(currentStatus) && widget.onBookAgain != null;
 
     return Scaffold(
       body: CustomScrollView(
@@ -286,6 +307,76 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                   onRetry: _refreshTracking,
                 ),
                 const SizedBox(height: AppSpace.xl),
+                const _SectionTitle('Booking details'),
+                SurfaceCard(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth >= 600 ? 2 : 1;
+                      final width = columns == 2
+                          ? (constraints.maxWidth - AppSpace.md) / 2
+                          : constraints.maxWidth;
+                      final phone = booking.customerPhone ??
+                          booking.services
+                              .map((service) => service.phone)
+                              .firstWhere(
+                                (value) => value?.trim().isNotEmpty == true,
+                                orElse: () => null,
+                              );
+                      final items = <(String, String)>[
+                        ('Status', currentStatus.replaceAll('_', ' ')),
+                        if (booking.quotedAmountRupees != null)
+                          (
+                            'Total',
+                            '₹${booking.quotedAmountRupees!.toStringAsFixed(2)}'
+                          ),
+                        (
+                          'Delivery date',
+                          formatBookingDate(booking.deliveryDate)
+                        ),
+                        ('Delivery location', booking.location),
+                        if ((booking.customerName ?? '').trim().isNotEmpty)
+                          ('Customer', booking.customerName!.trim()),
+                        if ((phone ?? '').trim().isNotEmpty)
+                          ('Contact', phone!.trim()),
+                        if ((booking.customerEmail ?? '').trim().isNotEmpty)
+                          ('Email', booking.customerEmail!.trim()),
+                        (
+                          'Payment method',
+                          _paymentMethodLabel(booking.paymentMethod)
+                        ),
+                        if (booking.paymentStatus != null &&
+                            booking.paymentStatus!.isNotEmpty)
+                          (
+                            'Payment status',
+                            bookingPaymentLabel(booking.normalizedPaymentStatus)
+                          ),
+                      ];
+                      return Wrap(
+                        spacing: AppSpace.md,
+                        runSpacing: AppSpace.md,
+                        children: [
+                          for (final (label, value) in items)
+                            SizedBox(
+                              width: width,
+                              child: _BookingDetailItem(
+                                label: label,
+                                value: value,
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                if (booking.normalizedPaymentStatus != 'cod') ...[
+                  const SizedBox(height: AppSpace.md),
+                  _PaymentReceiptSection(
+                    future: _receiptFuture,
+                    showCheckAction: booking.normalizedPaymentStatus != 'paid',
+                    onCheck: _refreshReceipt,
+                  ),
+                ],
+                const SizedBox(height: AppSpace.xl),
                 const _SectionTitle('Order'),
                 SurfaceCard(
                   child: _Rows([
@@ -301,6 +392,8 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                             'Water type: ${service.waterType}',
                           if (service.tankerCount?.trim().isNotEmpty == true)
                             'Tanker count: ${service.tankerCount}',
+                          if (service.preferredTime?.trim().isNotEmpty == true)
+                            'Preferred time: ${service.preferredTime}',
                           if (service.details.trim().isNotEmpty)
                             'Details: ${service.details}',
                         ].join('\n'),
@@ -312,35 +405,6 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                           ? 'Not specified'
                           : '${booking.capacity} litres',
                     ),
-                    AppListRow(
-                      leading: const Icon(Icons.event_outlined),
-                      title: 'Delivery date',
-                      subtitle: formatBookingDate(booking.deliveryDate),
-                    ),
-                    if (booking.quotedAmountRupees != null)
-                      AppListRow(
-                        leading: const Icon(Icons.currency_rupee_outlined),
-                        title: 'Quoted amount',
-                        trailing: AmountText(
-                          '₹${booking.quotedAmountRupees!.toStringAsFixed(2)}',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                      ),
-                    if (booking.paymentStatus != null &&
-                        booking.paymentStatus!.isNotEmpty)
-                      AppListRow(
-                        leading: const Icon(Icons.payments_outlined),
-                        title: 'Payment status',
-                        subtitle: bookingPaymentLabel(
-                          booking.normalizedPaymentStatus,
-                        ),
-                      ),
-                    if (booking.normalizedPaymentStatus != 'cod')
-                      _PaymentReceiptSection(
-                        future: _receiptFuture,
-                        showCheckAction: booking.normalizedPaymentStatus != 'paid',
-                        onCheck: _refreshReceipt,
-                      ),
                   ]),
                 ),
                 const SizedBox(height: AppSpace.xl),
@@ -355,24 +419,56 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                         expand: false,
                         onPressed: () => _reschedule(context, ref),
                       ),
-                    if (changesAllowed)
+                    if (canCancel)
                       SecondaryButton(
-                        label: 'Cancel',
+                        label: _cancelling ? 'Cancelling…' : 'Cancel',
                         icon: Icons.cancel_outlined,
                         expand: false,
-                        onPressed: () => _cancel(context, ref),
+                        onPressed:
+                            _cancelling ? null : () => _cancel(context, ref),
+                      ),
+                    if (canBookAgain)
+                      PrimaryButton(
+                        label: 'Book again',
+                        icon: Icons.replay_outlined,
+                        expand: false,
+                        onPressed: () => widget.onBookAgain!(booking),
                       ),
                   ],
                 ),
                 if (booking.normalizedPaymentStatus == 'cod' &&
                     _payOnlineStatuses.contains(currentStatus)) ...[
                   const SizedBox(height: AppSpace.md),
-                  PrimaryButton(
-                    label: _payingOnline ? 'Processing payment…' : 'Pay online now',
-                    icon: Icons.credit_card_outlined,
-                    onPressed: _payingOnline
-                        ? null
-                        : () => _payOnlineNow(context, ref),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final action = PrimaryButton(
+                        label: _payingOnline
+                            ? 'Processing payment…'
+                            : 'Pay online now',
+                        icon: Icons.credit_card_outlined,
+                        expand: false,
+                        onPressed: _payingOnline
+                            ? null
+                            : () => _payOnlineNow(context, ref),
+                      );
+                      final prompt = const Text('Want to pay online');
+                      if (constraints.maxWidth < 600) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            prompt,
+                            const SizedBox(height: AppSpace.sm),
+                            action,
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(child: prompt),
+                          action,
+                        ],
+                      );
+                    },
                   ),
                 ],
                 if (currentStatus == 'arrived') ...[
@@ -478,15 +574,18 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     final confirmed = await showAppConfirmDialog(
       context,
       title: 'Cancel booking?',
-      message: 'This action is sent to the server and cannot be undone.',
+      message: 'Cancel this booking? You can only cancel it before the '
+          'vendor accepts.',
       confirmLabel: 'Cancel booking',
       cancelLabel: 'Keep',
       destructive: true,
     );
-    if (!confirmed || !context.mounted) return;
+    if (!confirmed || !context.mounted || _cancelling) return;
+    setState(() => _cancelling = true);
     try {
       await ref.read(appControllerProvider).api.cancelBooking(booking.id);
       ref.invalidate(bookingsProvider);
+      ref.invalidate(bookingTrackingProvider(booking.id));
       if (context.mounted) Navigator.pop(context);
     } catch (error) {
       if (context.mounted) {
@@ -496,6 +595,8 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
           variant: AppSnackVariant.error,
         );
       }
+    } finally {
+      if (mounted) setState(() => _cancelling = false);
     }
   }
 
@@ -527,7 +628,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
 
   Future<void> _requestOtp(BuildContext context, WidgetRef ref) async {
     try {
-      final expiresAt = await ref
+      final deliveryOtp = await ref
           .read(appControllerProvider)
           .api
           .requestDeliveryOtp(booking.id);
@@ -535,9 +636,32 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
         await showDialog<void>(
           context: context,
           builder: (dialogContext) => AppDialog(
-            title: 'Delivery OTP requested',
-            message:
-                'The OTP was sent to your registered mobile number and expires at ${expiresAt.toLocal()}.',
+            title: 'Delivery OTP',
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Booking ${booking.reference}'),
+                const SizedBox(height: AppSpace.md),
+                SelectableText(
+                  deliveryOtp.otp,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(dialogContext)
+                      .textTheme
+                      .headlineMedium
+                      ?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 8,
+                      ),
+                ),
+                const SizedBox(height: AppSpace.md),
+                Text(
+                  '${deliveryOtp.smsSent ? '' : 'SMS was not sent. '}'
+                  'Share this code with the vendor to confirm delivery. '
+                  'It expires at ${deliveryOtp.expiresAt.toLocal()}.',
+                ),
+              ],
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
@@ -697,6 +821,26 @@ class _PaymentReceiptSection extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _BookingDetailItem extends StatelessWidget {
+  const _BookingDetailItem({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: theme.textTheme.labelSmall),
+        const SizedBox(height: AppSpace.xs),
+        Text(value, style: theme.textTheme.bodyMedium),
+      ],
     );
   }
 }

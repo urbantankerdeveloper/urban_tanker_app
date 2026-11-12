@@ -150,7 +150,9 @@ class CustomerApi {
         },
       );
       final decoded = decodeBody(response);
-      return decoded is Map<String, dynamic> ? decoded['orderId'] as String? : null;
+      return decoded is Map<String, dynamic>
+          ? decoded['orderId'] as String?
+          : null;
     } on ApiException catch (error) {
       if (error.statusCode == 409 &&
           error.message.contains('already been processed')) {
@@ -162,12 +164,14 @@ class CustomerApi {
 
   /// Removes an unpaid online-payment booking after the customer cancels the
   /// Razorpay checkout. The server refuses paid or already accepted bookings.
-  Future<void> cancelOnlinePayment(String bookingId, {String? couponCode}) async {
+  Future<void> cancelOnlinePayment(String bookingId,
+      {String? couponCode}) async {
     await _api.request(
       'POST',
       '/customer/bookings/$bookingId/cancel-online-payment',
       body: {
-        if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
+        if (couponCode != null && couponCode.isNotEmpty)
+          'couponCode': couponCode,
       },
     );
   }
@@ -184,14 +188,17 @@ class CustomerApi {
   /// Moves a cash-on-delivery booking to online payment. The server rejects
   /// this once the driver has started collecting cash.
   Future<void> switchBookingToOnline(String bookingId) async {
-    await _api.request('POST', '/customer/orders/$bookingId/payment-method/online');
+    await _api.request(
+        'POST', '/customer/orders/$bookingId/payment-method/online');
   }
 
   /// Loads the payment receipt for a booking, or null when no payment exists.
   Future<PaymentReceipt?> getPaymentDetails(String bookingId) async {
     try {
-      final response = await _api.request('GET', '/customer/payments/$bookingId');
-      return PaymentReceipt.fromJson(await mapResponse(response, 'payment details'));
+      final response =
+          await _api.request('GET', '/customer/payments/$bookingId');
+      return PaymentReceipt.fromJson(
+          await mapResponse(response, 'payment details'));
     } on ApiException catch (error) {
       if (error.statusCode == 404) return null;
       rethrow;
@@ -275,20 +282,30 @@ class CustomerApi {
     return _bookingFromResponse(response, 'rescheduled booking');
   }
 
-  Future<DateTime> requestDeliveryOtp(String bookingId) async {
+  Future<({String otp, DateTime expiresAt, bool smsSent})> requestDeliveryOtp(
+    String bookingId,
+  ) async {
     final response = await _api.request(
       'POST',
       '/customer/orders/$bookingId/delivery-otp',
     );
     final decoded = decodeBody(response);
-    if (decoded is! Map<String, dynamic> || decoded['expiresAt'] is! String) {
+    if (decoded is! Map<String, dynamic> ||
+        decoded['otp'] is! String ||
+        !RegExp(r'^\d{6}$').hasMatch(decoded['otp'] as String) ||
+        decoded['expiresAt'] is! String ||
+        decoded['smsSent'] is! bool) {
       throw const FormatException('The delivery OTP response was invalid.');
     }
     final expiresAt = DateTime.tryParse(decoded['expiresAt'] as String);
     if (expiresAt == null) {
       throw const FormatException('The delivery OTP expiry was invalid.');
     }
-    return expiresAt;
+    return (
+      otp: decoded['otp'] as String,
+      expiresAt: expiresAt,
+      smsSent: decoded['smsSent'] as bool,
+    );
   }
 
   Future<void> rateBooking(

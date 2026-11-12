@@ -15,6 +15,7 @@ import '../../../services/payment/online_payment_flow.dart';
 import '../../../services/payment/payment_checkout.dart';
 import '../../../services/service_area.dart';
 import '../../booking_details_screen.dart';
+import '../../common/booking_format.dart';
 import 'booking_fields.dart';
 import 'live_quote_summary.dart';
 
@@ -179,6 +180,34 @@ class _BookingPhoneVerificationDialogState
       );
 }
 
+class _BookingFormControllerScope extends StatefulWidget {
+  const _BookingFormControllerScope({
+    required this.controllers,
+    required this.child,
+  });
+
+  final List<TextEditingController> controllers;
+  final Widget child;
+
+  @override
+  State<_BookingFormControllerScope> createState() =>
+      _BookingFormControllerScopeState();
+}
+
+class _BookingFormControllerScopeState
+    extends State<_BookingFormControllerScope> {
+  @override
+  void dispose() {
+    for (final controller in widget.controllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 String _paymentMethodLabel(String method) => switch (method) {
       'wallet' => 'Wallet',
       'gateway' => 'Online payment',
@@ -190,6 +219,8 @@ Future<void> openBookingForm(
   required AppController controller,
   required List<TankerService> serviceCatalog,
   Booking? previousBooking,
+  VoidCallback? onReturnHome,
+  VoidCallback? onBookingCompleted,
 }) async {
   if (serviceCatalog.isEmpty) return;
   List<AccountRecord> addresses = const [];
@@ -285,6 +316,8 @@ Future<void> openBookingForm(
   var loadingPhoneVerification = true;
   var validatingCoupon = false;
   var submittingBooking = false;
+  var bookingContactPhone = '';
+  var bookingContactEmail = '';
   String? bookingKey;
   String? bookingKeyFingerprint;
   String? paymentMethod;
@@ -367,998 +400,1087 @@ Future<void> openBookingForm(
 
   final result = await showAppBottomSheet<Map<String, dynamic>>(
     context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setSheetState) {
-        final colors = context.colors;
-        final theme = Theme.of(context);
-        final lastStep = steps.length - 1;
+    builder: (context) => _BookingFormControllerScope(
+      controllers: [
+        couponController,
+        notesController,
+        phoneController,
+        otpController,
+        emailController,
+        emailOtpController,
+        for (final fields in serviceFields.values) ...[
+          fields.quantity,
+          fields.waterType,
+          fields.tankerCount,
+          fields.details,
+          fields.location,
+          fields.deliveryDate,
+        ],
+      ],
+      child: StatefulBuilder(
+        builder: (context, setSheetState) {
+          final colors = context.colors;
+          final theme = Theme.of(context);
+          final lastStep = steps.length - 1;
 
-        void goTo(int next) => setSheetState(() {
-              step = next;
-              bookingFormError = null;
-            });
+          void goTo(int next) => setSheetState(() {
+                step = next;
+                bookingFormError = null;
+              });
 
-        void goNext() {
-          final form = stepKeys[step].currentState;
-          if (form != null && !form.validate()) return;
-          if (step == 1 && selectedServices.isEmpty) {
-            setSheetState(
-              () => bookingFormError = 'Select at least one service.',
-            );
-            return;
-          }
-          goTo(step + 1);
-        }
-
-        bool canSubmit() => !(loadingPhoneVerification ||
-            submittingBooking ||
-            paymentMethod == null ||
-            selectedServices.isEmpty ||
-            !phoneVerified ||
-            selectedServices.any(serviceHasMissingFields));
-
-        Future<void> submit() async {
-          if (selectedServices.isEmpty) {
-            setSheetState(
-              () => bookingFormError = 'Select at least one service.',
-            );
-            return;
-          }
-          final form = stepKeys[step].currentState;
-          if (form != null && !form.validate()) return;
-          final method = paymentMethod;
-          if (method == null) {
-            setSheetState(() {
-              bookingFormError = 'Choose a payment method.';
-              step = steps.indexOf('Payment');
-            });
-            return;
-          }
-          setSheetState(() => submittingBooking = true);
-          var bookingContactRecoveryUsed = false;
-          try {
-            final services = buildServiceDetails();
-            final quotePreview = await controller.api.previewBookingQuote(
-              serviceId: services.first.serviceId,
-              capacity: services.first.quantity,
-              services: services,
-              location: services.first.location ?? '',
-              deliveryDate: services.first.deliveryDate ?? '',
-              notes: notesController.text,
-              paymentMethod: method,
-              latitude: services.first.latitude,
-              longitude: services.first.longitude,
-              couponCode:
-                  validatedCoupon == null ? null : couponController.text.trim(),
-              phone: phoneController.text,
-              phoneVerificationChallengeId: phoneChallengeId,
-            );
-            if (!context.mounted) return;
-            final quote = quotePreview['quote'];
-            final selectedServiceNames = selectedServices.map(
-              (id) =>
-                  serviceCatalog.firstWhere((service) => service.id == id).name,
-            );
-            while (context.mounted) {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (dialogContext) => AppDialog(
-                  title: 'Confirm booking quote',
-                  content: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (var index = 0;
-                            index < services.length;
-                            index++) ...[
-                          Text(
-                            selectedServiceNames.elementAt(index),
-                            style: theme.textTheme.titleSmall,
-                          ),
-                          if (services[index].quantity.trim().isNotEmpty)
-                            Text(
-                              'Quantity/capacity: ${services[index].quantity.trim()}',
-                            ),
-                          if (services[index].waterType?.trim().isNotEmpty ==
-                              true)
-                            Text('Water type: ${services[index].waterType}'),
-                          if (services[index].tankerCount?.trim().isNotEmpty ==
-                              true)
-                            Text(
-                                'Tanker count: ${services[index].tankerCount}'),
-                          Text('Details: ${services[index].details.trim()}'),
-                          const SizedBox(height: AppSpace.sm),
-                        ],
-                        Text(formatQuoteSummary(quote)),
-                      ],
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(dialogContext, false),
-                      child: const Text('Review'),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      height: AppSize.buttonHeight,
-                      child: SlideToConfirm(
-                        label: 'confirm booking',
-                        onConfirmed: () => Navigator.pop(dialogContext, true),
-                      ),
-                    ),
-                  ],
-                ),
+          void goNext() {
+            final form = stepKeys[step].currentState;
+            if (form != null && !form.validate()) return;
+            if (step == 1 && selectedServices.isEmpty) {
+              setSheetState(
+                () => bookingFormError = 'Select at least one service.',
               );
-              if (confirmed != true || !context.mounted) return;
+              return;
+            }
+            goTo(step + 1);
+          }
 
-              final keyFingerprint = jsonEncode([
-                for (final service in services) service.toJson(),
-                notesController.text,
-                phoneController.text,
-                validatedCoupon == null ? null : couponController.text.trim(),
-                method,
-                phoneChallengeId,
-              ]);
-              if (keyFingerprint != bookingKeyFingerprint) {
-                bookingKeyFingerprint = keyFingerprint;
-                bookingKey = newIdempotencyKey();
-              }
-              try {
-                final booking = await controller.api.createBooking(
-                  serviceId: services.first.serviceId,
-                  capacity: services.first.quantity,
-                  services: services,
-                  location: services.first.location ?? '',
-                  deliveryDate: services.first.deliveryDate ?? '',
-                  notes: notesController.text,
-                  paymentMethod: method,
-                  latitude: services.first.latitude,
-                  longitude: services.first.longitude,
-                  couponCode: validatedCoupon == null
-                      ? null
-                      : couponController.text.trim(),
-                  phone: phoneController.text,
-                  phoneVerificationChallengeId: phoneChallengeId,
-                  idempotencyKey: bookingKey,
-                );
-                booking['service_details'] =
-                    services.map((service) => service.toJson()).toList();
-                booking['service_names'] = {
-                  for (final serviceId in selectedServices)
-                    serviceId: serviceCatalog
-                        .firstWhere((service) => service.id == serviceId)
-                        .name,
-                };
-                booking['coupon_code'] = validatedCoupon == null
+          bool canSubmit() => !(loadingPhoneVerification ||
+              submittingBooking ||
+              paymentMethod == null ||
+              selectedServices.isEmpty ||
+              !phoneVerified ||
+              selectedServices.any(serviceHasMissingFields));
+
+          Future<void> submit() async {
+            if (selectedServices.isEmpty) {
+              setSheetState(
+                () => bookingFormError = 'Select at least one service.',
+              );
+              return;
+            }
+            final form = stepKeys[step].currentState;
+            if (form != null && !form.validate()) return;
+            final method = paymentMethod;
+            if (method == null) {
+              setSheetState(() {
+                bookingFormError = 'Choose a payment method.';
+                step = steps.indexOf('Payment');
+              });
+              return;
+            }
+            setSheetState(() => submittingBooking = true);
+            var bookingContactRecoveryUsed = false;
+            try {
+              final services = buildServiceDetails();
+              final quotePreview = await controller.api.previewBookingQuote(
+                serviceId: services.first.serviceId,
+                capacity: services.first.quantity,
+                services: services,
+                location: services.first.location ?? '',
+                deliveryDate: services.first.deliveryDate ?? '',
+                notes: notesController.text,
+                paymentMethod: method,
+                latitude: services.first.latitude,
+                longitude: services.first.longitude,
+                couponCode: validatedCoupon == null
                     ? null
-                    : couponController.text.trim();
-                if (context.mounted) Navigator.pop(context, booking);
-                return;
-              } on ApiException catch (error) {
-                const contactVerificationError =
-                    'Verify the contact number for booking contact before booking.';
-                if (!phoneVerificationRequired ||
-                    error.statusCode != 400 ||
-                    error.message != contactVerificationError ||
-                    bookingContactRecoveryUsed) {
-                  rethrow;
-                }
-                bookingContactRecoveryUsed = true;
-                final verified = await _showBookingPhoneVerificationDialog(
-                  context,
-                  controller.api,
-                  phoneController.text,
-                );
-                if (verified == null || !context.mounted) return;
-                setSheetState(() {
-                  phoneController.text = verified.phone;
-                  phoneChallengeId = verified.challengeId;
-                  emailChallengeId = null;
-                  phoneVerified = true;
-                  verifiedPhone = verified.phone;
-                  bookingFormError = null;
-                });
-              }
-            }
-          } catch (error) {
-            if (context.mounted) {
-              showAppSnack(
-                context,
-                friendlyError(error),
-                variant: AppSnackVariant.error,
+                    : couponController.text.trim(),
+                phone: phoneController.text,
+                phoneVerificationChallengeId: phoneChallengeId,
               );
-            }
-          } finally {
-            if (context.mounted) {
-              setSheetState(() => submittingBooking = false);
-            }
-          }
-        }
-
-        Future<void> applyCoupon() async {
-          final code = couponController.text.trim();
-          if (code.isEmpty) {
-            setSheetState(() {
-              validatedCoupon = null;
-              couponMessage = 'Enter a coupon code first.';
-            });
-            return;
-          }
-          if (selectedServices.isEmpty) {
-            setSheetState(
-              () => couponMessage = 'Add a service before applying a coupon.',
-            );
-            return;
-          }
-          setSheetState(() {
-            validatingCoupon = true;
-            couponMessage = null;
-          });
-          try {
-            final serviceId = selectedServices.first;
-            final coupon = await controller.api.validateCoupon(
-              code: code,
-              serviceCode: serviceId,
-              amount: 0,
-            );
-            setSheetState(() {
-              validatedCoupon = coupon;
-              couponMessage =
-                  '${coupon['title'] ?? coupon['code'] ?? code} is valid.';
-            });
-          } catch (error) {
-            setSheetState(() {
-              validatedCoupon = null;
-              couponMessage = friendlyError(error);
-            });
-          } finally {
-            if (context.mounted) {
-              setSheetState(() => validatingCoupon = false);
-            }
-          }
-        }
-
-        Widget couponEntry() => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Coupon', style: theme.textTheme.titleSmall),
-                const SizedBox(height: AppSpace.sm),
-                TextFormField(
-                  controller: couponController,
-                  textCapitalization: TextCapitalization.characters,
-                  onChanged: (_) => setSheetState(() {
-                    validatedCoupon = null;
-                    couponMessage = null;
-                  }),
-                  decoration: InputDecoration(
-                    labelText: 'Coupon code',
-                    hintText: 'Enter code',
-                    suffixIcon: validatingCoupon
-                        ? const Padding(
-                            padding: EdgeInsets.all(AppSpace.md),
-                            child: SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+              if (!context.mounted) return;
+              final quote = quotePreview['quote'];
+              final selectedServiceNames = selectedServices.map(
+                (id) => serviceCatalog
+                    .firstWhere((service) => service.id == id)
+                    .name,
+              );
+              while (context.mounted) {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AppDialog(
+                    title: 'Confirm booking quote',
+                    content: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var index = 0;
+                              index < services.length;
+                              index++) ...[
+                            Text(
+                              selectedServiceNames.elementAt(index),
+                              style: theme.textTheme.titleSmall,
                             ),
-                          )
-                        : validatedCoupon != null
-                            ? IconButton(
-                                tooltip: 'Remove coupon',
-                                onPressed: () => setSheetState(() {
-                                  couponController.clear();
-                                  validatedCoupon = null;
-                                  couponMessage = null;
-                                }),
-                                icon: const Icon(Icons.close),
-                              )
-                            : TextButton(
-                                onPressed: applyCoupon,
-                                child: const Text('Apply'),
+                            if (services[index].quantity.trim().isNotEmpty)
+                              Text(
+                                'Quantity/capacity: ${services[index].quantity.trim()}',
                               ),
-                  ),
-                ),
-                if (couponMessage != null) ...[
-                  const SizedBox(height: AppSpace.xs),
-                  Text(
-                    couponMessage!,
-                    style: TextStyle(
-                      color: validatedCoupon == null
-                          ? colors.danger.fg
-                          : colors.success.fg,
-                    ),
-                  ),
-                ],
-              ],
-            );
-
-        Widget serviceEditor(TankerService service) {
-          final fields = serviceFields[service.id]!;
-          return SurfaceCard(
-            padding: const EdgeInsets.all(AppSpace.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        service.name,
-                        style: theme.textTheme.titleSmall,
+                            if (services[index].waterType?.trim().isNotEmpty ==
+                                true)
+                              Text('Water type: ${services[index].waterType}'),
+                            if (services[index]
+                                    .tankerCount
+                                    ?.trim()
+                                    .isNotEmpty ==
+                                true)
+                              Text(
+                                  'Tanker count: ${services[index].tankerCount}'),
+                            Text('Details: ${services[index].details.trim()}'),
+                            const SizedBox(height: AppSpace.sm),
+                          ],
+                          Text(formatQuoteSummary(quote)),
+                        ],
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Remove ${service.name}',
-                      onPressed: () => setSheetState(() {
-                        selectedServices.remove(service.id);
-                        validatedCoupon = null;
-                        couponMessage = null;
-                        bookingFormError = null;
-                      }),
-                      icon: const Icon(Icons.close),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Review'),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        height: AppSize.buttonHeight,
+                        child: SlideToConfirm(
+                          label: 'confirm booking',
+                          onConfirmed: () => Navigator.pop(dialogContext, true),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed != true || !context.mounted) return;
+
+                final keyFingerprint = jsonEncode([
+                  for (final service in services) service.toJson(),
+                  notesController.text,
+                  phoneController.text,
+                  validatedCoupon == null ? null : couponController.text.trim(),
+                  method,
+                  phoneChallengeId,
+                ]);
+                if (keyFingerprint != bookingKeyFingerprint) {
+                  bookingKeyFingerprint = keyFingerprint;
+                  bookingKey = newIdempotencyKey();
+                }
+                try {
+                  final booking = await controller.api.createBooking(
+                    serviceId: services.first.serviceId,
+                    capacity: services.first.quantity,
+                    services: services,
+                    location: services.first.location ?? '',
+                    deliveryDate: services.first.deliveryDate ?? '',
+                    notes: notesController.text,
+                    paymentMethod: method,
+                    latitude: services.first.latitude,
+                    longitude: services.first.longitude,
+                    couponCode: validatedCoupon == null
+                        ? null
+                        : couponController.text.trim(),
+                    phone: phoneController.text,
+                    phoneVerificationChallengeId: phoneChallengeId,
+                    idempotencyKey: bookingKey,
+                  );
+                  booking['service_details'] =
+                      services.map((service) => service.toJson()).toList();
+                  booking['service_names'] = {
+                    for (final serviceId in selectedServices)
+                      serviceId: serviceCatalog
+                          .firstWhere((service) => service.id == serviceId)
+                          .name,
+                  };
+                  booking['coupon_code'] = validatedCoupon == null
+                      ? null
+                      : couponController.text.trim();
+                  booking['customer_name'] =
+                      controller.user?.name ?? booking['customer_name'];
+                  booking['customer_phone'] = phoneController.text.trim();
+                  final contactEmail = emailController.text.trim().isNotEmpty
+                      ? emailController.text.trim()
+                      : controller.user?.email?.trim();
+                  if (contactEmail != null && contactEmail.isNotEmpty) {
+                    booking['customer_email'] = contactEmail;
+                  }
+                  bookingContactPhone = phoneController.text.trim();
+                  bookingContactEmail = contactEmail ?? '';
+                  booking['location'] = services.first.location;
+                  booking['scheduled_for'] = services.first.deliveryDate;
+                  if (context.mounted) Navigator.pop(context, booking);
+                  return;
+                } on ApiException catch (error) {
+                  const contactVerificationError =
+                      'Verify the contact number for booking contact before booking.';
+                  if (!phoneVerificationRequired ||
+                      error.statusCode != 400 ||
+                      error.message != contactVerificationError ||
+                      bookingContactRecoveryUsed) {
+                    rethrow;
+                  }
+                  bookingContactRecoveryUsed = true;
+                  final verified = await _showBookingPhoneVerificationDialog(
+                    context,
+                    controller.api,
+                    phoneController.text,
+                  );
+                  if (verified == null || !context.mounted) return;
+                  setSheetState(() {
+                    phoneController.text = verified.phone;
+                    phoneChallengeId = verified.challengeId;
+                    emailChallengeId = null;
+                    phoneVerified = true;
+                    verifiedPhone = verified.phone;
+                    bookingFormError = null;
+                  });
+                }
+              }
+            } catch (error) {
+              if (context.mounted) {
+                showAppSnack(
+                  context,
+                  friendlyError(error),
+                  variant: AppSnackVariant.error,
+                );
+              }
+            } finally {
+              if (context.mounted) {
+                setSheetState(() => submittingBooking = false);
+              }
+            }
+          }
+
+          Future<void> applyCoupon() async {
+            final code = couponController.text.trim();
+            if (code.isEmpty) {
+              setSheetState(() {
+                validatedCoupon = null;
+                couponMessage = 'Enter a coupon code first.';
+              });
+              return;
+            }
+            if (selectedServices.isEmpty) {
+              setSheetState(
+                () => couponMessage = 'Add a service before applying a coupon.',
+              );
+              return;
+            }
+            setSheetState(() {
+              validatingCoupon = true;
+              couponMessage = null;
+            });
+            try {
+              final serviceId = selectedServices.first;
+              final coupon = await controller.api.validateCoupon(
+                code: code,
+                serviceCode: serviceId,
+                amount: 0,
+              );
+              setSheetState(() {
+                validatedCoupon = coupon;
+                couponMessage =
+                    '${coupon['title'] ?? coupon['code'] ?? code} is valid.';
+              });
+            } catch (error) {
+              setSheetState(() {
+                validatedCoupon = null;
+                couponMessage = friendlyError(error);
+              });
+            } finally {
+              if (context.mounted) {
+                setSheetState(() => validatingCoupon = false);
+              }
+            }
+          }
+
+          Widget couponEntry() => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Coupon', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: AppSpace.sm),
+                  TextFormField(
+                    controller: couponController,
+                    textCapitalization: TextCapitalization.characters,
+                    onChanged: (_) => setSheetState(() {
+                      validatedCoupon = null;
+                      couponMessage = null;
+                    }),
+                    decoration: InputDecoration(
+                      labelText: 'Coupon code',
+                      hintText: 'Enter code',
+                      suffixIcon: validatingCoupon
+                          ? const Padding(
+                              padding: EdgeInsets.all(AppSpace.md),
+                              child: SizedBox.square(
+                                dimension: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            )
+                          : validatedCoupon != null
+                              ? IconButton(
+                                  tooltip: 'Remove coupon',
+                                  onPressed: () => setSheetState(() {
+                                    couponController.clear();
+                                    validatedCoupon = null;
+                                    couponMessage = null;
+                                  }),
+                                  icon: const Icon(Icons.close),
+                                )
+                              : TextButton(
+                                  onPressed: applyCoupon,
+                                  child: const Text('Apply'),
+                                ),
+                    ),
+                  ),
+                  if (couponMessage != null) ...[
+                    const SizedBox(height: AppSpace.xs),
+                    Text(
+                      couponMessage!,
+                      style: TextStyle(
+                        color: validatedCoupon == null
+                            ? colors.danger.fg
+                            : colors.success.fg,
+                      ),
                     ),
                   ],
-                ),
-                const SizedBox(height: AppSpace.sm),
-                ServiceDropdownField(
-                  controller: fields.quantity,
-                  label:
-                      BookingServiceForm.forService(service.id).quantityLabel,
-                  options: service.capacityOptions,
-                  emptyMessage: 'No capacity options are configured.',
-                  onChanged: (_) => setSheetState(() {}),
-                ),
-                if (service.id == 'water_tanker') ...[
-                  const SizedBox(height: AppSpace.sm),
-                  ServiceDropdownField(
-                    controller: fields.waterType,
-                    label: 'Water type',
-                    options: service.waterTypeOptions,
-                    emptyMessage: 'No water type options are configured.',
-                    onChanged: (_) => setSheetState(() {}),
-                  ),
-                  const SizedBox(height: AppSpace.sm),
-                  ServiceDropdownField(
-                    controller: fields.tankerCount,
-                    label: 'Tanker count',
-                    options: service.tankerCountOptions,
-                    emptyMessage: 'No tanker count options are configured.',
-                    onChanged: (_) => setSheetState(() {}),
-                  ),
-                ] else ...[
-                  const SizedBox(height: AppSpace.sm),
-                  ServiceDropdownField(
-                    controller: fields.details,
-                    label:
-                        BookingServiceForm.forService(service.id).detailsLabel,
-                    options: service.detailOptions,
-                    emptyMessage: 'No service detail options are configured.',
-                    onChanged: (_) => setSheetState(() {}),
-                  ),
                 ],
-              ],
-            ),
-          );
-        }
+              );
 
-        Widget contactStep() => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Your mobile number', style: theme.textTheme.titleMedium),
-                const SizedBox(height: AppSpace.xs),
-                Text(
-                  'This number is shared across all selected services.',
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: AppSpace.md),
-                if (phoneVerificationRequired)
-                  TextFormField(
-                    controller: phoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Booking phone number',
-                      helperText: 'Shared across all selected services',
-                    ),
-                    onChanged: (_) => setSheetState(() {
-                      final normalized =
-                          normalizeIndianPhone(phoneController.text);
-                      phoneVerified =
-                          verifiedPhone != null && normalized == verifiedPhone;
-                      if (!phoneVerified) {
-                        phoneChallengeId = null;
-                        emailChallengeId = null;
-                        otpController.clear();
-                        emailOtpController.clear();
-                      }
-                      bookingFormError = null;
-                    }),
-                    validator: (value) {
-                      final normalized = normalizeIndianPhone(value ?? '');
-                      return RegExp(r'^\d{10}$').hasMatch(normalized)
-                          ? null
-                          : 'Enter a valid 10-digit mobile number.';
-                    },
-                  )
-                else if (phoneController.text.isNotEmpty)
-                  Text(
-                    'Using your account phone: ${phoneController.text}',
-                    style: theme.textTheme.bodyMedium,
-                  )
-                else
-                  Text(
-                    'Add a mobile number to your account before booking.',
-                    style: TextStyle(color: colors.danger.fg),
-                  ),
-                if (loadingPhoneVerification)
-                  const Padding(
-                    padding: EdgeInsets.only(top: AppSpace.md),
-                    child: Text('Checking your saved number...'),
-                  ),
-                if (phoneVerified)
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppSpace.md),
-                    child: Row(
-                      children: [
-                        Icon(Icons.verified_outlined, color: colors.success.fg),
-                        const SizedBox(width: AppSpace.sm),
-                        Text(
-                          phoneVerificationRequired
-                              ? 'Number verified'
-                              : 'Using your account phone',
-                          style: TextStyle(
-                            color: colors.success.fg,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (phoneVerificationRequired &&
-                    !phoneVerified &&
-                    !loadingPhoneVerification) ...[
-                  const SizedBox(height: AppSpace.md),
+          Widget serviceEditor(TankerService service) {
+            final fields = serviceFields[service.id]!;
+            return SurfaceCard(
+              padding: const EdgeInsets.all(AppSpace.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   Row(
                     children: [
                       Expanded(
-                        child: TextFormField(
-                          controller: emailChallengeId == null
-                              ? otpController
-                              : emailOtpController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: emailChallengeId != null
-                                ? 'Email code'
-                                : AuthFeatureFlags.emailOtp
-                                    ? 'SMS code'
-                                    : 'OTP',
-                          ),
+                        child: Text(
+                          service.name,
+                          style: theme.textTheme.titleSmall,
                         ),
                       ),
-                      const SizedBox(width: AppSpace.sm),
-                      OutlinedButton(
-                        onPressed: () async {
-                          try {
-                            final normalized =
-                                normalizeIndianPhone(phoneController.text);
-                            final challenge =
-                                await controller.api.requestBookingOtp(
-                              phone: normalized,
-                            );
-                            setSheetState(() {
-                              phoneChallengeId = challenge.challengeId;
-                              emailChallengeId = challenge.emailChallengeId;
-                              bookingFormError =
-                                  'OTP sent. Enter it to verify this number.';
-                            });
-                          } catch (error) {
-                            final accountEmail = controller.user?.email;
-                            final canUseEmailFallback = accountEmail != null &&
-                                accountEmail.trim().isNotEmpty &&
-                                error is ApiException &&
-                                error.statusCode == 503 &&
-                                error.message ==
-                                    'Mobile verification is not configured yet.';
-                            if (!canUseEmailFallback) {
-                              setSheetState(() =>
-                                  bookingFormError = friendlyError(error));
-                              return;
-                            }
-                            try {
-                              final challengeId = await controller.api
-                                  .requestRegisteredBookingEmailOtp(
-                                phone: normalizeIndianPhone(
-                                  phoneController.text,
-                                ),
-                              );
-                              setSheetState(() {
-                                emailController.text = accountEmail.trim();
-                                phoneChallengeId = null;
-                                emailChallengeId = challengeId;
-                                bookingFormError = 'SMS is unavailable. A '
-                                    'verification code was sent to your '
-                                    'registered email.';
-                              });
-                            } catch (fallbackError) {
-                              setSheetState(() => bookingFormError =
-                                  friendlyError(fallbackError));
-                            }
-                          }
-                        },
-                        child: const Text('Send OTP'),
-                      ),
-                    ],
-                  ),
-                  if (bookingFormError != null) ...[
-                    const SizedBox(height: AppSpace.sm),
-                    Text(
-                      bookingFormError!,
-                      style: TextStyle(color: colors.danger.fg),
-                    ),
-                  ],
-                  const SizedBox(height: AppSpace.xs),
-                  Text(
-                    'Verify this shared number before reviewing your booking.',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  if (phoneChallengeId != null || emailChallengeId != null)
-                    Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: TextButton(
-                        onPressed: () async {
-                          final enteredPhoneOtp = phoneChallengeId != null &&
-                              otpController.text.trim().isNotEmpty;
-                          final enteredEmailOtp = emailChallengeId != null &&
-                              emailOtpController.text.trim().isNotEmpty;
-                          if (!enteredPhoneOtp && !enteredEmailOtp) {
-                            setSheetState(
-                              () => bookingFormError =
-                                  'Enter the code sent to your phone or email.',
-                            );
-                            return;
-                          }
-                          try {
-                            await controller.api.verifyPhoneOtp(
-                              phone: phoneController.text,
-                              challengeId:
-                                  enteredPhoneOtp ? phoneChallengeId : null,
-                              otp: enteredPhoneOtp ? otpController.text : null,
-                              email: enteredEmailOtp
-                                  ? emailController.text.trim()
-                                  : null,
-                              emailChallengeId:
-                                  enteredEmailOtp ? emailChallengeId : null,
-                              emailOtp: enteredEmailOtp
-                                  ? emailOtpController.text
-                                  : null,
-                            );
-                            setSheetState(() {
-                              phoneVerified = true;
-                              verifiedPhone =
-                                  normalizeIndianPhone(phoneController.text);
-                              bookingFormError = null;
-                            });
-                          } catch (error) {
-                            setSheetState(
-                              () => bookingFormError = friendlyError(error),
-                            );
-                          }
-                        },
-                        child: const Text('Verify OTP'),
-                      ),
-                    ),
-                ],
-              ],
-            );
-
-        Widget servicesStep() => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Select services', style: theme.textTheme.titleMedium),
-                const SizedBox(height: AppSpace.xs),
-                Text(
-                  'Add each service you need, then choose its quantity.',
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: AppSpace.md),
-                for (final service in serviceCatalog.where(
-                  (service) => selectedServices.contains(service.id),
-                ))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpace.md),
-                    child: serviceEditor(service),
-                  ),
-                Builder(
-                  builder: (context) {
-                    final availableServices = serviceCatalog
-                        .where(
-                            (service) => !selectedServices.contains(service.id))
-                        .toList();
-                    if (availableServices.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-                    return OutlinedButton.icon(
-                      onPressed: () async {
-                        final pickedId = await showAppBottomSheet<String>(
-                          context,
-                          builder: (pickerContext) => SafeArea(
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: availableServices.length,
-                              itemBuilder: (_, index) {
-                                final service = availableServices[index];
-                                return AppListRow(
-                                  title: service.name,
-                                  subtitle: service.description,
-                                  onTap: () => Navigator.of(pickerContext)
-                                      .pop(service.id),
-                                );
-                              },
-                            ),
-                          ),
-                        );
-                        if (pickedId == null) return;
-                        setSheetState(() {
-                          selectedServices.add(pickedId);
+                      IconButton(
+                        tooltip: 'Remove ${service.name}',
+                        onPressed: () => setSheetState(() {
+                          selectedServices.remove(service.id);
                           validatedCoupon = null;
                           couponMessage = null;
                           bookingFormError = null;
-                        });
-                      },
-                      icon: const Icon(Icons.add),
-                      label: Text(
-                        selectedServices.isEmpty
-                            ? 'Add service'
-                            : 'Add another service',
-                      ),
-                    );
-                  },
-                ),
-                if (bookingFormError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppSpace.md),
-                    child: Text(
-                      bookingFormError!,
-                      style: TextStyle(color: colors.danger.fg),
-                    ),
-                  ),
-              ],
-            );
-
-        Widget perServiceStep(
-            String heading,
-            String hint,
-            Widget Function(
-              BookingServiceFields fields,
-            ) field) {
-          final chosen = serviceCatalog
-              .where((service) => selectedServices.contains(service.id))
-              .toList();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(heading, style: theme.textTheme.titleMedium),
-              const SizedBox(height: AppSpace.xs),
-              Text(hint, style: theme.textTheme.bodyMedium),
-              const SizedBox(height: AppSpace.md),
-              if (chosen.isEmpty)
-                const Text('Select a service first.')
-              else
-                for (final service in chosen)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpace.md),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(service.name, style: theme.textTheme.titleSmall),
-                        const SizedBox(height: AppSpace.sm),
-                        field(serviceFields[service.id]!),
-                      ],
-                    ),
-                  ),
-            ],
-          );
-        }
-
-        Widget paymentStep() => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Payment', style: theme.textTheme.titleMedium),
-                const SizedBox(height: AppSpace.md),
-                TextFormField(
-                  controller: notesController,
-                  maxLength: 500,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Delivery access notes (optional)',
-                    hintText: 'Gate, parking, timing, or access instructions',
-                    alignLabelWithHint: true,
-                  ),
-                ),
-                const SizedBox(height: AppSpace.md),
-                DropdownButtonFormField<String>(
-                  initialValue: paymentMethod,
-                  hint: const Text('Choose a payment method'),
-                  decoration:
-                      const InputDecoration(labelText: 'Payment method'),
-                  validator: (value) =>
-                      value == null ? 'Choose a payment method.' : null,
-                  items: const [
-                    DropdownMenuItem(value: 'wallet', child: Text('Wallet')),
-                    DropdownMenuItem(
-                      value: 'gateway',
-                      child: Text('Online payment'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'cod',
-                      child: Text('Cash on delivery'),
-                    ),
-                  ],
-                  onChanged: (value) => setSheetState(
-                    () => paymentMethod = value,
-                  ),
-                ),
-              ],
-            );
-
-        Widget reviewStep() => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Review and submit', style: theme.textTheme.titleMedium),
-                const SizedBox(height: AppSpace.md),
-                for (final service in serviceCatalog.where(
-                  (service) => selectedServices.contains(service.id),
-                ))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpace.sm),
-                    child: SurfaceCard(
-                      padding: const EdgeInsets.all(AppSpace.md),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(service.name, style: theme.textTheme.titleSmall),
-                          Text(
-                            [
-                              if (serviceFields[service.id]!
-                                  .quantity
-                                  .text
-                                  .trim()
-                                  .isNotEmpty)
-                                serviceFields[service.id]!.quantity.text.trim(),
-                              if (serviceFields[service.id]!
-                                  .location
-                                  .text
-                                  .trim()
-                                  .isNotEmpty)
-                                serviceFields[service.id]!.location.text.trim(),
-                              if (serviceFields[service.id]!
-                                  .deliveryDate
-                                  .text
-                                  .trim()
-                                  .isNotEmpty)
-                                serviceFields[service.id]!
-                                    .deliveryDate
-                                    .text
-                                    .trim(),
-                            ].join(' • '),
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: AppSpace.md),
-                couponEntry(),
-                if (!phoneVerified && !loadingPhoneVerification)
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppSpace.md),
-                    child: Text(
-                      'Verify your mobile number on the first step to submit.',
-                      style: TextStyle(color: colors.danger.fg),
-                    ),
-                  ),
-              ],
-            );
-
-        Widget stepContent() => switch (step) {
-              0 => contactStep(),
-              1 => servicesStep(),
-              2 => perServiceStep(
-                  'Delivery location',
-                  'Choose where each service should be delivered.',
-                  (fields) => DeliveryLocationField(
-                    fields: fields,
-                    onChanged: () => setSheetState(() {}),
-                  ),
-                ),
-              3 => perServiceStep(
-                  'Delivery date',
-                  'Pick a date for each service.',
-                  (fields) => DeliveryDateField(
-                    controller: fields.deliveryDate,
-                    onChanged: () => setSheetState(() {}),
-                  ),
-                ),
-              4 => paymentStep(),
-              _ => reviewStep(),
-            };
-
-        final isLast = step == lastStep;
-        return PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (didPop, _) async {
-            if (didPop) return;
-            final leave = await showAppConfirmDialog(
-              context,
-              title: 'Leave booking?',
-              message: 'Your booking draft will be cleared if you leave.',
-              confirmLabel: 'Leave',
-              cancelLabel: 'Stay',
-            );
-            if (leave && context.mounted) Navigator.pop(context);
-          },
-          child: SizedBox(
-            height: MediaQuery.sizeOf(context).height * 0.65,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpace.xl,
-                    0,
-                    AppSpace.xl,
-                    0,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Book a delivery',
-                              style: theme.textTheme.titleLarge,
-                            ),
-                          ),
-                          Text(
-                            'Step ${step + 1} of ${steps.length}: ${steps[step]}',
-                            style: theme.textTheme.labelSmall,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpace.sm),
-                      ClipRRect(
-                        borderRadius: AppRadius.pillBorder,
-                        child: LinearProgressIndicator(
-                          value: (step + 1) / steps.length,
-                          minHeight: 4,
-                          color: colors.primary,
-                          backgroundColor: colors.hairline,
-                        ),
+                        }),
+                        icon: const Icon(Icons.close),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: AppSpace.lg),
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpace.xl,
+                  const SizedBox(height: AppSpace.sm),
+                  ServiceDropdownField(
+                    controller: fields.quantity,
+                    label:
+                        BookingServiceForm.forService(service.id).quantityLabel,
+                    options: service.capacityOptions,
+                    emptyMessage: 'No capacity options are configured.',
+                    onChanged: (_) => setSheetState(() {}),
+                  ),
+                  if (service.id == 'water_tanker') ...[
+                    const SizedBox(height: AppSpace.sm),
+                    ServiceDropdownField(
+                      controller: fields.waterType,
+                      label: 'Water type',
+                      options: service.waterTypeOptions,
+                      emptyMessage: 'No water type options are configured.',
+                      onChanged: (_) => setSheetState(() {}),
                     ),
-                    child: Form(
-                      key: stepKeys[step],
-                      child: stepContent(),
+                    const SizedBox(height: AppSpace.sm),
+                    ServiceDropdownField(
+                      controller: fields.tankerCount,
+                      label: 'Tanker count',
+                      options: service.tankerCountOptions,
+                      emptyMessage: 'No tanker count options are configured.',
+                      onChanged: (_) => setSheetState(() {}),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: AppSpace.sm),
+                    ServiceDropdownField(
+                      controller: fields.details,
+                      label: BookingServiceForm.forService(service.id)
+                          .detailsLabel,
+                      options: service.detailOptions,
+                      emptyMessage: 'No service detail options are configured.',
+                      onChanged: (_) => setSheetState(() {}),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+
+          Widget contactStep() => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Your mobile number',
+                      style: theme.textTheme.titleMedium),
+                  const SizedBox(height: AppSpace.xs),
+                  Text(
+                    'This number is shared across all selected services.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: AppSpace.md),
+                  if (phoneVerificationRequired)
+                    TextFormField(
+                      controller: phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Booking phone number',
+                        helperText: 'Shared across all selected services',
+                      ),
+                      onChanged: (_) => setSheetState(() {
+                        final normalized =
+                            normalizeIndianPhone(phoneController.text);
+                        phoneVerified = verifiedPhone != null &&
+                            normalized == verifiedPhone;
+                        if (!phoneVerified) {
+                          phoneChallengeId = null;
+                          emailChallengeId = null;
+                          otpController.clear();
+                          emailOtpController.clear();
+                        }
+                        bookingFormError = null;
+                      }),
+                      validator: (value) {
+                        final normalized = normalizeIndianPhone(value ?? '');
+                        return RegExp(r'^\d{10}$').hasMatch(normalized)
+                            ? null
+                            : 'Enter a valid 10-digit mobile number.';
+                      },
+                    )
+                  else if (phoneController.text.isNotEmpty)
+                    Text(
+                      'Using your account phone: ${phoneController.text}',
+                      style: theme.textTheme.bodyMedium,
+                    )
+                  else
+                    Text(
+                      'Add a mobile number to your account before booking.',
+                      style: TextStyle(color: colors.danger.fg),
+                    ),
+                  if (loadingPhoneVerification)
+                    const Padding(
+                      padding: EdgeInsets.only(top: AppSpace.md),
+                      child: Text('Checking your saved number...'),
+                    ),
+                  if (phoneVerified)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpace.md),
+                      child: Row(
+                        children: [
+                          Icon(Icons.verified_outlined,
+                              color: colors.success.fg),
+                          const SizedBox(width: AppSpace.sm),
+                          Text(
+                            phoneVerificationRequired
+                                ? 'Number verified'
+                                : 'Using your account phone',
+                            style: TextStyle(
+                              color: colors.success.fg,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (phoneVerificationRequired &&
+                      !phoneVerified &&
+                      !loadingPhoneVerification) ...[
+                    const SizedBox(height: AppSpace.md),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: emailChallengeId == null
+                                ? otpController
+                                : emailOtpController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: emailChallengeId != null
+                                  ? 'Email code'
+                                  : AuthFeatureFlags.emailOtp
+                                      ? 'SMS code'
+                                      : 'OTP',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpace.sm),
+                        OutlinedButton(
+                          onPressed: () async {
+                            try {
+                              final normalized =
+                                  normalizeIndianPhone(phoneController.text);
+                              final challenge =
+                                  await controller.api.requestBookingOtp(
+                                phone: normalized,
+                              );
+                              setSheetState(() {
+                                phoneChallengeId = challenge.challengeId;
+                                emailChallengeId = challenge.emailChallengeId;
+                                bookingFormError =
+                                    'OTP sent. Enter it to verify this number.';
+                              });
+                            } catch (error) {
+                              final accountEmail = controller.user?.email;
+                              final canUseEmailFallback = accountEmail !=
+                                      null &&
+                                  accountEmail.trim().isNotEmpty &&
+                                  error is ApiException &&
+                                  error.statusCode == 503 &&
+                                  error.message ==
+                                      'Mobile verification is not configured yet.';
+                              if (!canUseEmailFallback) {
+                                setSheetState(() =>
+                                    bookingFormError = friendlyError(error));
+                                return;
+                              }
+                              try {
+                                final challengeId = await controller.api
+                                    .requestRegisteredBookingEmailOtp(
+                                  phone: normalizeIndianPhone(
+                                    phoneController.text,
+                                  ),
+                                );
+                                setSheetState(() {
+                                  emailController.text = accountEmail.trim();
+                                  phoneChallengeId = null;
+                                  emailChallengeId = challengeId;
+                                  bookingFormError = 'SMS is unavailable. A '
+                                      'verification code was sent to your '
+                                      'registered email.';
+                                });
+                              } catch (fallbackError) {
+                                setSheetState(() => bookingFormError =
+                                    friendlyError(fallbackError));
+                              }
+                            }
+                          },
+                          child: const Text('Send OTP'),
+                        ),
+                      ],
+                    ),
+                    if (bookingFormError != null) ...[
+                      const SizedBox(height: AppSpace.sm),
+                      Text(
+                        bookingFormError!,
+                        style: TextStyle(color: colors.danger.fg),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpace.xs),
+                    Text(
+                      'Verify this shared number before reviewing your booking.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    if (phoneChallengeId != null || emailChallengeId != null)
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: TextButton(
+                          onPressed: () async {
+                            final enteredPhoneOtp = phoneChallengeId != null &&
+                                otpController.text.trim().isNotEmpty;
+                            final enteredEmailOtp = emailChallengeId != null &&
+                                emailOtpController.text.trim().isNotEmpty;
+                            if (!enteredPhoneOtp && !enteredEmailOtp) {
+                              setSheetState(
+                                () => bookingFormError =
+                                    'Enter the code sent to your phone or email.',
+                              );
+                              return;
+                            }
+                            try {
+                              await controller.api.verifyPhoneOtp(
+                                phone: phoneController.text,
+                                challengeId:
+                                    enteredPhoneOtp ? phoneChallengeId : null,
+                                otp:
+                                    enteredPhoneOtp ? otpController.text : null,
+                                email: enteredEmailOtp
+                                    ? emailController.text.trim()
+                                    : null,
+                                emailChallengeId:
+                                    enteredEmailOtp ? emailChallengeId : null,
+                                emailOtp: enteredEmailOtp
+                                    ? emailOtpController.text
+                                    : null,
+                              );
+                              setSheetState(() {
+                                phoneVerified = true;
+                                verifiedPhone =
+                                    normalizeIndianPhone(phoneController.text);
+                                bookingFormError = null;
+                              });
+                            } catch (error) {
+                              setSheetState(
+                                () => bookingFormError = friendlyError(error),
+                              );
+                            }
+                          },
+                          child: const Text('Verify OTP'),
+                        ),
+                      ),
+                  ],
+                ],
+              );
+
+          Widget servicesStep() => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Select services', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: AppSpace.xs),
+                  Text(
+                    'Add each service you need, then choose its quantity.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: AppSpace.md),
+                  for (final service in serviceCatalog.where(
+                    (service) => selectedServices.contains(service.id),
+                  ))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpace.md),
+                      child: serviceEditor(service),
+                    ),
+                  Builder(
+                    builder: (context) {
+                      final availableServices = serviceCatalog
+                          .where((service) =>
+                              !selectedServices.contains(service.id))
+                          .toList();
+                      if (availableServices.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return OutlinedButton.icon(
+                        onPressed: () async {
+                          final pickedId = await showAppBottomSheet<String>(
+                            context,
+                            builder: (pickerContext) => SafeArea(
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: availableServices.length,
+                                itemBuilder: (_, index) {
+                                  final service = availableServices[index];
+                                  return AppListRow(
+                                    title: service.name,
+                                    subtitle: service.description,
+                                    onTap: () => Navigator.of(pickerContext)
+                                        .pop(service.id),
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                          if (pickedId == null) return;
+                          setSheetState(() {
+                            selectedServices.add(pickedId);
+                            validatedCoupon = null;
+                            couponMessage = null;
+                            bookingFormError = null;
+                          });
+                        },
+                        icon: const Icon(Icons.add),
+                        label: Text(
+                          selectedServices.isEmpty
+                              ? 'Add service'
+                              : 'Add another service',
+                        ),
+                      );
+                    },
+                  ),
+                  if (bookingFormError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpace.md),
+                      child: Text(
+                        bookingFormError!,
+                        style: TextStyle(color: colors.danger.fg),
+                      ),
+                    ),
+                ],
+              );
+
+          Widget perServiceStep(
+              String heading,
+              String hint,
+              Widget Function(
+                BookingServiceFields fields,
+              ) field) {
+            final chosen = serviceCatalog
+                .where((service) => selectedServices.contains(service.id))
+                .toList();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(heading, style: theme.textTheme.titleMedium),
+                const SizedBox(height: AppSpace.xs),
+                Text(hint, style: theme.textTheme.bodyMedium),
+                const SizedBox(height: AppSpace.md),
+                if (chosen.isEmpty)
+                  const Text('Select a service first.')
+                else
+                  for (final service in chosen)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpace.md),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(service.name, style: theme.textTheme.titleSmall),
+                          const SizedBox(height: AppSpace.sm),
+                          field(serviceFields[service.id]!),
+                        ],
+                      ),
+                    ),
+              ],
+            );
+          }
+
+          Widget paymentStep() => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Payment', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: AppSpace.md),
+                  TextFormField(
+                    controller: notesController,
+                    maxLength: 500,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Delivery access notes (optional)',
+                      hintText: 'Gate, parking, timing, or access instructions',
+                      alignLabelWithHint: true,
                     ),
                   ),
-                ),
-                Offstage(
-                  offstage: !isLast,
-                  child: Padding(
-                    padding: AppPageInsets.section.copyWith(top: 0, bottom: 0),
-                    child: LiveQuoteSummary(
-                      api: controller.api,
-                      services: phoneVerified &&
-                              paymentMethod != null &&
-                              selectedServices.isNotEmpty &&
-                              !selectedServices.any(serviceHasMissingFields)
-                          ? buildServiceDetails()
-                          : const [],
-                      phone: normalizeIndianPhone(phoneController.text),
-                      paymentMethod: paymentMethod,
-                      couponCode: validatedCoupon == null
-                          ? null
-                          : couponController.text.trim(),
-                      onTotal: (total) =>
-                          setSheetState(() => quoteTotal = total),
+                  const SizedBox(height: AppSpace.md),
+                  Text('Want to pay online', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: AppSpace.sm),
+                  FormField<String>(
+                    initialValue: paymentMethod,
+                    validator: (value) =>
+                        value == null ? 'Choose a payment method.' : null,
+                    builder: (field) => LayoutBuilder(
+                      builder: (context, constraints) {
+                        final columns = constraints.maxWidth >= 600 ? 2 : 1;
+                        const methods = [
+                          ('wallet', 'Wallet', 'Use your Urban Tanker balance'),
+                          ('gateway', 'Online payment', 'Pay securely online'),
+                          (
+                            'cod',
+                            'Cash on delivery',
+                            'Pay when the service arrives'
+                          ),
+                        ];
+                        return RadioGroup<String>(
+                          groupValue: paymentMethod,
+                          onChanged: (next) {
+                            setSheetState(() {
+                              paymentMethod = next;
+                              field.didChange(next);
+                            });
+                          },
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              GridView.count(
+                                crossAxisCount: columns,
+                                childAspectRatio: columns == 1 ? 4.2 : 3.8,
+                                mainAxisSpacing: AppSpace.sm,
+                                crossAxisSpacing: AppSpace.sm,
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                children: [
+                                  for (final (value, label, description)
+                                      in methods)
+                                    Card(
+                                      margin: EdgeInsets.zero,
+                                      child: RadioListTile<String>(
+                                        value: value,
+                                        title: Text(label),
+                                        subtitle: Text(description),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              if (field.hasError)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.only(top: AppSpace.xs),
+                                  child: Text(
+                                    field.errorText!,
+                                    style: TextStyle(color: colors.danger.fg),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ),
-                ),
-                Padding(
-                  padding: AppPageInsets.section.copyWith(
-                    top: AppSpace.md,
-                    bottom: AppSpace.lg,
+                ],
+              );
+
+          Widget reviewStep() => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    bookingReviewTitle(selectedServices.length),
+                    style: theme.textTheme.titleMedium,
                   ),
-                  child: GlassCard(
-                    padding: const EdgeInsets.all(AppSpace.md),
+                  const SizedBox(height: AppSpace.md),
+                  for (final service in serviceCatalog.where(
+                    (service) => selectedServices.contains(service.id),
+                  ))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpace.sm),
+                      child: SurfaceCard(
+                        padding: const EdgeInsets.all(AppSpace.md),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(service.name,
+                                style: theme.textTheme.titleSmall),
+                            Text(
+                              [
+                                if (serviceFields[service.id]!
+                                    .quantity
+                                    .text
+                                    .trim()
+                                    .isNotEmpty)
+                                  serviceFields[service.id]!
+                                      .quantity
+                                      .text
+                                      .trim(),
+                                if (serviceFields[service.id]!
+                                    .location
+                                    .text
+                                    .trim()
+                                    .isNotEmpty)
+                                  serviceFields[service.id]!
+                                      .location
+                                      .text
+                                      .trim(),
+                                if (serviceFields[service.id]!
+                                    .deliveryDate
+                                    .text
+                                    .trim()
+                                    .isNotEmpty)
+                                  serviceFields[service.id]!
+                                      .deliveryDate
+                                      .text
+                                      .trim(),
+                              ].join(' • '),
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: AppSpace.md),
+                  couponEntry(),
+                  if (!phoneVerified && !loadingPhoneVerification)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpace.md),
+                      child: Text(
+                        'Verify your mobile number on the first step to submit.',
+                        style: TextStyle(color: colors.danger.fg),
+                      ),
+                    ),
+                ],
+              );
+
+          Widget stepContent() => switch (step) {
+                0 => contactStep(),
+                1 => servicesStep(),
+                2 => perServiceStep(
+                    'Delivery location',
+                    'Choose where each service should be delivered.',
+                    (fields) => DeliveryLocationField(
+                      fields: fields,
+                      onChanged: () => setSheetState(() {}),
+                    ),
+                  ),
+                3 => perServiceStep(
+                    'Delivery date',
+                    'Pick a date for each service.',
+                    (fields) => DeliveryDateField(
+                      controller: fields.deliveryDate,
+                      onChanged: () => setSheetState(() {}),
+                    ),
+                  ),
+                4 => paymentStep(),
+                _ => reviewStep(),
+              };
+
+          final isLast = step == lastStep;
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) async {
+              if (didPop) return;
+              final leave = await showAppConfirmDialog(
+                context,
+                title: 'Leave booking?',
+                message: 'Your booking draft will be cleared if you leave.',
+                confirmLabel: 'Leave',
+                cancelLabel: 'Stay',
+              );
+              if (leave && context.mounted) Navigator.pop(context);
+            },
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.65,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpace.xl,
+                      0,
+                      AppSpace.xl,
+                      0,
+                    ),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Row(
                           children: [
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Estimated total',
-                                    style: theme.textTheme.labelSmall,
-                                  ),
-                                  quoteTotal == null
-                                      ? Text(
-                                          'Shown once the details are complete.',
-                                          style: theme.textTheme.bodyMedium,
-                                        )
-                                      : AnimatedAmount(
-                                          value: quoteTotal!,
-                                          format: formatRupees,
-                                          style: theme.textTheme.titleLarge,
-                                        ),
-                                ],
+                              child: Text(
+                                'Book a delivery',
+                                style: theme.textTheme.titleLarge,
                               ),
+                            ),
+                            Text(
+                              'Step ${step + 1} of ${steps.length}: ${steps[step]}',
+                              style: theme.textTheme.labelSmall,
                             ),
                           ],
                         ),
-                        const SizedBox(height: AppSpace.md),
-                        Row(
-                          children: [
-                            if (step > 0) ...[
-                              Expanded(
-                                child: SecondaryButton(
-                                  label: 'Back',
-                                  icon: Icons.arrow_back,
-                                  onPressed: () => goTo(step - 1),
-                                ),
-                              ),
-                              const SizedBox(width: AppSpace.md),
-                            ],
-                            Expanded(
-                              child: isLast
-                                  ? PrimaryButton(
-                                      label: 'Submit booking',
-                                      loading: submittingBooking,
-                                      onPressed: canSubmit() ? submit : null,
-                                    )
-                                  : PrimaryButton(
-                                      label: 'Next',
-                                      icon: Icons.arrow_forward,
-                                      onPressed: goNext,
-                                    ),
-                            ),
-                          ],
+                        const SizedBox(height: AppSpace.sm),
+                        ClipRRect(
+                          borderRadius: AppRadius.pillBorder,
+                          child: LinearProgressIndicator(
+                            value: (step + 1) / steps.length,
+                            minHeight: 4,
+                            color: colors.primary,
+                            backgroundColor: colors.hairline,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: AppSpace.lg),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpace.xl,
+                      ),
+                      child: Form(
+                        key: stepKeys[step],
+                        child: stepContent(),
+                      ),
+                    ),
+                  ),
+                  Offstage(
+                    offstage: !isLast,
+                    child: Padding(
+                      padding:
+                          AppPageInsets.section.copyWith(top: 0, bottom: 0),
+                      child: LiveQuoteSummary(
+                        api: controller.api,
+                        services: phoneVerified &&
+                                paymentMethod != null &&
+                                selectedServices.isNotEmpty &&
+                                !selectedServices.any(serviceHasMissingFields)
+                            ? buildServiceDetails()
+                            : const [],
+                        phone: normalizeIndianPhone(phoneController.text),
+                        paymentMethod: paymentMethod,
+                        couponCode: validatedCoupon == null
+                            ? null
+                            : couponController.text.trim(),
+                        onTotal: (total) =>
+                            setSheetState(() => quoteTotal = total),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: AppPageInsets.section.copyWith(
+                      top: AppSpace.md,
+                      bottom: AppSpace.lg,
+                    ),
+                    child: GlassCard(
+                      padding: const EdgeInsets.all(AppSpace.md),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Estimated total',
+                                      style: theme.textTheme.labelSmall,
+                                    ),
+                                    quoteTotal == null
+                                        ? Text(
+                                            'Shown once the details are complete.',
+                                            style: theme.textTheme.bodyMedium,
+                                          )
+                                        : AnimatedAmount(
+                                            value: quoteTotal!,
+                                            format: formatRupees,
+                                            style: theme.textTheme.titleLarge,
+                                          ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpace.md),
+                          Row(
+                            children: [
+                              if (step > 0) ...[
+                                Expanded(
+                                  child: SecondaryButton(
+                                    label: 'Back',
+                                    icon: Icons.arrow_back,
+                                    onPressed: () => goTo(step - 1),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpace.md),
+                              ],
+                              Expanded(
+                                child: isLast
+                                    ? PrimaryButton(
+                                        label: 'Submit booking',
+                                        loading: submittingBooking,
+                                        onPressed: canSubmit() ? submit : null,
+                                      )
+                                    : PrimaryButton(
+                                        label: step == 4
+                                            ? bookingReviewTitle(
+                                                selectedServices.length,
+                                              )
+                                            : 'Next',
+                                        icon: Icons.arrow_forward,
+                                        onPressed: goNext,
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     ),
   );
-  final contactPhone = phoneController.text.trim();
-  final contactEmail = emailController.text.trim();
-  couponController.dispose();
-  notesController.dispose();
-  phoneController.dispose();
-  otpController.dispose();
-  emailController.dispose();
-  emailOtpController.dispose();
-  for (final fields in serviceFields.values) {
-    fields.dispose();
-  }
+  final contactPhone = bookingContactPhone;
+  final contactEmail = bookingContactEmail;
   final chosenMethod = paymentMethod;
   if (result != null && context.mounted && chosenMethod != null) {
     Map<String, dynamic> booking = result;
@@ -1393,7 +1515,9 @@ Future<void> openBookingForm(
       quote is Map<String, dynamic> ? quote : null,
       resolvedMethod,
       paidNote: paidNote,
+      onReturnHome: onReturnHome,
     );
+    onBookingCompleted?.call();
   }
 }
 
@@ -1552,7 +1676,6 @@ Future<_PaymentChoice?> _showPaymentRecoveryDialog(
   );
 }
 
-
 /// Rupee text for amounts shown on the booking flow.
 String formatRupees(double value) => '₹${value.toStringAsFixed(2)}';
 
@@ -1564,6 +1687,7 @@ Future<void> showBookingSuccess(
   Map<String, dynamic>? quote,
   String paymentMethod, {
   String? paidNote,
+  VoidCallback? onReturnHome,
 }) async {
   String? money(Object? value) {
     if (value is! num) return null;
@@ -1629,6 +1753,106 @@ Future<void> showBookingSuccess(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth >= 600 ? 2 : 1;
+                      final width = columns == 2
+                          ? (constraints.maxWidth - AppSpace.md) / 2
+                          : constraints.maxWidth;
+                      final details = <(String, String)>[
+                        if ((booking['customer_name'] ??
+                                    booking['customerName'])
+                                ?.toString()
+                                .trim()
+                                .isNotEmpty ==
+                            true)
+                          (
+                            'Customer',
+                            (booking['customer_name'] ??
+                                    booking['customerName'])
+                                .toString()
+                          ),
+                        if ((booking['customer_phone'] ??
+                                    booking['customer_phone_e164'] ??
+                                    booking['phone'])
+                                ?.toString()
+                                .trim()
+                                .isNotEmpty ==
+                            true)
+                          (
+                            'Contact',
+                            (booking['customer_phone'] ??
+                                    booking['customer_phone_e164'] ??
+                                    booking['phone'])
+                                .toString()
+                          ),
+                        if ((booking['customer_email'] ??
+                                    booking['customerEmail'] ??
+                                    booking['email'])
+                                ?.toString()
+                                .trim()
+                                .isNotEmpty ==
+                            true)
+                          (
+                            'Email',
+                            (booking['customer_email'] ??
+                                    booking['customerEmail'] ??
+                                    booking['email'])
+                                .toString()
+                          ),
+                        if ((booking['location'] ??
+                                    booking['delivery_location'])
+                                ?.toString()
+                                .trim()
+                                .isNotEmpty ==
+                            true)
+                          (
+                            'Delivery location',
+                            (booking['location'] ??
+                                    booking['delivery_location'])
+                                .toString()
+                          ),
+                        if ((booking['scheduled_for'] ??
+                                    booking['delivery_date'])
+                                ?.toString()
+                                .trim()
+                                .isNotEmpty ==
+                            true)
+                          (
+                            'Delivery schedule',
+                            (booking['scheduled_for'] ??
+                                    booking['delivery_date'])
+                                .toString()
+                          ),
+                      ];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpace.md),
+                        child: Wrap(
+                          spacing: AppSpace.md,
+                          runSpacing: AppSpace.md,
+                          children: [
+                            for (final (label, value) in details)
+                              SizedBox(
+                                width: width,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      label,
+                                      style: Theme.of(sheetContext)
+                                          .textTheme
+                                          .labelSmall,
+                                    ),
+                                    const SizedBox(height: AppSpace.xs),
+                                    Text(value),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                   for (final service in serviceDetails) ...[
                     Text(
                       (serviceNames[service.serviceId] ?? service.serviceId)
@@ -1642,6 +1866,12 @@ Future<void> showBookingSuccess(
                     if (service.tankerCount?.trim().isNotEmpty == true)
                       Text('Tanker count: ${service.tankerCount}'),
                     Text('Details: ${service.details}'),
+                    if (service.location?.trim().isNotEmpty == true)
+                      Text('Delivery location: ${service.location}'),
+                    if (service.deliveryDate?.trim().isNotEmpty == true)
+                      Text('Delivery date: ${service.deliveryDate}'),
+                    if (service.preferredTime?.trim().isNotEmpty == true)
+                      Text('Preferred time: ${service.preferredTime}'),
                     const SizedBox(height: AppSpace.sm),
                   ],
                   for (final (label, value) in lines)
@@ -1684,8 +1914,12 @@ Future<void> showBookingSuccess(
               ),
             if (tracked != null) const SizedBox(height: AppSpace.sm),
             SecondaryButton(
-              label: 'Done',
-              onPressed: () => Navigator.pop(sheetContext),
+              label: 'Return home',
+              icon: Icons.home_outlined,
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                onReturnHome?.call();
+              },
             ),
           ],
         ),

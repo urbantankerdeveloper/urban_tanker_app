@@ -12,6 +12,14 @@ const _finishedStatuses = {
 bool isActiveBooking(Booking booking) =>
     !_finishedStatuses.contains(booking.status.toLowerCase());
 
+bool canCancelBookingStatus(String status) =>
+    const {'pending_vendor', 'vendor_assigned'}.contains(status.toLowerCase());
+
+bool canBookAgainStatus(String status) => status.toLowerCase() == 'delivered';
+
+String bookingReviewTitle(int selectedServiceCount) =>
+    selectedServiceCount > 1 ? 'Review combined Summary' : 'Review Summary';
+
 /// Steps shown on the progress timeline, in order.
 const bookingProgressSteps = [
   'Requested',
