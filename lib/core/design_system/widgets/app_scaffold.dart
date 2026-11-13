@@ -68,6 +68,7 @@ class AppHeader extends StatelessWidget {
     this.avatarUrl,
     this.unreadCount = 0,
     this.onNotifications,
+    this.leading,
   });
 
   final String greeting;
@@ -77,11 +78,18 @@ class AppHeader extends StatelessWidget {
   final int unreadCount;
   final VoidCallback? onNotifications;
 
+  /// Optional widget shown before the avatar.
+  final Widget? leading;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Row(
       children: [
+        if (leading != null) ...[
+          leading!,
+          const SizedBox(width: AppSpace.md),
+        ],
         if (avatarName != null) ...[
           AppAvatar(name: avatarName!, imageUrl: avatarUrl),
           const SizedBox(width: AppSpace.md),

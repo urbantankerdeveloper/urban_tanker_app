@@ -18,6 +18,7 @@ export 'widgets/brand_backdrop.dart';
 export 'widgets/brand_logo.dart';
 export 'widgets/oval_guide.dart';
 export 'widgets/pin_pad.dart';
+export 'widgets/pulsing_logo_badge.dart';
 export 'widgets/buttons.dart';
 export 'widgets/fields.dart';
 export 'widgets/identity.dart';

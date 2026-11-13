@@ -61,6 +61,7 @@ class CustomerOverview extends ConsumerWidget {
             greeting: 'Good to see you,',
             title: user.name.split(' ').first,
             avatarName: user.name,
+            leading: const PulsingLogoBadge(),
           ),
           const SizedBox(height: AppSpace.xl),
           _HeroCard(active: active, onBook: onBook, onOpen: onOpenBookings),

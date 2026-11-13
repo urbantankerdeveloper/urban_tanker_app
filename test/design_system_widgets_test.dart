@@ -102,6 +102,26 @@ void main() {
     expect(find.byType(Shimmer), findsOneWidget);
   });
 
+  testWidgets('PulsingLogoBadge renders and pulses only when motion is allowed',
+      (tester) async {
+    await tester.pumpWidget(_host(const PulsingLogoBadge()));
+    expect(find.byType(PulsingLogoBadge), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('PulsingLogoBadge skips the repeating glow under reduced motion',
+      (tester) async {
+    await tester.pumpWidget(
+      _host(const PulsingLogoBadge(), disableAnimations: true),
+    );
+    expect(find.byType(PulsingLogoBadge), findsOneWidget);
+    expect(tester.hasRunningAnimations, isFalse);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('LottieOrIcon shows its fallback under reduced motion',
       (tester) async {
     await tester.pumpWidget(
