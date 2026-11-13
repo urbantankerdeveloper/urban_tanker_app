@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/design_system/design_system.dart';
 import '../../../services/service_area.dart';
-import '../../common/brand_map.dart';
-import '../../common/map_tiles.dart';
+import '../../common/live_fleet_map.dart';
 
 class MapLocationPicker extends StatefulWidget {
   const MapLocationPicker({super.key, this.latitude, this.longitude});
@@ -40,39 +38,14 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
           child: SizedBox(
             width: double.maxFinite,
             height: 360,
-            child: FlutterMap(
-              options: MapOptions(
-                initialCenter: _center,
-                initialZoom: 11,
-                onTap: (_, point) {
-                  if (!isChennaiLocation(
-                    latitude: point.latitude,
-                    longitude: point.longitude,
-                  )) {
-                    showAppSnack(context, 'Choose a location inside Chennai.');
-                    return;
-                  }
-                  setState(() => _selected = point);
-                },
-              ),
-              children: [
-                const MapTileLayer(),
-                if (_selected != null)
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: _selected!,
-                        width: 48,
-                        height: 48,
-                        child: BrandPin(
-                          color: context.colors.primary,
-                          foreground: context.colors.onHero,
-                        ),
-                      ),
-                    ],
-                  ),
-                const MapAttribution(),
-              ],
+            child: LiveFleetMap(
+              vehicle: null,
+              destination: _selected,
+              timeline: const [],
+              lastUpdated: null,
+              initialCenter: _center,
+              initialZoom: _selected == null ? 11 : 16,
+              onTap: _selectLocation,
             ),
           ),
         ),
@@ -89,4 +62,15 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
           ),
         ],
       );
+
+  void _selectLocation(LatLng point) {
+    if (!isChennaiLocation(
+      latitude: point.latitude,
+      longitude: point.longitude,
+    )) {
+      showAppSnack(context, 'Choose a location inside Chennai.');
+      return;
+    }
+    setState(() => _selected = point);
+  }
 }

@@ -14,7 +14,21 @@ import '../services/payment/online_payment_flow.dart';
 import '../services/payment/payment_checkout.dart';
 import '../services/realtime_service.dart';
 import 'common/booking_format.dart';
-import 'common/brand_map.dart';
+import 'common/live_fleet_map.dart';
+
+LatLng? _mapPoint(double? latitude, double? longitude) {
+  if (latitude == null ||
+      longitude == null ||
+      !latitude.isFinite ||
+      !longitude.isFinite ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180) {
+    return null;
+  }
+  return LatLng(latitude, longitude);
+}
 
 String _paymentMethodLabel(String? method) => switch (method) {
       'wallet' => 'Urban Tanker wallet',
@@ -187,6 +201,10 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     final finished = progress == bookingProgressSteps.length - 1;
     final latitude = booking.latitude;
     final longitude = booking.longitude;
+    final destination = _mapPoint(latitude, longitude);
+    final vehicle = snapshot?.trackingAvailable == true
+        ? _mapPoint(snapshot?.latitude, snapshot?.longitude)
+        : null;
     final changesAllowed = !{'delivered', 'cancelled', 'canceled', 'rejected'}
         .contains(currentStatus);
     final canCancel = canCancelBookingStatus(currentStatus);
@@ -262,12 +280,19 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                   ),
                 const SizedBox(height: AppSpace.xl),
                 const _SectionTitle('Delivery location'),
-                if (latitude != null && longitude != null) ...[
+                if (destination != null || vehicle != null) ...[
                   ClipRRect(
                     borderRadius: AppRadius.cardBorder,
                     child: SizedBox(
                       height: 180,
-                      child: BrandMap(center: LatLng(latitude, longitude)),
+                      child: LiveFleetMap(
+                        vehicle: vehicle,
+                        destination: destination,
+                        timeline: bookingProgressSteps,
+                        status: currentStatus,
+                        lastUpdated: snapshot?.recordedAt,
+                        accuracyMeters: snapshot?.accuracy,
+                      ),
                     ),
                   ),
                   const SizedBox(height: AppSpace.md),

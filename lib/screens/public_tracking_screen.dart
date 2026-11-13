@@ -1,15 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../core/design_system/design_system.dart';
 import '../models/booking.dart';
 import '../services/api_client.dart';
 import '../services/friendly_error.dart';
-import 'common/brand_map.dart';
-import 'common/map_tiles.dart';
+import 'common/live_fleet_map.dart';
 
 /// Public tracking for a booking, opened from a link. A map fills the screen
 /// and a draggable sheet carries the details. The data refreshes every 30
@@ -250,70 +248,11 @@ class _RefreshFailedPill extends StatelessWidget {
   }
 }
 
-/// The map, or a branded placeholder while no vehicle location has been shared.
-class _MapArea extends StatefulWidget {
+/// The live map, or a branded placeholder until a vehicle fix arrives.
+class _MapArea extends StatelessWidget {
   const _MapArea({required this.tracking});
 
   final PublicTrackingSnapshot tracking;
-
-  @override
-  State<_MapArea> createState() => _MapAreaState();
-}
-
-class _MapAreaState extends State<_MapArea> {
-  final _controller = MapController();
-  bool _mapReady = false;
-  bool _followVehicle = true;
-  LatLng? _pendingCenter;
-
-  @override
-  void didUpdateWidget(covariant _MapArea oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final before = _location(oldWidget.tracking);
-    final after = _location(widget.tracking);
-    if (after == null) {
-      _mapReady = false;
-      _pendingCenter = null;
-    } else if (after != before && _followVehicle) {
-      if (_mapReady) {
-        _controller.move(after, _controller.camera.zoom);
-      } else {
-        _pendingCenter = after;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onMapReady() {
-    _mapReady = true;
-    final pendingCenter = _pendingCenter;
-    _pendingCenter = null;
-    if (pendingCenter != null && _followVehicle) {
-      _controller.move(pendingCenter, _controller.camera.zoom);
-    }
-  }
-
-  void _onPositionChanged(MapCamera _, bool hasGesture) {
-    if (hasGesture && _followVehicle) {
-      setState(() => _followVehicle = false);
-    }
-  }
-
-  void _centerOnVehicle() {
-    final vehicle = _location(widget.tracking);
-    if (vehicle == null) return;
-    setState(() => _followVehicle = true);
-    if (_mapReady) {
-      _controller.move(vehicle, _controller.camera.zoom);
-    } else {
-      _pendingCenter = vehicle;
-    }
-  }
 
   static LatLng? _location(PublicTrackingSnapshot tracking) {
     final location = tracking.lastLocation;
@@ -340,155 +279,14 @@ class _MapAreaState extends State<_MapArea> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final vehicle = _location(widget.tracking);
-    if (vehicle == null) {
-      return DecoratedBox(
-        decoration: BoxDecoration(gradient: colors.softSurfaceGradient),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.local_shipping_outlined,
-                size: 80,
-                color: colors.primary.withValues(alpha: 0.35),
-              ),
-              const SizedBox(height: AppSpace.md),
-              Text(
-                'Waiting for vehicle location',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => LiveFleetMap(
+        vehicle: _location(tracking),
+        destination: null,
+        timeline: tracking.events.map((event) => event.status).toList(),
+        status: tracking.status,
+        lastUpdated: tracking.lastLocation?.recordedAt,
+        accuracyMeters: _accuracy(tracking),
       );
-    }
-    final map = FlutterMap(
-      mapController: _controller,
-      options: MapOptions(
-        initialCenter: vehicle,
-        initialZoom: 15,
-        onMapReady: _onMapReady,
-        onPositionChanged: _onPositionChanged,
-      ),
-      children: [
-        const MapTileLayer(),
-        if (_accuracy(widget.tracking) case final accuracy?)
-          CircleLayer(
-            circles: [
-              CircleMarker(
-                point: vehicle,
-                radius: accuracy,
-                useRadiusInMeter: true,
-                color: colors.primary.withValues(alpha: 0.12),
-                borderColor: colors.primary.withValues(alpha: 0.55),
-                borderStrokeWidth: 1.5,
-              ),
-            ],
-          ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: vehicle,
-              width: 72,
-              height: 72,
-              child: const _VehicleMarker(),
-            ),
-          ],
-        ),
-        const MapAttribution(),
-      ],
-    );
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Semantics(
-          label: 'Map showing the vehicle location',
-          child: map,
-        ),
-        if (!_followVehicle)
-          Positioned(
-            top: AppSpace.xxxl + 64,
-            right: AppSpace.xl,
-            child: SafeArea(
-              child: FloatingActionButton.small(
-                heroTag: 'center-on-vehicle',
-                tooltip: 'Center on vehicle',
-                onPressed: _centerOnVehicle,
-                child: const Icon(Icons.my_location),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// Vehicle pin with a soft pulse ring. The pulse stops under reduced motion.
-class _VehicleMarker extends StatefulWidget {
-  const _VehicleMarker();
-
-  @override
-  State<_VehicleMarker> createState() => _VehicleMarkerState();
-}
-
-class _VehicleMarkerState extends State<_VehicleMarker>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1800),
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (AppMotion.reduced(context)) {
-      _pulse.stop();
-    } else if (!_pulse.isAnimating) {
-      _pulse.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        RepaintBoundary(
-          child: AnimatedBuilder(
-            animation: _pulse,
-            builder: (context, _) => Container(
-              width: 30 + 40 * _pulse.value,
-              height: 30 + 40 * _pulse.value,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color:
-                    colors.primary.withValues(alpha: 0.35 * (1 - _pulse.value)),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(
-          width: 40,
-          height: 40,
-          child: BrandPin(
-            color: colors.primary,
-            foreground: colors.onHero,
-            icon: Icons.local_shipping,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 /// Draggable bottom sheet: ETA, status, vehicle and driver, and the timeline.
@@ -503,7 +301,7 @@ class _Sheet extends StatelessWidget {
     final colors = context.colors;
     final theme = Theme.of(context);
     final location = tracking.lastLocation;
-    final hasVehicleLocation = _MapAreaState._location(tracking) != null;
+    final hasVehicleLocation = _MapArea._location(tracking) != null;
     final events = tracking.events;
     return DecoratedBox(
       decoration: BoxDecoration(

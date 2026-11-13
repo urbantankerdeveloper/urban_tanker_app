@@ -15,6 +15,12 @@ if (keystorePropertiesFile.exists()) {
     FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
 }
 
+val mapsPropertiesFile = rootProject.file("local.properties")
+val mapsProperties = Properties()
+if (mapsPropertiesFile.exists()) {
+    FileInputStream(mapsPropertiesFile).use { mapsProperties.load(it) }
+}
+
 android {
     namespace = "com.urbantanker.app"
     // permission_handler_android 14.x requires compiling against API 37.
@@ -41,6 +47,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["MAPS_API_KEY"] =
+            mapsProperties.getProperty("MAPS_API_KEY", "")
     }
 
     signingConfigs {
