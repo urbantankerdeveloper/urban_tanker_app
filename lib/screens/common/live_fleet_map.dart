@@ -3,6 +3,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../core/design_system/design_system.dart';
 import 'google_map_view.dart';
+import 'last_updated_label.dart';
 import 'map_provider_resolver.dart';
 import 'osm_map_view.dart';
 
@@ -68,31 +69,42 @@ class LiveFleetMap extends StatelessWidget {
         const LatLng(13.0827, 80.2707);
     return Semantics(
       label: _contextLabel,
-      child: AnimatedBuilder(
-        animation: mapResolver,
-        builder: (context, _) {
-          if (mapResolver.useGoogleMaps) {
-            return GoogleMapView(
-              initialCenter: center,
-              vehicle: vehicle,
-              destination: destination,
-              accuracyMeters: accuracyMeters,
-              initialZoom: initialZoom,
-              interactive: interactive,
-              onTap: onTap,
-              resolver: mapResolver,
-            );
-          }
-          return OsmMapView(
-            initialCenter: center,
-            vehicle: vehicle,
-            destination: destination,
-            accuracyMeters: accuracyMeters,
-            initialZoom: initialZoom,
-            interactive: interactive,
-            onTap: onTap,
-          );
-        },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          AnimatedBuilder(
+            animation: mapResolver,
+            builder: (context, _) {
+              if (mapResolver.useGoogleMaps) {
+                return GoogleMapView(
+                  initialCenter: center,
+                  vehicle: vehicle,
+                  destination: destination,
+                  accuracyMeters: accuracyMeters,
+                  initialZoom: initialZoom,
+                  interactive: interactive,
+                  onTap: onTap,
+                  resolver: mapResolver,
+                );
+              }
+              return OsmMapView(
+                initialCenter: center,
+                vehicle: vehicle,
+                destination: destination,
+                accuracyMeters: accuracyMeters,
+                initialZoom: initialZoom,
+                interactive: interactive,
+                onTap: onTap,
+              );
+            },
+          ),
+          if (lastUpdated != null)
+            Positioned(
+              top: AppSpace.xxxl + 64,
+              left: AppSpace.xl,
+              child: LastUpdatedLabel(lastUpdated: lastUpdated!),
+            ),
+        ],
       ),
     );
   }

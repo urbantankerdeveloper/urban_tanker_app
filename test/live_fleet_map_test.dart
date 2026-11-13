@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart' hide LatLngTween;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:urban_tanker_app/screens/common/live_fleet_map.dart';
+import 'package:urban_tanker_app/screens/common/last_updated_label.dart';
 import 'package:urban_tanker_app/screens/common/map_coordinates.dart';
 import 'package:urban_tanker_app/screens/common/map_provider_resolver.dart';
 
@@ -57,6 +58,51 @@ void main() {
       bearingBetween(const LatLng(0, 0), const LatLng(0, 1)),
       closeTo(90, 0.0001),
     );
+  });
+
+  test('last-updated wording changes at second and minute boundaries', () {
+    final update = DateTime.utc(2026, 11, 13, 12);
+
+    expect(
+      formatLastUpdated(update, now: update),
+      'Updated just now',
+    );
+    expect(
+      formatLastUpdated(
+        update,
+        now: update.add(const Duration(seconds: 4)),
+      ),
+      'Updated just now',
+    );
+    expect(
+      formatLastUpdated(
+        update,
+        now: update.add(const Duration(seconds: 5)),
+      ),
+      'Updated 5s ago',
+    );
+    expect(
+      formatLastUpdated(
+        update,
+        now: update.add(const Duration(seconds: 60)),
+      ),
+      'Updated 1m ago',
+    );
+  });
+
+  testWidgets('last-updated label advances locally between network updates',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LastUpdatedLabel(lastUpdated: DateTime.now()),
+      ),
+    );
+    expect(find.text('Updated just now'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 5));
+
+    expect(find.text('Updated 5s ago'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('renders OSM when no Google Maps key is configured',

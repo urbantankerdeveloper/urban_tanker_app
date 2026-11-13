@@ -90,7 +90,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     _refreshTimer = null;
     if (!_inForeground || _liveUpdatesConnected) return;
     _refreshTimer = Timer.periodic(
-      const Duration(seconds: 60),
+      const Duration(seconds: 30),
       (_) => _refreshTracking(),
     );
   }

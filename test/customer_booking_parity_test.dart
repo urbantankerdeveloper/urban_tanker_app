@@ -288,6 +288,39 @@ void main() {
     expect(find.byType(BookingDetailsScreen), findsOneWidget);
   });
 
+  testWidgets('disconnected tracking fallback polls at 30 seconds',
+      (tester) async {
+    final api = _ParityApi();
+    final controller = await _controller(api);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          apiProvider.overrideWithValue(api),
+          sessionUserIdProvider.overrideWithValue('customer-1'),
+          appControllerProvider.overrideWith((ref) => controller),
+          bookingTrackingProvider(_booking.id).overrideWith(
+            (ref) => api.bookingTracking(_booking.id),
+          ),
+        ],
+        child: MaterialApp(
+          home: BookingDetailsScreen(booking: _booking),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    final initialTrackingCalls = api.trackingCalls;
+
+    await tester.pump(const Duration(seconds: 29));
+    await tester.pump();
+    expect(api.trackingCalls, initialTrackingCalls);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(api.trackingCalls, greaterThan(initialTrackingCalls));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('details offer repeat booking only after delivery',
       (tester) async {
     final api = _ParityApi();
