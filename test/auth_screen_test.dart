@@ -90,10 +90,16 @@ class _FakeApiClient extends ApiClient {
       return (
         authResult: null,
         challengeId: 'challenge-1',
+        phoneChallengeId: null,
         resendAfterSeconds: 30
       );
     }
-    return (authResult: _customer, challengeId: null, resendAfterSeconds: 0);
+    return (
+      authResult: _customer,
+      challengeId: null,
+      phoneChallengeId: null,
+      resendAfterSeconds: 0,
+    );
   }
 
   @override
@@ -110,6 +116,8 @@ class _FakeApiClient extends ApiClient {
     required String otp,
     String? name,
     String? phone,
+    String? phoneChallengeId,
+    String? phoneOtp,
   }) async {
     verifiedEmail = email;
     verifiedEmailOtp = otp;

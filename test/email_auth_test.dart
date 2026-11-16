@@ -10,6 +10,7 @@ import 'package:urban_tanker_app/models/session.dart';
 import 'package:urban_tanker_app/screens/auth/password_rules.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
 import 'package:urban_tanker_app/services/email_rules.dart';
+import 'package:urban_tanker_app/services/mpin_service.dart';
 
 import 'support/memory_secure_storage.dart';
 
@@ -30,6 +31,19 @@ ApiClient _apiFor(http.Client client, MemorySecureStorage storage) => ApiClient(
       storage: storage,
       baseUrl: 'https://example.test/api',
     );
+
+class _MemoryMpinStore implements MpinStore {
+  final values = <String, String>{};
+
+  @override
+  Future<String?> read(String key) async => values[key];
+
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+}
 
 void main() {
   group('email rules', () {
@@ -131,7 +145,33 @@ void main() {
 
       expect(result.authResult, isNull);
       expect(result.challengeId, 'challenge-1');
+      expect(result.phoneChallengeId, isNull);
       expect(result.resendAfterSeconds, 45);
+    });
+
+    test('signup retains the SMS challenge when the phone code was sent',
+        () async {
+      final api = _apiFor(
+        MockClient((_) async => http.Response(
+            jsonEncode({
+              'requiresEmailVerification': true,
+              'emailSent': true,
+              'challengeId': 'email-challenge',
+              'phoneOtpSent': true,
+              'phoneChallengeId': 'phone-challenge',
+            }),
+            201)),
+        MemorySecureStorage(),
+      );
+
+      final result = await api.signup(
+        email: 'asha@example.com',
+        password: 'Secret123',
+        name: 'Asha Kumar',
+        phone: '9876543210',
+      );
+
+      expect(result.phoneChallengeId, 'phone-challenge');
     });
 
     test('signup stores the session when the server signs the user in',
@@ -248,6 +288,8 @@ void main() {
         otp: ' 123456 ',
         name: ' Asha Kumar ',
         phone: '+91 98765 43210',
+        phoneChallengeId: 'phone-challenge',
+        phoneOtp: ' 654321 ',
       );
 
       expect(body, {
@@ -256,6 +298,8 @@ void main() {
         'otp': '123456',
         'name': 'Asha Kumar',
         'phone': '9876543210',
+        'phoneChallengeId': 'phone-challenge',
+        'phoneOtp': '654321',
       });
       expect(result.user.name, 'Asha Kumar');
       expect(storage.values['urban_tanker_access_token'], 'access-token');
@@ -281,6 +325,31 @@ void main() {
         throwsA(isA<FormatException>()),
       );
       expect(calls, 0);
+    });
+  });
+
+  group('runtime feature flags', () {
+    test('loads the MPIN cooldown flag from the public config endpoint',
+        () async {
+      late String path;
+      final api = _apiFor(
+        MockClient((request) async {
+          path = request.url.path;
+          return http.Response(
+            jsonEncode({
+              'duplicate_phone_check_enabled': true,
+              'mpin_cooldown_enabled': false,
+            }),
+            200,
+          );
+        }),
+        MemorySecureStorage(),
+      );
+
+      final flags = await api.featureFlags();
+
+      expect(path, '/api/config/flags');
+      expect(flags['mpin_cooldown_enabled'], isFalse);
     });
   });
 
@@ -368,6 +437,56 @@ void main() {
       expect(controller.isSignedIn, isTrue);
     });
 
+    test('a signup phone challenge is retained for verification', () async {
+      api.signupRequiresVerification = true;
+      api.signupPhoneChallenge = 'phone-challenge';
+
+      await controller.signUp(
+        email: 'asha@example.com',
+        password: 'Secret123',
+        name: 'Asha Kumar',
+        phone: '9876543210',
+      );
+
+      expect(controller.phoneSignupChallengeId, 'phone-challenge');
+      expect(controller.pendingPhoneVerification, '9876543210');
+
+      await controller.signInWithEmailAuthOtp(
+        email: 'asha@example.com',
+        otp: '123456',
+        phoneOtp: '654321',
+      );
+
+      expect(api.verifiedPhoneChallengeId, 'phone-challenge');
+      expect(api.verifiedPhoneOtp, '654321');
+      expect(api.verifiedPhoneNumber, '9876543210');
+    });
+
+    test('a signup phone challenge is retained for verification', () async {
+      api.signupRequiresVerification = true;
+      api.signupPhoneChallenge = 'phone-challenge';
+
+      await controller.signUp(
+        email: 'asha@example.com',
+        password: 'Secret123',
+        name: 'Asha Kumar',
+        phone: '9876543210',
+      );
+
+      expect(controller.phoneSignupChallengeId, 'phone-challenge');
+      expect(controller.pendingPhoneVerification, '9876543210');
+
+      await controller.signInWithEmailAuthOtp(
+        email: 'asha@example.com',
+        otp: '123456',
+        phoneOtp: '654321',
+      );
+
+      expect(api.verifiedPhoneChallengeId, 'phone-challenge');
+      expect(api.verifiedPhoneOtp, '654321');
+      expect(api.verifiedPhoneNumber, '9876543210');
+    });
+
     test('a taken email records the 409 so the screen can offer sign-in',
         () async {
       api.signupError = ApiException('This email is already registered.', 409);
@@ -403,6 +522,41 @@ void main() {
       expect(controller.lastAuthMethod, 'email');
     });
   });
+
+  group('MPIN cooldown', () {
+    test('a cooldown keeps the signed-in session locked without signing out',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final api = _FakeAuthApi();
+      final mpin = MpinService(
+        store: _MemoryMpinStore(),
+        kdf: (pin, salt, iterations) async =>
+            utf8.encode('$pin:${salt.join(',')}:$iterations'),
+      );
+      await mpin.setPin('4821');
+      final controller = AppController(
+        api: api,
+        preferences: preferences,
+        mpin: mpin,
+      )
+        ..user = api.signedInResult.user
+        ..mpinEnabled = true
+        ..sessionLocked = true
+        ..mpinCooldownEnabled = true;
+      addTearDown(controller.dispose);
+      for (var attempt = 0; attempt < MpinService.maxAttempts; attempt++) {
+        await mpin.verify('0000');
+      }
+
+      final result = await controller.unlockWithMpin('4821');
+
+      expect(result.isLocked, isTrue);
+      expect(controller.user, isNotNull);
+      expect(controller.sessionLocked, isTrue);
+      expect(controller.mpinEnabled, isTrue);
+    });
+  });
 }
 
 /// Records calls and returns canned results for the email sign-in paths.
@@ -412,7 +566,11 @@ class _FakeAuthApi extends ApiClient {
   ApiException? requestError;
   ApiException? signupError;
   bool signupRequiresVerification = false;
+  String? signupPhoneChallenge;
   int verifyCalls = 0;
+  String? verifiedPhoneNumber;
+  String? verifiedPhoneChallengeId;
+  String? verifiedPhoneOtp;
   AuthResult signedInResult = const AuthResult(
     user: SessionUser(
       id: null,
@@ -438,8 +596,13 @@ class _FakeAuthApi extends ApiClient {
     required String otp,
     String? name,
     String? phone,
+    String? phoneChallengeId,
+    String? phoneOtp,
   }) async {
     verifyCalls++;
+    verifiedPhoneNumber = phone;
+    verifiedPhoneChallengeId = phoneChallengeId;
+    verifiedPhoneOtp = phoneOtp;
     return signedInResult;
   }
 
@@ -462,12 +625,14 @@ class _FakeAuthApi extends ApiClient {
       return (
         authResult: null,
         challengeId: 'challenge-1',
+        phoneChallengeId: signupPhoneChallenge,
         resendAfterSeconds: 30,
       );
     }
     return (
       authResult: signedInResult,
       challengeId: null,
+      phoneChallengeId: null,
       resendAfterSeconds: 0,
     );
   }

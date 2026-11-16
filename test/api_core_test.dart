@@ -239,6 +239,24 @@ void main() {
       expect(storage.values, isEmpty);
     });
 
+    test('a transient refresh failure preserves the saved session', () async {
+      final storage = _MemoryStorage()
+        ..values['urban_tanker_access_token'] = 'old-access'
+        ..values['urban_tanker_refresh_token'] = 'old-refresh';
+      final api = _apiFor(
+        MockClient((request) async =>
+            request.url.path == '/api/auth/mobile-refresh'
+                ? http.Response('temporarily unavailable', 503)
+                : http.Response('expired', 401)),
+        storage: storage,
+      );
+
+      await expectLater(api.services(), throwsA(isA<ApiException>()));
+
+      expect(storage.values['urban_tanker_access_token'], 'old-access');
+      expect(storage.values['urban_tanker_refresh_token'], 'old-refresh');
+    });
+
     test('a 401 without a refresh token is not retried', () async {
       var calls = 0;
       final storage = _MemoryStorage()

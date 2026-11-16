@@ -67,9 +67,17 @@ class AuthApi {
           'The server did not confirm that the verification code was sent.',
         );
       }
+      final phoneOtpSent = decoded['phoneOtpSent'] == true;
+      final phoneChallengeId = decoded['phoneChallengeId'];
+      if (phoneOtpSent && phoneChallengeId is! String) {
+        throw const FormatException(
+          'The server did not confirm that the mobile code was sent.',
+        );
+      }
       return (
         authResult: null,
         challengeId: decoded['challengeId'] as String,
+        phoneChallengeId: phoneOtpSent ? phoneChallengeId as String : null,
         resendAfterSeconds: (decoded['resendAfterSeconds'] as num?)?.toInt() ??
             _defaultResendAfterSeconds,
       );
@@ -77,6 +85,7 @@ class AuthApi {
     return (
       authResult: await _saveAuthResult(decoded),
       challengeId: null,
+      phoneChallengeId: null,
       resendAfterSeconds: 0,
     );
   }
@@ -291,6 +300,8 @@ class AuthApi {
     required String otp,
     String? name,
     String? phone,
+    String? phoneChallengeId,
+    String? phoneOtp,
   }) async {
     final normalized = normalizeEmail(email);
     if (!isValidEmail(normalized)) {
@@ -298,6 +309,14 @@ class AuthApi {
     }
     if (!RegExp(r'^\d{6}$').hasMatch(otp.trim())) {
       throw const FormatException('Enter the 6-digit verification code.');
+    }
+    if ((phoneChallengeId == null) != (phoneOtp == null) ||
+        (phoneChallengeId != null &&
+            (phone == null ||
+                !RegExp(r'^\d{6}$').hasMatch(phoneOtp!.trim())))) {
+      throw const FormatException(
+        'Enter the verification code sent to this mobile number.',
+      );
     }
     final response = await _api.request(
       'POST',
@@ -309,6 +328,8 @@ class AuthApi {
         if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
         if (phone != null && phone.trim().isNotEmpty)
           'phone': normalizeIndianPhone(phone),
+        if (phoneChallengeId != null) 'phoneChallengeId': phoneChallengeId,
+        if (phoneOtp != null) 'phoneOtp': phoneOtp.trim(),
       },
       retry: false,
     );
@@ -317,6 +338,21 @@ class AuthApi {
       throw AdminApprovalPendingException(_approvalMessage(decoded));
     }
     return _saveAuthResult(decoded);
+  }
+
+  Future<Map<String, bool>> featureFlags() async {
+    final response = await _api.request(
+      'GET',
+      '/config/flags',
+      retry: false,
+    );
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic> ||
+        decoded['mpin_cooldown_enabled'] is! bool ||
+        decoded.values.any((value) => value is! bool)) {
+      throw const FormatException('The feature flags response was invalid.');
+    }
+    return decoded.map((key, value) => MapEntry(key, value as bool));
   }
 
   static String _approvalMessage(Map<String, dynamic> decoded) {

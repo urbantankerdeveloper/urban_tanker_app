@@ -22,6 +22,7 @@ Future<void> main() async {
       child: const UrbanTankerApp(),
     ),
   );
+  unawaited(controller.refreshFeatureFlags());
   unawaited(_startFirebaseAndPush(controller));
 }
 

@@ -44,6 +44,7 @@ class ApiCore {
     '/customer/offers',
     '/customer/membership-plans',
     '/vendor/services',
+    '/config/flags',
   };
   static const _defaultRetryDelays = [
     Duration(milliseconds: 400),
@@ -218,9 +219,13 @@ class ApiCore {
           response.statusCode >= 200 &&
           response.statusCode < 300 &&
           _readCacheGeneration == cacheGeneration) {
+        final cacheTtl =
+            _endpointPath(Uri.parse('$baseUrl$path')) == '/config/flags'
+                ? const Duration(seconds: 60)
+                : _readCacheTtl;
         _readCache[cacheKey] = _CachedResponse(
           response: response,
-          expiresAt: _clock().add(_readCacheTtl),
+          expiresAt: _clock().add(cacheTtl),
         );
       }
       return response;
@@ -484,9 +489,27 @@ class ApiCore {
       await saveAccessToken(accessToken);
       await saveRefreshToken(rotatedRefreshToken);
       return accessToken;
-    } on Object catch (error) {
+    } on ApiException catch (error) {
       if (kDebugMode) debugPrint('Token refresh failed: $error');
-      await clearTokens();
+      if (error.statusCode == 400 ||
+          error.statusCode == 401 ||
+          error.statusCode == 403) {
+        await clearTokens();
+      }
+      return null;
+    } on TimeoutException {
+      if (kDebugMode) debugPrint('Token refresh timed out.');
+      return null;
+    } on SocketException {
+      if (kDebugMode) {
+        debugPrint('Token refresh failed because the network is unavailable.');
+      }
+      return null;
+    } on http.ClientException {
+      if (kDebugMode) debugPrint('Token refresh failed in the HTTP client.');
+      return null;
+    } on FormatException catch (error) {
+      if (kDebugMode) debugPrint('Token refresh response was invalid: $error');
       return null;
     }
   }

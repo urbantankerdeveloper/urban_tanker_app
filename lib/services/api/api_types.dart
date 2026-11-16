@@ -83,11 +83,12 @@ class AdminApprovalPendingException implements Exception {
   String toString() => message;
 }
 
-/// Result of sign-up. Exactly one of [authResult] or [challengeId] is set:
-/// [challengeId] means the account needs an email code before it can sign in.
+/// Result of sign-up. [challengeId] means the account needs an email code;
+/// [phoneChallengeId] is present when the registration SMS was sent.
 typedef SignUpOutcome = ({
   AuthResult? authResult,
   String? challengeId,
+  String? phoneChallengeId,
   int resendAfterSeconds,
 });
 

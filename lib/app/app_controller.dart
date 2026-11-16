@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'auth_feature_flags.dart';
@@ -37,10 +39,13 @@ class AppController extends ChangeNotifier {
   bool mpinEnabled = false;
   bool sessionLocked = false;
   bool biometricPromptOffered = false;
+  bool mpinCooldownEnabled = true;
   bool pendingUnlockSetup = false;
   bool pendingMpinReset = false;
   String? phoneOtpChallengeId;
   String? emailOtpChallengeId;
+  String? phoneSignupChallengeId;
+  String? pendingPhoneVerification;
 
   /// Set after an email sign-up that needs the confirmation link. The sign-in
   /// screen shows a "check your inbox" state while it is set.
@@ -115,6 +120,25 @@ class AppController extends ChangeNotifier {
     return controller;
   }
 
+  Future<void> refreshFeatureFlags() async {
+    try {
+      final flags = await api.featureFlags();
+      mpinCooldownEnabled = flags['mpin_cooldown_enabled'] ?? true;
+    } on ApiException catch (error) {
+      debugPrint(
+          'Feature flags could not be refreshed (HTTP ${error.statusCode}).');
+    } on FormatException catch (error) {
+      debugPrint('Feature flags response was invalid: $error');
+    } on TimeoutException {
+      debugPrint('Feature flags refresh timed out.');
+    } on SocketException {
+      debugPrint(
+          'Feature flags refresh failed because the network is unavailable.');
+    } on http.ClientException {
+      debugPrint('Feature flags refresh failed in the HTTP client.');
+    }
+  }
+
   Future<void> requestPhoneAuthOtp(String phone) async {
     await _run(() async {
       phoneOtpChallengeId = await api.requestPhoneAuthOtp(phone);
@@ -175,11 +199,19 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  Future<void> resendSignupEmailCode(String email) async {
+    await _run(() async {
+      emailOtpChallengeId = await api.requestEmailAuthOtp(email);
+      successMessage = 'A new verification code was sent to your email.';
+    });
+  }
+
   Future<void> signInWithEmailAuthOtp({
     required String email,
     required String otp,
     String? name,
     String? phone,
+    String? phoneOtp,
   }) async {
     await _run(() async {
       final challengeId = emailOtpChallengeId;
@@ -192,10 +224,14 @@ class AppController extends ChangeNotifier {
           challengeId: challengeId,
           otp: otp,
           name: name,
-          phone: phone,
+          phone: phone ?? pendingPhoneVerification,
+          phoneChallengeId: phoneSignupChallengeId,
+          phoneOtp: phoneOtp,
         );
         emailOtpChallengeId = null;
+        phoneSignupChallengeId = null;
         pendingEmailVerification = null;
+        pendingPhoneVerification = null;
         _setSession(result);
         pendingUnlockSetup = !quickUnlockEnabled && !biometricPromptOffered;
       } on AdminApprovalPendingException catch (error) {
@@ -242,13 +278,13 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Unlocks on a correct MPIN. After too many wrong tries the user is signed
-  /// out and must use the phone OTP flow again.
+  /// Unlocks on a correct MPIN. When cooldowns are disabled, the legacy
+  /// phone-OTP recovery flow remains available after too many wrong tries.
   Future<MpinCheck> unlockWithMpin(String pin) async {
     final check = await mpin.verify(pin);
     if (check.isAccepted) {
       unlockSession();
-    } else if (check.isLocked) {
+    } else if (check.isLocked && !mpinCooldownEnabled) {
       await usePhoneOtpRecovery();
     }
     return check;
@@ -324,8 +360,12 @@ class AppController extends ChangeNotifier {
       if (authResult == null) {
         pendingEmailVerification = normalizeEmail(email);
         emailOtpChallengeId = outcome.challengeId;
-        successMessage =
-            'Account created. Enter the 6-digit code we sent to your email.';
+        phoneSignupChallengeId = outcome.phoneChallengeId;
+        pendingPhoneVerification =
+            outcome.phoneChallengeId == null ? null : phone.trim();
+        successMessage = outcome.phoneChallengeId == null
+            ? 'Account created. Enter the 6-digit code we sent to your email.'
+            : 'Account created. Enter the codes we sent to your email and mobile.';
         return;
       }
       _setSession(authResult);
@@ -335,6 +375,8 @@ class AppController extends ChangeNotifier {
   void clearPendingEmailVerification() {
     pendingEmailVerification = null;
     emailOtpChallengeId = null;
+    phoneSignupChallengeId = null;
+    pendingPhoneVerification = null;
     successMessage = null;
     notifyListeners();
   }

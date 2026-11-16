@@ -66,6 +66,7 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
       controller.lockSession();
       controller.realtime?.pause();
     } else if (state == AppLifecycleState.resumed) {
+      unawaited(controller.refreshFeatureFlags());
       controller.realtime?.resume();
     }
   }

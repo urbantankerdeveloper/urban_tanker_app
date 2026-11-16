@@ -152,6 +152,8 @@ class ApiClient implements ApiTransport {
         selfieJpegBase64: selfieJpegBase64,
       );
 
+  Future<Map<String, bool>> featureFlags() => _auth.featureFlags();
+
   Future<void> requestPasswordReset(String email) =>
       _auth.requestPasswordReset(email);
 
@@ -214,6 +216,8 @@ class ApiClient implements ApiTransport {
     required String otp,
     String? name,
     String? phone,
+    String? phoneChallengeId,
+    String? phoneOtp,
   }) =>
       _auth.verifyEmailAuthOtp(
         email: email,
@@ -221,6 +225,8 @@ class ApiClient implements ApiTransport {
         otp: otp,
         name: name,
         phone: phone,
+        phoneChallengeId: phoneChallengeId,
+        phoneOtp: phoneOtp,
       );
 
   Future<void> updateThemePreference(String themeMode) =>
