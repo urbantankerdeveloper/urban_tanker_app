@@ -31,6 +31,7 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
   String? _status;
   int _page = 1;
   String _query = '';
+  bool _dispatchModeSaving = false;
 
   @override
   void dispose() {
@@ -41,8 +42,10 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
   @override
   Widget build(BuildContext context) {
     final orderTrackingBoardEnabled = ref.watch(
-      appControllerProvider.select((controller) => controller.orderTrackingBoardEnabled),
+      appControllerProvider
+          .select((controller) => controller.orderTrackingBoardEnabled),
     );
+    final dispatchSettings = ref.watch(adminManualAssignmentModeProvider);
     final orders = ref.watch(
       dispatcherOrdersProvider(
         DispatcherOrderFilter(page: _page, status: _status),
@@ -71,6 +74,19 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
             AppPageInsets.standard,
           ),
           children: [
+            dispatchSettings.when(
+              data: _dispatchSettingsCard,
+              loading: () => const SurfaceCard(
+                child: Text('Loading assignment settings...'),
+              ),
+              error: (error, _) => ErrorState(
+                error: error,
+                message: friendlyError(error),
+                onRetry: () =>
+                    ref.invalidate(adminManualAssignmentModeProvider),
+              ),
+            ),
+            const SizedBox(height: AppSpace.md),
             Wrap(
               spacing: AppSpace.sm,
               runSpacing: AppSpace.sm,
@@ -102,8 +118,7 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
                   onRetry: () => ref.invalidate(dispatcherOrderBoardProvider),
                 ),
               ),
-            if (orderTrackingBoardEnabled)
-              const SizedBox(height: AppSpace.md),
+            if (orderTrackingBoardEnabled) const SizedBox(height: AppSpace.md),
             AdminSearchField(
               controller: _search,
               label: 'Search this page',
@@ -127,7 +142,9 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
                   child: SurfaceCard(
                     padding: EdgeInsets.zero,
                     child: AppListRow(
-                      title: (row['reference'] ?? 'Booking reference unavailable').toString(),
+                      title:
+                          (row['reference'] ?? 'Booking reference unavailable')
+                              .toString(),
                       subtitle:
                           '${row['status'] ?? ''}\n${row['address_text'] ?? ''}',
                       onTap: () => _openOrder(row),
@@ -144,6 +161,49 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
         );
       },
     );
+  }
+
+  Widget _dispatchSettingsCard(bool manualAssignmentEnabled) => SurfaceCard(
+        padding: EdgeInsets.zero,
+        child: SwitchListTile.adaptive(
+          title: const Text('Manual assignment mode'),
+          subtitle: Text(
+            manualAssignmentEnabled
+                ? 'New bookings wait for admin assignment; nearby vendors are not notified.'
+                : 'New bookings are offered automatically to nearby online vendors.',
+          ),
+          value: manualAssignmentEnabled,
+          onChanged: _dispatchModeSaving ? null : _setManualAssignmentMode,
+        ),
+      );
+
+  Future<void> _setManualAssignmentMode(bool enabled) async {
+    setState(() => _dispatchModeSaving = true);
+    try {
+      await ref
+          .read(appControllerProvider)
+          .api
+          .updateManualAssignmentMode(enabled);
+      if (!mounted) return;
+      ref.invalidate(adminManualAssignmentModeProvider);
+      showAppSnack(
+        context,
+        enabled
+            ? 'Manual assignment mode enabled.'
+            : 'Automatic vendor assignment restored.',
+        variant: AppSnackVariant.success,
+      );
+    } catch (error) {
+      if (mounted) {
+        showAppSnack(
+          context,
+          'Assignment mode could not be updated: $error',
+          variant: AppSnackVariant.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _dispatchModeSaving = false);
+    }
   }
 
   bool _matches(Map row) {
@@ -345,7 +405,9 @@ class _AdminOrderTrackingBoard extends StatelessWidget {
                           TextButton(
                             onPressed: () => onOpenOrder(order),
                             child: Text(
-                              (order['reference'] ?? 'Booking reference unavailable').toString(),
+                              (order['reference'] ??
+                                      'Booking reference unavailable')
+                                  .toString(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),

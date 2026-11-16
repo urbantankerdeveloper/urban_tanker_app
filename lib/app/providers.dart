@@ -268,6 +268,12 @@ final adminHealthProvider =
   return ref.watch(apiProvider).adminHealth();
 });
 
+final adminManualAssignmentModeProvider =
+    FutureProvider.autoDispose<bool>((ref) {
+  ref.watch(sessionUserIdProvider);
+  return ref.watch(apiProvider).manualAssignmentMode();
+});
+
 final dispatcherOrdersProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, DispatcherOrderFilter>((ref, filter) {
   ref.watch(sessionUserIdProvider);
@@ -295,11 +301,13 @@ final dispatcherOrderBoardProvider =
   final rows = <Map<String, dynamic>>[];
   void appendRows(Object? value) {
     if (value is! List) {
-      throw const FormatException('The admin order board response was invalid.');
+      throw const FormatException(
+          'The admin order board response was invalid.');
     }
     for (final row in value) {
       if (row is! Map) {
-        throw const FormatException('The admin order board response was invalid.');
+        throw const FormatException(
+            'The admin order board response was invalid.');
       }
       rows.add(Map<String, dynamic>.from(row));
     }

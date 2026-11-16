@@ -761,8 +761,16 @@ class ApiClient implements ApiTransport {
 
   Future<Map<String, dynamic>> adminHealth() => _admin.adminHealth();
 
+  Future<bool> manualAssignmentMode() => _admin.manualAssignmentMode();
+
+  Future<bool> updateManualAssignmentMode(bool enabled) =>
+      _admin.updateManualAssignmentMode(enabled);
+
   Future<void> updateVendorVerification(String id, String status) =>
       _admin.updateVendorVerification(id, status);
+
+  Future<void> updateVendorAvailability(String id, bool isOnline) =>
+      _admin.updateVendorAvailability(id, isOnline);
 
   Future<Map<String, dynamic>> adminOrders({
     int page = 1,

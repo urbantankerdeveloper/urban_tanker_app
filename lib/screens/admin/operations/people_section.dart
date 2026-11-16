@@ -24,6 +24,7 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
   final _search = TextEditingController();
   int _tab = 0;
   String _query = '';
+  final Set<String> _availabilityUpdating = {};
   late Future<List<AccountRecord>> _vendors;
   late Future<List<AccountRecord>> _customers;
   late Future<List<AdminFleetVehicle>> _vehicles;
@@ -58,6 +59,11 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
 
   @override
   Widget build(BuildContext context) {
+    final availabilityTogglesEnabled = ref.watch(
+      appControllerProvider.select(
+        (controller) => controller.adminAvailabilityToggleEnabled,
+      ),
+    );
     return ListView(
       padding: AppPageInsets.withSafeAreaBottom(
         context,
@@ -100,10 +106,10 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
         ),
         const SizedBox(height: AppSpace.md),
         switch (_tab) {
-          0 => _vendorList(),
+          0 => _vendorList(availabilityTogglesEnabled),
           1 => _customerList(),
-          2 => _vehicleList(),
-          _ => _driverList(),
+          2 => _vehicleList(availabilityTogglesEnabled),
+          _ => _driverList(availabilityTogglesEnabled),
         },
       ],
     );
@@ -129,22 +135,46 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
     }
   }
 
-  Widget _vendorList() => _ListBody<AccountRecord>(
+  Widget _vendorList(bool availabilityTogglesEnabled) =>
+      _ListBody<AccountRecord>(
         future: _vendors,
         onRetry: () => setState(_reload),
         emptyText: 'No vendors found.',
         filter: (vendor) => _matches(vendor.title, vendor.detail),
-        row: (vendor) => AdminRecordRow(
-          record: vendor,
-          trailing: PopupMenuButton<String>(
-            tooltip: 'Update vendor status',
-            onSelected: (status) => _setVendorStatus(vendor, status),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'approved', child: Text('Approve')),
-              PopupMenuItem(value: 'suspended', child: Text('Suspend')),
-              PopupMenuItem(value: 'rejected', child: Text('Reject')),
+        row: (vendor) => Column(
+          children: [
+            AdminRecordRow(
+              record: vendor,
+              trailing: PopupMenuButton<String>(
+                tooltip: 'Update vendor status',
+                onSelected: (status) => _setVendorStatus(vendor, status),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'approved', child: Text('Approve')),
+                  PopupMenuItem(value: 'suspended', child: Text('Suspend')),
+                  PopupMenuItem(value: 'rejected', child: Text('Reject')),
+                ],
+              ),
+            ),
+            if (availabilityTogglesEnabled) ...[
+              const SizedBox(height: AppSpace.xs),
+              _availabilityCard(
+                title: 'Vendor online',
+                active: vendor.isOnline,
+                canActivate:
+                    vendor.data['verification']?.toString().toLowerCase() ==
+                        'approved',
+                saving: _availabilityUpdating.contains(vendor.id),
+                onChanged: (isOnline) => _setAvailability(
+                  vendor.id,
+                  isOnline,
+                  (value) => ref
+                      .read(appControllerProvider)
+                      .api
+                      .updateVendorAvailability(vendor.id, value),
+                ),
+              ),
             ],
-          ),
+          ],
         ),
       );
 
@@ -156,7 +186,8 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
         row: (customer) => AdminRecordRow(record: customer),
       );
 
-  Widget _vehicleList() => _ListBody<AdminFleetVehicle>(
+  Widget _vehicleList(bool availabilityTogglesEnabled) =>
+      _ListBody<AdminFleetVehicle>(
         future: _vehicles,
         onRetry: () => setState(_reload),
         emptyText: 'No vehicles found.',
@@ -164,48 +195,145 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
           vehicle.registrationNumber,
           vehicle.verification,
         ),
-        row: (vehicle) => SurfaceCard(
-          padding: EdgeInsets.zero,
-          child: AppListRow(
-            title: vehicle.registrationNumber,
-            subtitle: '${vehicle.capacityLitres} L • ${vehicle.verification} • '
-                '${vehicle.active ? 'Active' : 'Inactive'}',
-            trailing: _fleetStatusMenu(
-              vehicle.verification,
-              vehicle.active,
-              (verification, isActive) => _updateVehicleStatus(
-                vehicle.id,
-                verification,
-                isActive,
+        row: (vehicle) => Column(
+          children: [
+            SurfaceCard(
+              padding: EdgeInsets.zero,
+              child: AppListRow(
+                title: vehicle.registrationNumber,
+                subtitle:
+                    '${vehicle.capacityLitres} L • ${vehicle.verification} • '
+                    '${vehicle.active ? 'Active' : 'Inactive'}',
+                trailing: _fleetStatusMenu(
+                  vehicle.verification,
+                  vehicle.active,
+                  (verification, isActive) => _updateVehicleStatus(
+                    vehicle.id,
+                    verification,
+                    isActive,
+                  ),
+                ),
               ),
             ),
-          ),
+            if (availabilityTogglesEnabled) ...[
+              const SizedBox(height: AppSpace.xs),
+              _availabilityCard(
+                title: 'Vehicle active',
+                active: vehicle.active,
+                canActivate: vehicle.verification.toLowerCase() == 'approved',
+                saving: _availabilityUpdating.contains(vehicle.id),
+                onChanged: (isActive) => _setAvailability(
+                  vehicle.id,
+                  isActive,
+                  (value) => _updateVehicleStatus(
+                    vehicle.id,
+                    vehicle.verification,
+                    value,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       );
 
-  Widget _driverList() => _ListBody<AdminFleetDriver>(
+  Widget _driverList(bool availabilityTogglesEnabled) =>
+      _ListBody<AdminFleetDriver>(
         future: _drivers,
         onRetry: () => setState(_reload),
         emptyText: 'No drivers found.',
         filter: (driver) => _matches(driver.name, driver.mobile),
-        row: (driver) => SurfaceCard(
-          padding: EdgeInsets.zero,
-          child: AppListRow(
-            title: driver.name,
-            subtitle: '${driver.mobile} • ${driver.verification} • '
-                '${driver.active ? 'Active' : 'Inactive'}',
-            trailing: _fleetStatusMenu(
-              driver.verification,
-              driver.active,
-              (verification, isActive) => _updateDriverStatus(
-                driver.id,
-                verification,
-                isActive,
+        row: (driver) => Column(
+          children: [
+            SurfaceCard(
+              padding: EdgeInsets.zero,
+              child: AppListRow(
+                title: driver.name,
+                subtitle: '${driver.mobile} • ${driver.verification} • '
+                    '${driver.active ? 'Active' : 'Inactive'}',
+                trailing: _fleetStatusMenu(
+                  driver.verification,
+                  driver.active,
+                  (verification, isActive) => _updateDriverStatus(
+                    driver.id,
+                    verification,
+                    isActive,
+                  ),
+                ),
               ),
             ),
-          ),
+            if (availabilityTogglesEnabled) ...[
+              const SizedBox(height: AppSpace.xs),
+              _availabilityCard(
+                title: 'Driver active',
+                active: driver.active,
+                canActivate: driver.verification.toLowerCase() == 'approved',
+                saving: _availabilityUpdating.contains(driver.id),
+                onChanged: (isActive) => _setAvailability(
+                  driver.id,
+                  isActive,
+                  (value) => _updateDriverStatus(
+                    driver.id,
+                    driver.verification,
+                    value,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       );
+
+  Widget _availabilityCard({
+    required String title,
+    required bool active,
+    required bool canActivate,
+    required bool saving,
+    required ValueChanged<bool> onChanged,
+  }) =>
+      SurfaceCard(
+        padding: EdgeInsets.zero,
+        child: SwitchListTile.adaptive(
+          title: Text(title),
+          subtitle: Text(
+            active
+                ? 'Available for assignments.'
+                : canActivate
+                    ? 'Currently unavailable for assignments.'
+                    : 'Approve this record before setting it active.',
+          ),
+          value: active,
+          onChanged: saving || (!active && !canActivate) ? null : onChanged,
+        ),
+      );
+
+  Future<void> _setAvailability(
+    String id,
+    bool enabled,
+    Future<void> Function(bool enabled) update,
+  ) async {
+    setState(() => _availabilityUpdating.add(id));
+    try {
+      await update(enabled);
+      if (!mounted) return;
+      setState(_reload);
+      showAppSnack(
+        context,
+        enabled ? 'Availability enabled.' : 'Availability disabled.',
+        variant: AppSnackVariant.success,
+      );
+    } catch (error) {
+      if (mounted) {
+        showAppSnack(
+          context,
+          'Availability update failed: $error',
+          variant: AppSnackVariant.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _availabilityUpdating.remove(id));
+    }
+  }
 
   Future<void> _setVendorStatus(AccountRecord vendor, String status) async {
     try {

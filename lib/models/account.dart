@@ -41,6 +41,7 @@ class AccountRecord {
           '')
       .toString();
   String get status => (data['status'] ?? '').toString();
+  bool get isOnline => data['is_online'] == true || data['isOnline'] == true;
   bool get isDefault => data['is_default'] == true || data['isDefault'] == true;
   double? get latitude => (data['latitude'] as num?)?.toDouble();
   double? get longitude => (data['longitude'] as num?)?.toDouble();

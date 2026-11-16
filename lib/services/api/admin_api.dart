@@ -96,11 +96,44 @@ class AdminApi {
     return mapResponse(response, 'admin health');
   }
 
+  Future<bool> manualAssignmentMode() async {
+    final response = await _api.request('GET', '/admin/dispatch-settings');
+    final decoded = mapResponse(response, 'dispatch settings');
+    if (decoded['manualAssignmentModeEnabled'] is! bool) {
+      throw const FormatException(
+          'The dispatch settings response was invalid.');
+    }
+    return decoded['manualAssignmentModeEnabled'] as bool;
+  }
+
+  Future<bool> updateManualAssignmentMode(bool enabled) async {
+    final response = await _api.request(
+      'PATCH',
+      '/admin/dispatch-settings',
+      body: {'manualAssignmentModeEnabled': enabled},
+    );
+    final decoded = mapResponse(response, 'dispatch settings update');
+    if (decoded['manualAssignmentModeEnabled'] is! bool) {
+      throw const FormatException(
+        'The dispatch settings update response was invalid.',
+      );
+    }
+    return decoded['manualAssignmentModeEnabled'] as bool;
+  }
+
   Future<void> updateVendorVerification(String id, String status) async {
     await _api.request(
       'PATCH',
       '/admin/vendors/$id/status',
       body: {'status': status},
+    );
+  }
+
+  Future<void> updateVendorAvailability(String id, bool isOnline) async {
+    await _api.request(
+      'PATCH',
+      '/admin/vendors/$id/status',
+      body: {'isOnline': isOnline},
     );
   }
 
