@@ -54,8 +54,6 @@ void main() {
     );
   });
 
-  tearDown(() => controller.dispose());
-
   testWidgets('sign-in fits a 360 dp phone at 1.3x text', (tester) async {
     await _pumpAt(
       tester,
@@ -93,6 +91,7 @@ void main() {
       size: phone,
       home: ProviderScope(
         overrides: [
+          appControllerProvider.overrideWith((ref) => controller),
           adminHealthProvider.overrideWith(
             (ref) async => {
               'ok': false,
@@ -118,6 +117,7 @@ void main() {
       direction: TextDirection.rtl,
       home: ProviderScope(
         overrides: [
+          appControllerProvider.overrideWith((ref) => controller),
           adminHealthProvider.overrideWith(
             (ref) async => {
               'ok': true,

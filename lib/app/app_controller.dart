@@ -80,6 +80,10 @@ class AppController extends ChangeNotifier {
       featureFlags['vendor_earnings_realtime_enabled'] ?? false;
   bool get adminAvailabilityToggleEnabled =>
       featureFlags['admin_availability_toggle_enabled'] ?? false;
+  bool get adminDashboardV2Enabled =>
+      featureFlags['admin_dashboard_v2_enabled'] ?? false;
+  bool get areaAvailabilityEnabled =>
+      featureFlags['area_availability_enabled'] ?? false;
 
   static Future<AppController> create() async {
     final preferences = await SharedPreferences.getInstance();

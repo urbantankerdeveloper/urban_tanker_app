@@ -268,6 +268,18 @@ final adminHealthProvider =
   return ref.watch(apiProvider).adminHealth();
 });
 
+final adminDashboardSummaryProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
+  ref.watch(sessionUserIdProvider);
+  return ref.watch(apiProvider).adminDashboardSummary();
+});
+
+final adminAvailabilityByAreaProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
+  ref.watch(sessionUserIdProvider);
+  return ref.watch(apiProvider).adminAvailabilityByArea();
+});
+
 final adminManualAssignmentModeProvider =
     FutureProvider.autoDispose<bool>((ref) {
   ref.watch(sessionUserIdProvider);

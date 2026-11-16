@@ -43,6 +43,16 @@ class AdminPulseScreen extends ConsumerWidget {
             children: [
               Text('Platform pulse', style: theme.textTheme.headlineMedium),
               const SizedBox(height: AppSpace.lg),
+              if (ref.watch(appControllerProvider.select(
+                (controller) => controller.adminDashboardV2Enabled,
+              ))) ...[
+                _DashboardSummarySection(
+                  areaAvailabilityEnabled: ref.watch(
+                      appControllerProvider.select(
+                          (controller) => controller.areaAvailabilityEnabled)),
+                ),
+                const SizedBox(height: AppSpace.xl),
+              ],
               GridView.count(
                 crossAxisCount: 2,
                 shrinkWrap: true,
@@ -146,6 +156,251 @@ class AdminPulseScreen extends ConsumerWidget {
         );
       }
     }
+  }
+}
+
+class _DashboardSummarySection extends ConsumerWidget {
+  const _DashboardSummarySection({required this.areaAvailabilityEnabled});
+
+  final bool areaAvailabilityEnabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summaryState = ref.watch(adminDashboardSummaryProvider);
+    return summaryState.when(
+      loading: () => const LoadingState(
+        message: "Loading today's operations...",
+      ),
+      error: (error, _) => ErrorState(
+        error: error,
+        message: friendlyError(error),
+        onRetry: () => ref.invalidate(adminDashboardSummaryProvider),
+      ),
+      data: (summary) {
+        final statuses = summary['activeOrdersByStatus'];
+        final statusCounts =
+            statuses is Map ? statuses : const <String, dynamic>{};
+        final activeOrders = statusCounts.values
+            .whereType<num>()
+            .fold<int>(0, (total, count) => total + count.toInt());
+        final revenue = summary['todayRevenuePaise'];
+        final revenueRupees = revenue is num ? revenue / 100 : 0;
+        final theme = Theme.of(context);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Operations dashboard',
+                    style: theme.textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh operations dashboard',
+                  onPressed: () {
+                    ref.invalidate(adminDashboardSummaryProvider);
+                    if (areaAvailabilityEnabled) {
+                      ref.invalidate(adminAvailabilityByAreaProvider);
+                    }
+                  },
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpace.md),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: AppSpace.sm,
+              crossAxisSpacing: AppSpace.sm,
+              childAspectRatio: 1.25,
+              children: [
+                _DashboardMetric(
+                  label: 'Active orders',
+                  value: '$activeOrders',
+                  detail: 'Across all active statuses',
+                  icon: Icons.local_shipping_outlined,
+                ),
+                _DashboardMetric(
+                  label: "Today's captured revenue",
+                  value: '₹${revenueRupees.toStringAsFixed(2)}',
+                  detail: 'Payments captured today',
+                  icon: Icons.currency_rupee,
+                ),
+                _DashboardMetric(
+                  label: 'Partner applications',
+                  value: '${summary['pendingPartnerApplications'] ?? 0}',
+                  detail: 'Submitted or under review',
+                  icon: Icons.business_outlined,
+                ),
+                _DashboardMetric(
+                  label: 'Vendors online',
+                  value: '${summary['onlineVendors'] ?? 0}',
+                  detail: 'Approved vendors',
+                  icon: Icons.people_outline,
+                ),
+                _DashboardMetric(
+                  label: 'Drivers active',
+                  value: '${summary['activeDrivers'] ?? 0}',
+                  detail: 'Approved drivers marked active',
+                  icon: Icons.person_pin_circle_outlined,
+                ),
+                _DashboardMetric(
+                  label: 'Open order alerts',
+                  value: '${summary['openOrderAlerts'] ?? 0}',
+                  detail: 'Unresolved dispatcher alerts',
+                  icon: Icons.warning_amber_outlined,
+                ),
+                _DashboardMetric(
+                  label: 'Failed payments',
+                  value: '${summary['failedPayments'] ?? 0}',
+                  detail: 'Payment records requiring attention',
+                  icon: Icons.payment_outlined,
+                ),
+                _DashboardMetric(
+                  label: 'Orders unchanged 2+ hours',
+                  value: '${summary['stuckOrders'] ?? 0}',
+                  detail: 'Active orders by last update',
+                  icon: Icons.hourglass_bottom,
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpace.lg),
+            Text('Active orders by status', style: theme.textTheme.titleMedium),
+            const SizedBox(height: AppSpace.sm),
+            for (final (status, label) in const [
+              ('pending_vendor', 'Awaiting assignment'),
+              ('vendor_assigned', 'Vendor assigned'),
+              ('accepted', 'Accepted'),
+              ('en_route', 'En route'),
+              ('arrived', 'Arrived'),
+            ])
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpace.xs),
+                child: SurfaceCard(
+                  padding: EdgeInsets.zero,
+                  child: AppListRow(
+                    title: label,
+                    trailing: Text(
+                      '${statusCounts[status] ?? 0}',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
+                ),
+              ),
+            if (areaAvailabilityEnabled) ...[
+              const SizedBox(height: AppSpace.md),
+              _AreaAvailabilitySection(),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AreaAvailabilitySection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final areasState = ref.watch(adminAvailabilityByAreaProvider);
+    return areasState.when(
+      loading: () => const LoadingState(
+        message: 'Loading availability by service area...',
+      ),
+      error: (error, _) => ErrorState(
+        error: error,
+        message: friendlyError(error),
+        onRetry: () => ref.invalidate(adminAvailabilityByAreaProvider),
+      ),
+      data: (areas) {
+        final theme = Theme.of(context);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Availability by service area',
+                style: theme.textTheme.titleMedium),
+            const SizedBox(height: AppSpace.xs),
+            Text(
+              'Grouped by vendor-entered service-zone names.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppSpace.sm),
+            if (areas.isEmpty)
+              const EmptyState(
+                icon: Icons.location_on_outlined,
+                title: 'No service-area availability yet.',
+              ),
+            for (final area in areas)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpace.sm),
+                child: SurfaceCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        (area['area'] ?? 'Unassigned area').toString(),
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: AppSpace.xs),
+                      Text(
+                        'Online vendors: ${area['onlineVendors'] ?? 0} · '
+                        'Active vehicles: ${area['activeVehicles'] ?? 0} · '
+                        'Active drivers: ${area['activeDrivers'] ?? 0}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _DashboardMetric extends StatelessWidget {
+  const _DashboardMetric({
+    required this.label,
+    required this.value,
+    required this.detail,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final String detail;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SurfaceCard(
+      padding: const EdgeInsets.all(AppSpace.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Icon(icon, color: context.colors.primary),
+          Text(label, style: theme.textTheme.labelMedium),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleLarge,
+          ),
+          Text(
+            detail,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
   }
 }
 

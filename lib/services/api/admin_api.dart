@@ -96,6 +96,50 @@ class AdminApi {
     return mapResponse(response, 'admin health');
   }
 
+  Future<Map<String, dynamic>> adminDashboardSummary() async {
+    final response = await _api.request('GET', '/admin/dashboard-summary');
+    final summary = await mapResponse(response, 'admin dashboard summary');
+    final statuses = summary['activeOrdersByStatus'];
+    const countFields = [
+      'todayRevenuePaise',
+      'pendingPartnerApplications',
+      'onlineVendors',
+      'activeDrivers',
+      'openOrderAlerts',
+      'failedPayments',
+      'stuckOrders',
+    ];
+    if (statuses is! Map ||
+        statuses.values.any((value) => value is! num || value < 0) ||
+        countFields.any((field) {
+          final value = summary[field];
+          return value is! num || value < 0;
+        }) ||
+        summary['generatedAt'] is! String) {
+      throw const FormatException(
+        'The admin dashboard summary response was invalid.',
+      );
+    }
+    return summary;
+  }
+
+  Future<List<Map<String, dynamic>>> adminAvailabilityByArea() async {
+    final response = await _api.request('GET', '/admin/availability-by-area');
+    final decoded = decodeBody(response);
+    if (decoded is! List ||
+        decoded.any((row) =>
+            row is! Map<String, dynamic> ||
+            row['area'] is! String ||
+            row['onlineVendors'] is! num ||
+            row['activeVehicles'] is! num ||
+            row['activeDrivers'] is! num)) {
+      throw const FormatException(
+        'The admin area availability response was invalid.',
+      );
+    }
+    return decoded.cast<Map<String, dynamic>>();
+  }
+
   Future<bool> manualAssignmentMode() async {
     final response = await _api.request('GET', '/admin/dispatch-settings');
     final decoded = await mapResponse(response, 'dispatch settings');
