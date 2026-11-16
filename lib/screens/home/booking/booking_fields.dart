@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../services/friendly_error.dart';
+import '../../../services/google_reverse_geocoding_service.dart';
 import '../../../services/service_area.dart';
 import 'map_location_picker.dart';
 
@@ -103,10 +104,12 @@ class DeliveryLocationField extends StatelessWidget {
   const DeliveryLocationField({
     super.key,
     required this.fields,
+    required this.addressGeocodingEnabled,
     required this.onChanged,
   });
 
   final BookingServiceFields fields;
+  final bool addressGeocodingEnabled;
   final VoidCallback onChanged;
 
   @override
@@ -128,10 +131,8 @@ class DeliveryLocationField extends StatelessWidget {
                   longitude: fields.longitude,
                 ),
               );
-              if (coordinate == null) return;
-              fields.latitude = coordinate.latitude;
-              fields.longitude = coordinate.longitude;
-              onChanged();
+              if (coordinate == null || !context.mounted) return;
+              await _applyLocation(context, coordinate);
             },
             icon: const Icon(Icons.map_outlined),
           ),
@@ -175,6 +176,7 @@ class DeliveryLocationField extends StatelessWidget {
                   return;
                 }
                 final position = await Geolocator.getCurrentPosition();
+                if (!context.mounted) return;
                 if (!isChennaiLocation(
                   latitude: position.latitude,
                   longitude: position.longitude,
@@ -183,17 +185,17 @@ class DeliveryLocationField extends StatelessWidget {
                     'This location is undeliverable. Select a location inside Chennai.',
                   );
                 }
-                fields.latitude = position.latitude;
-                fields.longitude = position.longitude;
-                onChanged();
+                await _applyLocation(
+                  context,
+                  LatLng(position.latitude, position.longitude),
+                );
               } catch (error) {
-                if (context.mounted) {
-                  showAppSnack(
-                    context,
-                    friendlyError(error),
-                    variant: AppSnackVariant.error,
-                  );
-                }
+                if (!context.mounted) return;
+                showAppSnack(
+                  context,
+                  friendlyError(error),
+                  variant: AppSnackVariant.error,
+                );
               }
             },
             icon: const Icon(Icons.my_location_outlined),
@@ -218,6 +220,39 @@ class DeliveryLocationField extends StatelessWidget {
           onChanged();
         },
       );
+
+  Future<void> _applyLocation(BuildContext context, LatLng coordinate) async {
+    fields.latitude = coordinate.latitude;
+    fields.longitude = coordinate.longitude;
+    if (addressGeocodingEnabled) {
+      try {
+        final address = await GoogleReverseGeocodingService().reverseGeocode(
+          latitude: coordinate.latitude,
+          longitude: coordinate.longitude,
+        );
+        if (!context.mounted) return;
+        if (!isChennaiLocation(
+          address: address,
+          latitude: coordinate.latitude,
+          longitude: coordinate.longitude,
+        )) {
+          throw StateError(
+            'This location is undeliverable. Select a location inside Chennai.',
+          );
+        }
+        fields.location.text = address;
+      } catch (error) {
+        if (!context.mounted) return;
+        fields.location.clear();
+        showAppSnack(
+          context,
+          friendlyError(error),
+          variant: AppSnackVariant.error,
+        );
+      }
+    }
+    if (context.mounted) onChanged();
+  }
 }
 
 class DeliveryDateField extends StatelessWidget {

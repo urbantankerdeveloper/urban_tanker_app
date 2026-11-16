@@ -1176,7 +1176,11 @@ Future<void> openBookingForm(
                         final methods = <(String, String, String)>[
                           ('wallet', 'Wallet', 'Use your Urban Tanker balance'),
                           if (controller.onlinePaymentsEnabled)
-                            ('gateway', 'Online payment', 'Pay securely online'),
+                            (
+                              'gateway',
+                              'Online payment',
+                              'Pay securely online'
+                            ),
                           (
                             'cod',
                             'Cash on delivery',
@@ -1309,6 +1313,8 @@ Future<void> openBookingForm(
                     'Choose where each service should be delivered.',
                     (fields) => DeliveryLocationField(
                       fields: fields,
+                      addressGeocodingEnabled:
+                          controller.addressGeocodingEnabled,
                       onChanged: () => setSheetState(() {}),
                     ),
                   ),
