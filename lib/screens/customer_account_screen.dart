@@ -20,17 +20,18 @@ class CustomerAccountScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final controller = ref.watch(appControllerProvider);
     final profile = ref.watch(customerProfileProvider);
     ref
       ..watch(customerUsageProvider)
       ..watch(customerMembershipProvider)
       ..watch(customerOffersProvider)
-      ..watch(customerWalletProvider)
       ..watch(customerInvoicesProvider)
       ..watch(customerSubscriptionsProvider)
       ..watch(customerContractsProvider)
       ..watch(customerAddressesProvider)
       ..watch(customerSupportProvider);
+    if (controller.walletEnabled) ref.watch(customerWalletProvider);
     return SecureScope(
       child: ListView(
         padding: AppPageInsets.withSafeAreaBottom(
@@ -70,15 +71,17 @@ class CustomerAccountScreen extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpace.xl),
           const _GroupLabel('Payments and billing'),
-          _AccountSection(
-            title: 'Wallet',
-            icon: Icons.account_balance_wallet_outlined,
-            provider: (ref) => ref.watch(customerWalletProvider),
-            retry: (ref) => ref.invalidate(customerWalletProvider),
-            empty: 'No wallet transactions yet.',
-            onItemTap: (item) => _showRecord(context, item),
-          ),
-          const SizedBox(height: AppSpace.md),
+          if (controller.walletEnabled) ...[
+            _AccountSection(
+              title: 'Wallet',
+              icon: Icons.account_balance_wallet_outlined,
+              provider: (ref) => ref.watch(customerWalletProvider),
+              retry: (ref) => ref.invalidate(customerWalletProvider),
+              empty: 'No wallet transactions yet.',
+              onItemTap: (item) => _showRecord(context, item),
+            ),
+            const SizedBox(height: AppSpace.md),
+          ],
           _AccountSection(
             title: 'Invoices',
             icon: Icons.receipt_long_outlined,

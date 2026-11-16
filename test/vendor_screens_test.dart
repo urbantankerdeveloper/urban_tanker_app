@@ -42,7 +42,7 @@ String _statValue(WidgetTester tester, String label) {
 }
 
 void main() {
-  testWidgets('customer account starts its independent sections together',
+  testWidgets('customer account starts enabled sections together',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await tester.runAsync(SharedPreferences.getInstance);
@@ -61,7 +61,6 @@ void main() {
     final usage = Completer<CustomerUsage>();
     final membership = Completer<AccountRecord?>();
     final offers = Completer<List<AccountRecord>>();
-    final wallet = Completer<List<AccountRecord>>();
     final invoices = Completer<List<AccountRecord>>();
     final subscriptions = Completer<List<AccountRecord>>();
     final contracts = Completer<List<AccountRecord>>();
@@ -78,8 +77,6 @@ void main() {
               .overrideWith((ref) => pending('membership', membership)),
           customerOffersProvider
               .overrideWith((ref) => pending('offers', offers)),
-          customerWalletProvider
-              .overrideWith((ref) => pending('wallet', wallet)),
           customerInvoicesProvider
               .overrideWith((ref) => pending('invoices', invoices)),
           customerSubscriptionsProvider
@@ -106,7 +103,6 @@ void main() {
         'usage',
         'membership',
         'offers',
-        'wallet',
         'invoices',
         'subscriptions',
         'contracts',

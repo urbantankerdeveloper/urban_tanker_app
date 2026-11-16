@@ -464,6 +464,14 @@ Future<void> openBookingForm(
               });
               return;
             }
+            if (method == 'wallet' && !controller.walletEnabled) {
+              setSheetState(() {
+                bookingFormError =
+                    'Wallet is currently disabled. Choose another payment method.';
+                step = steps.indexOf('Payment');
+              });
+              return;
+            }
             if (method == 'gateway' && !controller.onlinePaymentsEnabled) {
               setSheetState(() {
                 bookingFormError =
@@ -1174,7 +1182,8 @@ Future<void> openBookingForm(
                       builder: (context, constraints) {
                         final columns = constraints.maxWidth >= 600 ? 2 : 1;
                         final methods = <(String, String, String)>[
-                          ('wallet', 'Wallet', 'Use your Urban Tanker balance'),
+                          if (controller.walletEnabled)
+                            ('wallet', 'Wallet', 'Use your Urban Tanker balance'),
                           if (controller.onlinePaymentsEnabled)
                             (
                               'gateway',
