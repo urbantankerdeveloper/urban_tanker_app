@@ -920,6 +920,11 @@ class ApiClient implements ApiTransport {
   Future<List<AccountRecord>> adminPartnerApplications({String? status}) =>
       _admin.adminPartnerApplications(status: status);
 
+  Future<List<Map<String, dynamic>>> adminPartnerApplicationDocuments(
+    String id,
+  ) =>
+      _admin.adminPartnerApplicationDocuments(id);
+
   Future<AccountRecord> reviewPartnerApplication(
     String id, {
     required String status,

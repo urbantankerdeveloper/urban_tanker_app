@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
@@ -122,7 +123,28 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
                 for (final record in records)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpace.md),
-                    child: AdminRecordRow(record: record),
+                    child: AdminRecordRow(
+                      record: record,
+                      trailing: _tab == 2
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (record.status.isNotEmpty)
+                                  Text(
+                                    StatusChip.statusLabel(record.status),
+                                    style:
+                                        Theme.of(context).textTheme.labelLarge,
+                                  ),
+                                IconButton(
+                                  tooltip: 'Application documents',
+                                  onPressed: () =>
+                                      _showPartnerDocuments(record),
+                                  icon: const Icon(Icons.attach_file),
+                                ),
+                              ],
+                            )
+                          : null,
+                    ),
                   ),
               ],
             );
@@ -137,6 +159,59 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
     if (query.isEmpty) return true;
     return record.title.toLowerCase().contains(query) ||
         record.detail.toLowerCase().contains(query);
+  }
+
+  Future<void> _showPartnerDocuments(AccountRecord record) async {
+    try {
+      final documents = await ref
+          .read(appControllerProvider)
+          .api
+          .adminPartnerApplicationDocuments(record.id);
+      if (!mounted) return;
+      if (documents.isEmpty) {
+        await showDetailSheet(
+          context,
+          title: 'Application documents',
+          message: 'No uploaded documents were found for this application.',
+        );
+        return;
+      }
+      await showDetailSheet(
+        context,
+        title: 'Application documents',
+        message:
+            'Copy a time-limited link, then open it in a browser to download.',
+        actions: [
+          for (final document in documents)
+            TextButton.icon(
+              onPressed: () async {
+                final url = document['downloadUrl']?.toString() ?? '';
+                if (url.isEmpty) return;
+                await Clipboard.setData(ClipboardData(text: url));
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Download link copied. Open it within 5 minutes.',
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy),
+              label: Text(
+                'Copy ${document['name']?.toString() ?? 'document'} link',
+              ),
+            ),
+        ],
+      );
+    } catch (error) {
+      if (!mounted) return;
+      await showDetailSheet(
+        context,
+        title: 'Application documents',
+        message: 'Could not load application documents: $error',
+      );
+    }
   }
 
   Future<void> _createCoupon() async {

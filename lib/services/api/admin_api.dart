@@ -421,6 +421,14 @@ class AdminApi {
     return _records(path, 'partner applications');
   }
 
+  Future<List<Map<String, dynamic>>> adminPartnerApplicationDocuments(
+    String id,
+  ) async {
+    final response =
+        await _api.request('GET', '/admin/partner-applications/$id/documents');
+    return mapList(response, 'partner application documents');
+  }
+
   Future<AccountRecord> reviewPartnerApplication(
     String id, {
     required String status,

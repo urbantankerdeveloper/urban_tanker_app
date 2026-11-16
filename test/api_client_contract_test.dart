@@ -190,6 +190,38 @@ void main() {
     expect(coupon['title'], 'Ten percent off');
   });
 
+  test('admin partner documents use the application-scoped download endpoint',
+      () async {
+    http.Request? captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        jsonEncode([
+          {
+            'id': 'document-1',
+            'name': 'vehicle-registration.pdf',
+            'documentType': 'application/pdf',
+            'downloadUrl': 'https://storage.example/download',
+            'expiresInSeconds': 300,
+          },
+        ]),
+        200,
+      );
+    });
+
+    final documents = await _SignedInApiClient(client: client)
+        .adminPartnerApplicationDocuments(
+      '44444444-4444-4444-8444-444444444444',
+    );
+
+    expect(captured?.method, 'GET');
+    expect(
+      captured?.url.path,
+      '/api/admin/partner-applications/44444444-4444-4444-8444-444444444444/documents',
+    );
+    expect(documents.single['downloadUrl'], 'https://storage.example/download');
+  });
+
   test('idempotency keys are random RFC 4122 version 4 UUIDs', () {
     final pattern = RegExp(
       r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
