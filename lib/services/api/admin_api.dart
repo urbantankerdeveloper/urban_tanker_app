@@ -98,7 +98,7 @@ class AdminApi {
 
   Future<bool> manualAssignmentMode() async {
     final response = await _api.request('GET', '/admin/dispatch-settings');
-    final decoded = mapResponse(response, 'dispatch settings');
+    final decoded = await mapResponse(response, 'dispatch settings');
     if (decoded['manualAssignmentModeEnabled'] is! bool) {
       throw const FormatException(
           'The dispatch settings response was invalid.');
@@ -112,7 +112,7 @@ class AdminApi {
       '/admin/dispatch-settings',
       body: {'manualAssignmentModeEnabled': enabled},
     );
-    final decoded = mapResponse(response, 'dispatch settings update');
+    final decoded = await mapResponse(response, 'dispatch settings update');
     if (decoded['manualAssignmentModeEnabled'] is! bool) {
       throw const FormatException(
         'The dispatch settings update response was invalid.',
