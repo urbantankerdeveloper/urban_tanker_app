@@ -440,7 +440,8 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
           );
       ref
         ..invalidate(vendorOrdersProvider)
-        ..invalidate(vendorDashboardProvider);
+        ..invalidate(vendorDashboardProvider)
+        ..invalidate(vendorAccruedEarningsProvider);
       if (context.mounted) {
         Navigator.pop(context, true);
         showAppSnack(
@@ -521,7 +522,8 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
           );
       ref
         ..invalidate(vendorOrdersProvider)
-        ..invalidate(vendorDashboardProvider);
+        ..invalidate(vendorDashboardProvider)
+        ..invalidate(vendorAccruedEarningsProvider);
       if (context.mounted) {
         Navigator.pop(context);
         showAppSnack(

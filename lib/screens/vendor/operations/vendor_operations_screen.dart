@@ -42,7 +42,8 @@ class _VendorOperationsScreenState
       if (event.name != 'booking.updated') return;
       ref
         ..invalidate(vendorOrdersProvider)
-        ..invalidate(vendorDashboardProvider);
+        ..invalidate(vendorDashboardProvider)
+        ..invalidate(vendorAccruedEarningsProvider);
     });
   }
 

@@ -566,6 +566,9 @@ class ApiClient implements ApiTransport {
 
   Future<List<VendorPayout>> vendorPayouts() => _vendor.vendorPayouts();
 
+  Future<VendorAccruedEarnings> vendorAccruedEarnings() =>
+      _vendor.vendorAccruedEarnings();
+
   Future<List<Map<String, dynamic>>> vendorComplaints() =>
       _vendor.vendorComplaints();
 

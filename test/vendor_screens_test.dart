@@ -217,6 +217,12 @@ void main() {
   });
 
   testWidgets('earnings total follows the period filter', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await tester.runAsync(SharedPreferences.getInstance);
+    final controller = AppController(
+      api: ApiClient(),
+      preferences: preferences!,
+    );
     final now = DateTime.now();
     final payouts = [
       _payout('new', 100000, now),
@@ -224,14 +230,18 @@ void main() {
     ];
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [vendorPayoutsProvider.overrideWith((ref) async => payouts)],
+        overrides: [
+          appControllerProvider.overrideWith((ref) => controller),
+          vendorPayoutsProvider.overrideWith((ref) async => payouts),
+        ],
         child: MaterialApp(
           theme: buildLightTheme(),
           home: const Scaffold(body: VendorEarningsScreen()),
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('₹1500.00'), findsOneWidget);
 
@@ -240,6 +250,52 @@ void main() {
     expect(find.text('₹1000.00'), findsWidgets);
     expect(find.text('₹1500.00'), findsNothing);
     expect(find.text('₹500.00'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('earnings separates unsettled delivery accruals from payouts',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await tester.runAsync(SharedPreferences.getInstance);
+    final controller = AppController(
+      api: ApiClient(),
+      preferences: preferences!,
+    )..featureFlags = {'vendor_earnings_realtime_enabled': true};
+    final accrued = VendorAccruedEarnings.fromJson({
+      'shareRate': 0.85,
+      'totalAmountPaise': 8500,
+      'totalCount': 1,
+      'rows': [
+        {
+          'id': 'booking-1',
+          'reference': 'UT-1',
+          'serviceCode': 'water_tanker',
+          'amountPaise': 8500,
+          'deliveredAt': DateTime.now().toIso8601String(),
+        },
+      ],
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith((ref) => controller),
+          vendorPayoutsProvider.overrideWith((ref) async => <VendorPayout>[]),
+          vendorAccruedEarningsProvider.overrideWith((ref) async => accrued),
+        ],
+        child: MaterialApp(
+          theme: buildLightTheme(),
+          home: const Scaffold(body: VendorEarningsScreen()),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('UNSETTLED DELIVERY EARNINGS (85%)'), findsOneWidget);
+    expect(find.text('₹85.00'), findsWidgets);
+    expect(find.textContaining('Not payable until admin settlement'),
+        findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

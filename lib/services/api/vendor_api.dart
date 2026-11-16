@@ -173,6 +173,16 @@ class VendorApi {
     return parseList(response, VendorPayout.fromJson, 'vendor payouts');
   }
 
+  Future<VendorAccruedEarnings> vendorAccruedEarnings() async {
+    final response = await _api.request('GET', '/vendor/earnings/accrued');
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException(
+          'The vendor accrued earnings response was invalid.');
+    }
+    return VendorAccruedEarnings.fromJson(decoded);
+  }
+
   Future<List<Map<String, dynamic>>> vendorComplaints() async {
     final response = await _api.request('GET', '/vendor/complaints');
     return mapList(response, 'vendor complaints');

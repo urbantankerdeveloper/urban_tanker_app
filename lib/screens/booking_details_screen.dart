@@ -193,6 +193,8 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final onlinePaymentsEnabled = ref.watch(appControllerProvider
+        .select((controller) => controller.onlinePaymentsEnabled));
     final booking = widget.booking;
     final colors = context.colors;
     final theme = Theme.of(context);
@@ -483,7 +485,8 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                       ),
                   ],
                 ),
-                if (booking.normalizedPaymentStatus == 'cod' &&
+                if (onlinePaymentsEnabled &&
+                    booking.normalizedPaymentStatus == 'cod' &&
                     _payOnlineStatuses.contains(currentStatus)) ...[
                   const SizedBox(height: AppSpace.md),
                   LayoutBuilder(

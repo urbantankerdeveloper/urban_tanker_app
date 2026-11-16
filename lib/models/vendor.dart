@@ -296,6 +296,61 @@ class VendorPayout {
   double get amountRupees => amountPaise / 100;
 }
 
+class VendorEarningAccrual {
+  const VendorEarningAccrual({
+    required this.id,
+    required this.reference,
+    required this.serviceCode,
+    required this.amountPaise,
+    required this.deliveredAt,
+  });
+
+  final String id;
+  final String reference;
+  final String serviceCode;
+  final int amountPaise;
+  final DateTime? deliveredAt;
+
+  factory VendorEarningAccrual.fromJson(Map<String, dynamic> json) =>
+      VendorEarningAccrual(
+        id: (json['id'] ?? '').toString(),
+        reference: (json['reference'] ?? '').toString(),
+        serviceCode: (json['serviceCode'] ?? '').toString(),
+        amountPaise: (json['amountPaise'] as num?)?.toInt() ?? 0,
+        deliveredAt: DateTime.tryParse((json['deliveredAt'] ?? '').toString()),
+      );
+
+  double get amountRupees => amountPaise / 100;
+}
+
+class VendorAccruedEarnings {
+  const VendorAccruedEarnings({
+    required this.shareRate,
+    required this.totalAmountPaise,
+    required this.totalCount,
+    required this.rows,
+  });
+
+  final double shareRate;
+  final int totalAmountPaise;
+  final int totalCount;
+  final List<VendorEarningAccrual> rows;
+
+  factory VendorAccruedEarnings.fromJson(Map<String, dynamic> json) =>
+      VendorAccruedEarnings(
+        shareRate: (json['shareRate'] as num?)?.toDouble() ?? 0,
+        totalAmountPaise: (json['totalAmountPaise'] as num?)?.toInt() ?? 0,
+        totalCount: (json['totalCount'] as num?)?.toInt() ?? 0,
+        rows: [
+          for (final row in json['rows'] as List? ?? const [])
+            if (row is Map<String, dynamic>)
+              VendorEarningAccrual.fromJson(row),
+        ],
+      );
+
+  double get totalAmountRupees => totalAmountPaise / 100;
+}
+
 class VendorDashboard {
   const VendorDashboard({
     required this.orders,

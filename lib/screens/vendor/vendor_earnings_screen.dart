@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,7 @@ import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/vendor.dart';
 import '../../services/friendly_error.dart';
+import '../../services/realtime_service.dart';
 import 'vendor_shared.dart';
 
 /// Period filters for the payout list. Null means no date limit.
@@ -27,10 +30,33 @@ class VendorEarningsScreen extends ConsumerStatefulWidget {
 
 class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
   int _periodIndex = 0;
+  StreamSubscription<RealtimeEvent>? _realtimeSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _realtimeSubscription =
+        ref.read(appControllerProvider).realtime?.events.listen((event) {
+      if (event.name == 'booking.updated' ||
+          event.name == 'booking.delivered') {
+        ref.invalidate(vendorAccruedEarningsProvider);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _realtimeSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final payouts = ref.watch(vendorPayoutsProvider);
+    final earningsEnabled = ref.watch(appControllerProvider
+        .select((controller) => controller.vendorEarningsRealtimeEnabled));
+    final accrued =
+        earningsEnabled ? ref.watch(vendorAccruedEarningsProvider) : null;
     return payouts.when(
       loading: () => const LoadingState(message: 'Loading your earnings...'),
       error: (error, _) => VendorError(
@@ -100,6 +126,13 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
               ],
             ),
           ),
+          if (accrued != null) ...[
+            const SizedBox(height: AppSpace.md),
+            _AccruedEarningsCard(
+              earnings: accrued,
+              retry: () => ref.invalidate(vendorAccruedEarningsProvider),
+            ),
+          ],
           const SizedBox(height: AppSpace.lg),
           SegmentedTabs(
             labels: [for (final period in _periods) period.$1],
@@ -118,7 +151,11 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
           const SizedBox(height: AppSpace.sm),
         ];
         return RefreshIndicator(
-          onRefresh: () async => ref.invalidate(vendorPayoutsProvider),
+          onRefresh: () async {
+            ref
+              ..invalidate(vendorPayoutsProvider)
+              ..invalidate(vendorAccruedEarningsProvider);
+          },
           child: ListView.builder(
             padding: AppPageInsets.withSafeAreaBottom(
               context,
@@ -185,6 +222,72 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
     } finally {
       VendorEarningsScreen._payoutInFlight = false;
     }
+  }
+}
+
+class _AccruedEarningsCard extends StatelessWidget {
+  const _AccruedEarningsCard({
+    required this.earnings,
+    required this.retry,
+  });
+
+  final AsyncValue<VendorAccruedEarnings> earnings;
+  final VoidCallback retry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SurfaceCard(
+      child: earnings.when(
+        loading: () => const Text('Loading unsettled delivery earnings...'),
+        error: (error, stackTrace) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Unsettled delivery earnings are unavailable.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            TextButton(onPressed: retry, child: const Text('Retry')),
+          ],
+        ),
+        data: (summary) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'UNSETTLED DELIVERY EARNINGS (${(summary.shareRate * 100).round()}%)',
+              style: theme.textTheme.labelSmall,
+            ),
+            const SizedBox(height: AppSpace.sm),
+            AmountText(
+              '₹${summary.totalAmountRupees.toStringAsFixed(2)}',
+              large: true,
+            ),
+            const SizedBox(height: AppSpace.xs),
+            Text(
+              'Estimated from ${summary.totalCount} completed '
+              '${summary.totalCount == 1 ? 'delivery' : 'deliveries'}. '
+              'Not payable until admin settlement; the final amount is '
+              'confirmed during settlement.',
+              style: theme.textTheme.bodySmall,
+            ),
+            for (final row in summary.rows) ...[
+              const Divider(),
+              AppListRow(
+                leading: const Icon(Icons.local_shipping_outlined),
+                title: '${row.reference} · '
+                    '${row.serviceCode.replaceAll('_', ' ')}',
+                subtitle: row.deliveredAt == null
+                    ? 'Delivered'
+                    : 'Delivered: ${formatDate(row.deliveredAt)}',
+                trailing: AmountText(
+                  '₹${row.amountRupees.toStringAsFixed(2)}',
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 

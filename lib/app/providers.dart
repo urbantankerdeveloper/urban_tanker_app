@@ -240,6 +240,22 @@ final vendorPayoutsProvider =
   return ref.watch(apiProvider).vendorPayouts();
 });
 
+final vendorAccruedEarningsProvider =
+    FutureProvider.autoDispose<VendorAccruedEarnings>((ref) {
+  ref.watch(sessionUserIdProvider);
+  final enabled = ref.watch(appControllerProvider
+      .select((controller) => controller.vendorEarningsRealtimeEnabled));
+  if (!enabled) {
+    return const VendorAccruedEarnings(
+      shareRate: 0.85,
+      totalAmountPaise: 0,
+      totalCount: 0,
+      rows: [],
+    );
+  }
+  return ref.watch(apiProvider).vendorAccruedEarnings();
+});
+
 final vendorOfflineMutationsProvider =
     FutureProvider.autoDispose<List<VendorOfflineMutation>>((ref) {
   ref.watch(sessionUserIdProvider);

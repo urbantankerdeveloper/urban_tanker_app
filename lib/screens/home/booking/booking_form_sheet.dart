@@ -464,6 +464,14 @@ Future<void> openBookingForm(
               });
               return;
             }
+            if (method == 'gateway' && !controller.onlinePaymentsEnabled) {
+              setSheetState(() {
+                bookingFormError =
+                    'Online payments are currently unavailable. Choose cash on delivery.';
+                step = steps.indexOf('Payment');
+              });
+              return;
+            }
             setSheetState(() => submittingBooking = true);
             var bookingContactRecoveryUsed = false;
             try {
@@ -1165,9 +1173,10 @@ Future<void> openBookingForm(
                     builder: (field) => LayoutBuilder(
                       builder: (context, constraints) {
                         final columns = constraints.maxWidth >= 600 ? 2 : 1;
-                        const methods = [
+                        final methods = <(String, String, String)>[
                           ('wallet', 'Wallet', 'Use your Urban Tanker balance'),
-                          ('gateway', 'Online payment', 'Pay securely online'),
+                          if (controller.onlinePaymentsEnabled)
+                            ('gateway', 'Online payment', 'Pay securely online'),
                           (
                             'cod',
                             'Cash on delivery',
