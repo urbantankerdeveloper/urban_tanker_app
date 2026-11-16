@@ -501,6 +501,14 @@ Future<void> openBookingForm(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          if (controller.multiServiceTasksEnabled &&
+                              services.length > 1) ...[
+                            Text(
+                              '${services.length} tasks in this order',
+                              style: theme.textTheme.titleSmall,
+                            ),
+                            const SizedBox(height: AppSpace.sm),
+                          ],
                           for (var index = 0;
                               index < services.length;
                               index++) ...[

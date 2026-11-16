@@ -40,11 +40,17 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
 
   @override
   Widget build(BuildContext context) {
+    final orderTrackingBoardEnabled = ref.watch(
+      appControllerProvider.select((controller) => controller.orderTrackingBoardEnabled),
+    );
     final orders = ref.watch(
       dispatcherOrdersProvider(
         DispatcherOrderFilter(page: _page, status: _status),
       ),
     );
+    final boardOrders = orderTrackingBoardEnabled
+        ? ref.watch(dispatcherOrderBoardProvider)
+        : null;
     return orders.when(
       loading: () => const LoadingState(message: 'Loading orders...'),
       error: (error, _) => ErrorState(
@@ -81,6 +87,23 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
               ],
             ),
             const SizedBox(height: AppSpace.md),
+            if (boardOrders != null)
+              boardOrders.when(
+                data: (rows) => _AdminOrderTrackingBoard(
+                  rows: rows,
+                  onOpenOrder: _openOrder,
+                ),
+                loading: () => const LoadingState(
+                  message: 'Loading all orders for the tracking board...',
+                ),
+                error: (error, _) => ErrorState(
+                  error: error,
+                  message: friendlyError(error),
+                  onRetry: () => ref.invalidate(dispatcherOrderBoardProvider),
+                ),
+              ),
+            if (orderTrackingBoardEnabled)
+              const SizedBox(height: AppSpace.md),
             AdminSearchField(
               controller: _search,
               label: 'Search this page',
@@ -104,7 +127,7 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
                   child: SurfaceCard(
                     padding: EdgeInsets.zero,
                     child: AppListRow(
-                      title: (row['reference'] ?? row['id']).toString(),
+                      title: (row['reference'] ?? 'Booking reference unavailable').toString(),
                       subtitle:
                           '${row['status'] ?? ''}\n${row['address_text'] ?? ''}',
                       onTap: () => _openOrder(row),
@@ -173,7 +196,7 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
   }
 
   Map<String, dynamic> _details(Map row) => {
-        'Reference': row['reference'] ?? row['id'],
+        'Reference': row['reference'] ?? 'Booking reference unavailable',
         'Status': row['status'] ?? '—',
         'Service': row['service_code'] ?? '—',
         'Address': row['address_text'] ?? '—',
@@ -225,6 +248,7 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
         driverId: saved.driverId,
       );
       ref.invalidate(dispatcherOrdersProvider);
+      ref.invalidate(dispatcherOrderBoardProvider);
       if (!mounted) return;
       showAppSnack(
         context,
@@ -254,6 +278,7 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
           .api
           .cancelAdminOrder(row['id'].toString(), reason);
       ref.invalidate(dispatcherOrdersProvider);
+      ref.invalidate(dispatcherOrderBoardProvider);
       if (!mounted) return;
       showAppSnack(
         context,
@@ -269,6 +294,72 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
         );
       }
     }
+  }
+}
+
+class _AdminOrderTrackingBoard extends StatelessWidget {
+  const _AdminOrderTrackingBoard({
+    required this.rows,
+    required this.onOpenOrder,
+  });
+
+  final List<Map> rows;
+  final ValueChanged<Map> onOpenOrder;
+
+  @override
+  Widget build(BuildContext context) {
+    const statuses = [
+      ('pending_vendor', 'Pending'),
+      ('vendor_assigned', 'Assigned'),
+      ('accepted', 'Accepted'),
+      ('en_route', 'En route'),
+      ('arrived', 'Arrived'),
+      ('delivered', 'Delivered'),
+      ('cancelled', 'Cancelled'),
+    ];
+    return SizedBox(
+      height: 210,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: statuses.length,
+        separatorBuilder: (_, __) => const SizedBox(width: AppSpace.sm),
+        itemBuilder: (context, index) {
+          final (status, label) = statuses[index];
+          final orders = rows
+              .where((row) => row['status'] == status)
+              .toList(growable: false);
+          return SizedBox(
+            width: 190,
+            child: SurfaceCard(
+              padding: AppPageInsets.card,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('$label · ${orders.length}',
+                      style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: AppSpace.xs),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        for (final order in orders)
+                          TextButton(
+                            onPressed: () => onOpenOrder(order),
+                            child: Text(
+                              (order['reference'] ?? 'Booking reference unavailable').toString(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 

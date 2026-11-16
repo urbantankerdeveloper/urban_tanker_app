@@ -56,6 +56,9 @@ class _VendorOperationsScreenState
   @override
   Widget build(BuildContext context) {
     ref.watch(vendorOfflineMutationsProvider);
+    final orderTrackingBoardEnabled = ref.watch(
+      appControllerProvider.select((controller) => controller.orderTrackingBoardEnabled),
+    );
     final orders = ref.watch(vendorOrdersProvider);
     return orders.when(
       loading: () => const LoadingState(message: 'Loading your orders...'),
@@ -68,6 +71,8 @@ class _VendorOperationsScreenState
         // Fixed summary, search and filter controls above the order cards, and
         // the saved update records below them. Only the order cards are lazy.
         final header = <Widget>[
+          if (orderTrackingBoardEnabled)
+            _VendorOrderTrackingBoard(items: items),
           Row(
             children: [
               Expanded(
@@ -201,5 +206,58 @@ class _VendorOperationsScreenState
       ...order.serviceDetails.map((detail) => detail.service),
       ...order.serviceDetails.map((detail) => detail.details),
     ].any((value) => value.toLowerCase().contains(query));
+  }
+}
+
+class _VendorOrderTrackingBoard extends StatelessWidget {
+  const _VendorOrderTrackingBoard({required this.items});
+
+  final List<VendorOrder> items;
+
+  @override
+  Widget build(BuildContext context) {
+    const statuses = [
+      ('pending_vendor', 'Pending'),
+      ('vendor_assigned', 'Assigned'),
+      ('accepted', 'Accepted'),
+      ('en_route', 'En route'),
+      ('arrived', 'Arrived'),
+      ('delivered', 'Delivered'),
+      ('cancelled', 'Cancelled'),
+    ];
+    return SizedBox(
+      height: 112,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: statuses.length,
+        separatorBuilder: (_, __) => const SizedBox(width: AppSpace.sm),
+        itemBuilder: (context, index) {
+          final (status, label) = statuses[index];
+          final orders =
+              items.where((order) => order.status == status).toList();
+          return SizedBox(
+            width: 145,
+            child: SurfaceCard(
+              padding: AppPageInsets.card,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: AppSpace.xs),
+                  Text('${orders.length} tasks'),
+                  if (orders.isNotEmpty)
+                    Text(
+                      orders.first.reference,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }

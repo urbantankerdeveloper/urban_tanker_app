@@ -40,6 +40,7 @@ class AppController extends ChangeNotifier {
   bool sessionLocked = false;
   bool biometricPromptOffered = false;
   bool mpinCooldownEnabled = true;
+  Map<String, bool> featureFlags = const {};
   bool pendingUnlockSetup = false;
   bool pendingMpinReset = false;
   String? phoneOtpChallengeId;
@@ -69,6 +70,10 @@ class AppController extends ChangeNotifier {
   bool get isSignedIn => user != null;
 
   bool get requiresSelfie => user?.selfieRequired ?? false;
+  bool get multiServiceTasksEnabled =>
+      featureFlags['multi_service_tasks_enabled'] ?? false;
+  bool get orderTrackingBoardEnabled =>
+      featureFlags['order_tracking_board_enabled'] ?? false;
 
   static Future<AppController> create() async {
     final preferences = await SharedPreferences.getInstance();
@@ -123,7 +128,9 @@ class AppController extends ChangeNotifier {
   Future<void> refreshFeatureFlags() async {
     try {
       final flags = await api.featureFlags();
+      featureFlags = flags;
       mpinCooldownEnabled = flags['mpin_cooldown_enabled'] ?? true;
+      notifyListeners();
     } on ApiException catch (error) {
       debugPrint(
           'Feature flags could not be refreshed (HTTP ${error.statusCode}).');

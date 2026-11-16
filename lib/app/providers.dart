@@ -266,6 +266,38 @@ final dispatcherOrdersProvider = FutureProvider.autoDispose
       );
 });
 
+final dispatcherOrderBoardProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(sessionUserIdProvider);
+  const pageSize = 100;
+  final api = ref.watch(apiProvider);
+  final first = await api.adminOrders(page: 1, pageSize: pageSize);
+  final total = first['total'];
+  if (total is! num || first['rows'] is! List) {
+    throw const FormatException('The admin order board response was invalid.');
+  }
+  final rows = <Map<String, dynamic>>[];
+  void appendRows(Object? value) {
+    if (value is! List) {
+      throw const FormatException('The admin order board response was invalid.');
+    }
+    for (final row in value) {
+      if (row is! Map) {
+        throw const FormatException('The admin order board response was invalid.');
+      }
+      rows.add(Map<String, dynamic>.from(row));
+    }
+  }
+
+  appendRows(first['rows']);
+  final pageCount = (total.toInt() + pageSize - 1) ~/ pageSize;
+  for (var page = 2; page <= pageCount; page += 1) {
+    final result = await api.adminOrders(page: page, pageSize: pageSize);
+    appendRows(result['rows']);
+  }
+  return rows;
+});
+
 final adminNotificationsProvider =
     FutureProvider.autoDispose<List<NotificationItem>>((ref) {
   ref.watch(sessionUserIdProvider);

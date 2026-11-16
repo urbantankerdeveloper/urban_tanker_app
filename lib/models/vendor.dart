@@ -19,6 +19,8 @@ class VendorOrder {
     this.longitude,
     this.cancellationReason,
     this.statusMessage,
+    this.orderGroupReference,
+    this.orderGroupSize,
   });
 
   final String id;
@@ -27,6 +29,8 @@ class VendorOrder {
   final String address;
   final String status;
   final String? statusMessage;
+  final String? orderGroupReference;
+  final int? orderGroupSize;
   final int amountPaise;
   final List<VendorOrderServiceDetail> serviceDetails;
   final DateTime? createdAt;
@@ -41,11 +45,13 @@ class VendorOrder {
 
   factory VendorOrder.fromJson(Map<String, dynamic> json) => VendorOrder(
         id: (json['id'] ?? '').toString(),
-        reference: (json['reference'] ?? json['id'] ?? '').toString(),
+        reference: (json['reference'] ?? 'Booking reference unavailable').toString(),
         serviceCode: (json['service_code'] ?? json['service'] ?? '').toString(),
         address: (json['address_text'] ?? json['location'] ?? '').toString(),
         status: _normalizeVendorOrderStatus(json['status']),
         statusMessage: json['statusMessage']?.toString(),
+        orderGroupReference: json['orderGroupReference']?.toString(),
+        orderGroupSize: (json['orderGroupSize'] as num?)?.toInt(),
         amountPaise: _vendorAmountPaise(json),
         serviceDetails: _records(
           json['serviceDetails'] ?? json['service_details'],

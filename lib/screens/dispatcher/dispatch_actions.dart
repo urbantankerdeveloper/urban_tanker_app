@@ -57,7 +57,7 @@ Future<void> showDispatchActions(
 
 void showOrderDetails(BuildContext context, Map<String, dynamic> order) {
   final details = <String, dynamic>{
-    'Reference': order['reference'] ?? order['id'],
+    'Reference': order['reference'] ?? 'Booking reference unavailable',
     'Status': order['status'] ?? '—',
     'Service': order['service_code'] ?? '—',
     'Address': order['address_text'] ?? '—',

@@ -30,7 +30,8 @@ class DispatcherOrder {
   factory DispatcherOrder.fromJson(Map<String, dynamic> json) =>
       DispatcherOrder(
         id: (json['id'] ?? '').toString(),
-        reference: (json['reference'] ?? json['id'] ?? '').toString(),
+        reference:
+            (json['reference'] ?? 'Booking reference unavailable').toString(),
         status: (json['status'] ?? 'pending_vendor').toString(),
         serviceCode: (json['service_code'] ?? '').toString(),
         address: (json['address_text'] ?? '').toString(),
@@ -78,7 +79,8 @@ class DispatcherAlert {
   factory DispatcherAlert.fromJson(Map<String, dynamic> json) =>
       DispatcherAlert(
         id: (json['id'] ?? '').toString(),
-        reference: (json['reference'] ?? json['id'] ?? '').toString(),
+        reference:
+            (json['reference'] ?? 'Booking reference unavailable').toString(),
         status: (json['status'] ?? '').toString(),
         createdAt: DateTime.tryParse((json['created_at'] ?? '').toString()),
         updatedAt: DateTime.tryParse((json['updated_at'] ?? '').toString()),

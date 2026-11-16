@@ -48,6 +48,9 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final orderTrackingBoardEnabled = ref.watch(
+      appControllerProvider.select((controller) => controller.orderTrackingBoardEnabled),
+    );
     final bookings = ref.watch(bookingsProvider);
     return bookings.when(
       loading: () => const LoadingState(message: 'Loading your bookings...'),
@@ -118,10 +121,18 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                           }
                           return _BookingCard(
                             booking: shown[index],
+                            showProgress: orderTrackingBoardEnabled,
                             onOpen: () => Navigator.of(context).push(
                               MaterialPageRoute<void>(
                                 builder: (_) => BookingDetailsScreen(
                                   booking: shown[index],
+                                  groupTasks: shown[index].orderGroupId == null
+                                      ? const []
+                                      : page.items
+                                          .where((task) =>
+                                              task.orderGroupId ==
+                                              shown[index].orderGroupId)
+                                          .toList(),
                                   onBookAgain: widget.onBookAgain,
                                 ),
                               ),
@@ -191,10 +202,12 @@ class _BookingsFooterState extends State<_BookingsFooter> {
 class _BookingCard extends StatelessWidget {
   const _BookingCard({
     required this.booking,
+    required this.showProgress,
     required this.onOpen,
   });
 
   final Booking booking;
+  final bool showProgress;
   final VoidCallback onOpen;
 
   @override
@@ -237,6 +250,14 @@ class _BookingCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpace.md),
+          if (booking.orderGroupSize != null && booking.orderGroupSize! > 1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpace.sm),
+              child: Text(
+                '${booking.orderGroupReference ?? 'Order'} · ${booking.orderGroupSize} tasks in this order',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
           for (final line in details)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpace.xs),
@@ -256,6 +277,27 @@ class _BookingCard extends StatelessWidget {
                     '₹${amount.toStringAsFixed(2)}',
                     style: theme.textTheme.titleMedium,
                   ),
+                  if (showProgress) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  LinearProgressIndicator(
+                    value: switch (booking.status) {
+                      'pending_vendor' => 0.1,
+                      'vendor_assigned' => 0.25,
+                      'accepted' => 0.4,
+                      'en_route' => 0.6,
+                      'arrived' => 0.8,
+                      'delivered' => 1,
+                      _ => 0,
+                    },
+                  ),
+                  const SizedBox(height: AppSpace.xs),
+                  Text(
+                    booking.status == 'cancelled'
+                        ? 'Cancelled'
+                        : 'Progress: ${booking.status.replaceAll('_', ' ')}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  ],
                 ],
               ),
             ),

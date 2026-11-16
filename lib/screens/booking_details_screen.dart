@@ -42,11 +42,13 @@ String _paymentMethodLabel(String? method) => switch (method) {
 class BookingDetailsScreen extends ConsumerStatefulWidget {
   const BookingDetailsScreen({
     required this.booking,
+    this.groupTasks = const [],
     this.onBookAgain,
     super.key,
   });
 
   final Booking booking;
+  final List<Booking> groupTasks;
   final Future<void> Function(Booking booking)? onBookAgain;
 
   @override
@@ -279,6 +281,26 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                     tone: colors.danger,
                   ),
                 const SizedBox(height: AppSpace.xl),
+                if (booking.orderGroupSize != null &&
+                    booking.orderGroupSize! > 1) ...[
+                  _SectionTitle(
+                    '${booking.orderGroupReference ?? 'Order'} · '
+                    '${booking.orderGroupSize} tasks in this order',
+                  ),
+                  SurfaceCard(
+                    child: _Rows([
+                      for (final task in widget.groupTasks)
+                        AppListRow(
+                          leading: const Icon(Icons.local_shipping_outlined),
+                          title: task.reference,
+                          subtitle:
+                              '${task.status.replaceAll('_', ' ')} · '
+                              '${task.quotedAmountRupees == null ? '' : '₹${task.quotedAmountRupees!.toStringAsFixed(2)}'}',
+                        ),
+                    ]),
+                  ),
+                  const SizedBox(height: AppSpace.xl),
+                ],
                 const _SectionTitle('Delivery location'),
                 if (destination != null || vehicle != null) ...[
                   ClipRRect(

@@ -49,6 +49,15 @@ class _VendorOrderCardState extends State<VendorOrderCard> {
               ],
             ),
             const SizedBox(height: AppSpace.sm),
+            if (order.orderGroupSize != null && order.orderGroupSize! > 1)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpace.sm),
+                child: Text(
+                  '${order.orderGroupReference ?? 'Order'} · '
+                  '${order.orderGroupSize} tasks in this order',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
             Text(
               order.address,
               maxLines: 2,

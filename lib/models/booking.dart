@@ -14,6 +14,9 @@ class Booking {
     this.notes,
     this.cancellationReason,
     this.serviceId,
+    this.orderGroupId,
+    this.orderGroupReference,
+    this.orderGroupSize,
     this.quotedAmount,
     this.paymentStatus,
     this.paymentMethod,
@@ -31,6 +34,9 @@ class Booking {
   final DateTime? deliveryDate;
   final DateTime? createdAt;
   final String? serviceId;
+  final String? orderGroupId;
+  final String? orderGroupReference;
+  final int? orderGroupSize;
   final String? quotedAmount;
   final String? paymentStatus;
   final String? paymentMethod;
@@ -60,7 +66,9 @@ class Booking {
     final customer = json['customer'];
     return Booking(
       id: (json['id'] ?? '').toString(),
-      reference: (json['reference'] ?? json['order_number'] ?? json['id'] ?? '')
+      reference: (json['reference'] ??
+              json['order_number'] ??
+              'Booking reference unavailable')
           .toString(),
       status: (json['status'] ?? 'pending').toString(),
       location: (json['location'] ??
@@ -82,6 +90,9 @@ class Booking {
         (json['created_at'] ?? '').toString(),
       ),
       serviceId: (json['service_code'] ?? json['service_id'] ?? '').toString(),
+      orderGroupId: json['order_group_id']?.toString(),
+      orderGroupReference: json['order_group_reference']?.toString(),
+      orderGroupSize: (json['order_group_size'] as num?)?.toInt(),
       quotedAmount: json['quoted_amount_paise']?.toString(),
       paymentStatus: json['payment_status']?.toString(),
       paymentMethod:
