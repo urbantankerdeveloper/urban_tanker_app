@@ -27,14 +27,17 @@ class AccountRecord {
   String get id => (data['id'] ?? '').toString();
   String get title => (data['title'] ??
           data['label'] ??
+          data['number'] ??
           data['name'] ??
           data['subject'] ??
           data['code'] ??
           data['reference'] ??
           'Record')
       .toString();
-  String get detail => (data['message'] ??
+  String get detail => (data['service'] ??
+          data['message'] ??
           data['address'] ??
+          data['location'] ??
           data['description'] ??
           data['status'] ??
           data['discount_value'] ??

@@ -19,6 +19,15 @@ const _shareableInvoiceFields = [
   'amount',
   'status',
   'issued_at',
+  'line_items',
+  'subtotal_paise',
+  'tax_paise',
+  'tax_rate',
+  'discount_paise',
+  'total_paise',
+  'payment_method',
+  'payment_status',
+  'paid_at',
 ];
 
 class InvoiceDetailScreen extends ConsumerWidget {
@@ -56,14 +65,29 @@ class _InvoiceBody extends StatelessWidget {
     return lower.contains('total') ||
         lower.contains('gst') ||
         lower.contains('tax') ||
-        lower.contains('discount');
+        lower.contains('discount') ||
+        lower.contains('amount') ||
+        lower.contains('status');
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final entries =
-        invoice.data.entries.where((entry) => entry.value != null).toList();
+    final rawLineItems = invoice.data['line_items'];
+    final itemLines = rawLineItems is List
+        ? rawLineItems
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList()
+        : <Map<String, dynamic>>[];
+    final entries = invoice.data.entries
+        .where(
+          (entry) =>
+              entry.value != null &&
+              entry.key != 'line_items' &&
+              entry.key != 'id',
+        )
+        .toList();
     final lines = [
       for (final entry in entries)
         if (!_isTotalLine(entry.key)) entry,
@@ -90,7 +114,10 @@ class _InvoiceBody extends StatelessWidget {
                 style: theme.textTheme.titleLarge,
               ),
               const SizedBox(height: AppSpace.lg),
-              for (final entry in lines) _LineItem(entry: entry),
+              if (itemLines.isNotEmpty)
+                for (final item in itemLines) _InvoiceServiceLine(item: item)
+              else
+                for (final entry in lines) _LineItem(entry: entry),
               if (totals.isNotEmpty) ...[
                 const SizedBox(height: AppSpace.lg),
                 const _Perforation(),
@@ -213,7 +240,7 @@ class _LineItem extends StatelessWidget {
           const SizedBox(width: AppSpace.md),
           Flexible(
             child: Text(
-              '${entry.value}',
+              _displayValue(entry.key, entry.value),
               textAlign: TextAlign.end,
               style: style,
             ),
@@ -225,9 +252,69 @@ class _LineItem extends StatelessWidget {
 
   /// `issued_at` becomes `Issued at`.
   static String _label(String key) {
-    final words = key.replaceAll('_', ' ').trim();
+    final normalized = key.endsWith('_paise')
+        ? key.substring(0, key.length - '_paise'.length)
+        : key;
+    final words = normalized.replaceAll('_', ' ').trim();
     if (words.isEmpty) return words;
     return words[0].toUpperCase() + words.substring(1);
+  }
+
+  static String _displayValue(String key, dynamic value) {
+    final lower = key.toLowerCase();
+    final amount = num.tryParse(value.toString());
+    if (lower.endsWith('_paise') && amount != null) {
+      return '₹${(amount / 100).toStringAsFixed(2)}';
+    }
+    if (lower == 'amount' && amount != null) {
+      return '₹${amount.toStringAsFixed(2)}';
+    }
+    if (lower == 'tax_rate' && amount != null) {
+      return '${(amount * 100).toStringAsFixed(0)}%';
+    }
+    return '$value';
+  }
+}
+
+class _InvoiceServiceLine extends StatelessWidget {
+  const _InvoiceServiceLine({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final quantity = item['quantity'] ?? 1;
+    final paise = num.tryParse(
+      (item['totalPaise'] ?? item['total_paise'] ?? 0).toString(),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  (item['description'] ?? item['serviceCode'] ?? 'Service')
+                      .toString(),
+                  style: theme.textTheme.bodyLarge,
+                ),
+                Text('Quantity: $quantity', style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpace.md),
+          Text(
+            paise == null ? '-' : '₹${(paise / 100).toStringAsFixed(2)}',
+            textAlign: TextAlign.end,
+            style: theme.textTheme.bodyLarge,
+          ),
+        ],
+      ),
+    );
   }
 }
 

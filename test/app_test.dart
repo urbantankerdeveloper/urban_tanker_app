@@ -478,6 +478,19 @@ void main() {
     expect(record.detail, '12 Main Street');
   });
 
+  test('invoice account records show the invoice number and service', () {
+    final invoice = AccountRecord({
+      'id': 'invoice-1',
+      'number': 'INV-UT-1001',
+      'service': 'Water tanker · 5000 litres',
+      'location': '12 Main Street',
+      'total_paise': 285000,
+    });
+
+    expect(invoice.title, 'INV-UT-1001');
+    expect(invoice.detail, 'Water tanker · 5000 litres');
+  });
+
   test('support records expose booking and response timeline data', () {
     final record = AccountRecord({
       'id': 'support-1',
