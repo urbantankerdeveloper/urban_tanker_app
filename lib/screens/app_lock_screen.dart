@@ -133,8 +133,6 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Center(child: BrandLogo(size: 72)),
-                      const SizedBox(height: AppSpace.lg),
                       Text(
                         'Unlock Urban Tanker',
                         textAlign: TextAlign.center,

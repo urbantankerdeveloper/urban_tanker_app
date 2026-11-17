@@ -219,6 +219,7 @@ Future<void> openBookingForm(
   required AppController controller,
   required List<TankerService> serviceCatalog,
   Booking? previousBooking,
+  String? initialServiceId,
   VoidCallback? onReturnHome,
   VoidCallback? onBookingCompleted,
 }) async {
@@ -278,8 +279,13 @@ Future<void> openBookingForm(
           previousBooking.capacity;
     }
   }
-  final selectedServices =
-      previousServiceIds.isNotEmpty ? previousServiceIds : <String>{};
+  final selectedServices = <String>{...previousServiceIds};
+  if (selectedServices.isEmpty &&
+      previousBooking == null &&
+      initialServiceId != null &&
+      serviceCatalog.any((service) => service.id == initialServiceId)) {
+    selectedServices.add(initialServiceId);
+  }
   for (final address in addresses) {
     if (address.detail == previousBooking?.location) {
       selectedAddress = address.detail;
@@ -1183,7 +1189,11 @@ Future<void> openBookingForm(
                         final columns = constraints.maxWidth >= 600 ? 2 : 1;
                         final methods = <(String, String, String)>[
                           if (controller.walletEnabled)
-                            ('wallet', 'Wallet', 'Use your Urban Tanker balance'),
+                            (
+                              'wallet',
+                              'Wallet',
+                              'Use your Urban Tanker balance'
+                            ),
                           if (controller.onlinePaymentsEnabled)
                             (
                               'gateway',

@@ -142,7 +142,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     }
   }
 
-  Future<void> _createBooking({Booking? previousBooking}) async {
+  Future<void> _createBooking({
+    Booking? previousBooking,
+    String? serviceId,
+  }) async {
     if (_bookingFormOpening || _services.isEmpty) return;
     setState(() => _bookingFormOpening = true);
     try {
@@ -151,6 +154,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         controller: widget.controller,
         serviceCatalog: _services,
         previousBooking: previousBooking,
+        initialServiceId: serviceId,
         onReturnHome: () {
           if (mounted) setState(() => _index = 0);
         },
@@ -282,6 +286,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             error: _serviceError,
             onRetry: () => _loadServices(bypassCache: true),
             onBook: _services.isEmpty ? null : _createBooking,
+            onSelectService: (service) => _createBooking(serviceId: service.id),
             onOpenBookings: () => _selectPage(ShellPage.bookings),
             onOpenAccount: () => _selectPage(ShellPage.account),
           ),

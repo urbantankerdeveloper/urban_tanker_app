@@ -95,10 +95,10 @@ class LoadingState extends StatelessWidget {
     return _StateLayout(
       visual: LottieOrIcon(
         asset: 'assets/lottie/loading_water.json',
-        size: 72,
+        size: 48,
         // A still icon under reduced motion, since a spinner never stops.
         fallback: AppMotion.reduced(context)
-            ? Icon(Icons.water_drop_outlined, size: 40, color: colors.primary)
+            ? Icon(Icons.water_drop_outlined, size: 28, color: colors.primary)
             : SizedBox.square(
                 dimension: 32,
                 child: CircularProgressIndicator(

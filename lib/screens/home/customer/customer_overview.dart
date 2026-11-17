@@ -18,6 +18,7 @@ class CustomerOverview extends ConsumerWidget {
     required this.loading,
     required this.onRetry,
     required this.onBook,
+    required this.onSelectService,
     required this.onOpenBookings,
     required this.onOpenAccount,
     super.key,
@@ -32,6 +33,7 @@ class CustomerOverview extends ConsumerWidget {
 
   /// Null while services are loading or empty; disables every booking entry.
   final VoidCallback? onBook;
+  final ValueChanged<TankerService> onSelectService;
   final VoidCallback onOpenBookings;
   final VoidCallback onOpenAccount;
 
@@ -61,7 +63,6 @@ class CustomerOverview extends ConsumerWidget {
             greeting: 'Good to see you,',
             title: user.name.split(' ').first,
             avatarName: user.name,
-            leading: const PulsingLogoBadge(),
           ),
           const SizedBox(height: AppSpace.xl),
           _HeroCard(active: active, onBook: onBook, onOpen: onOpenBookings),
@@ -101,7 +102,7 @@ class CustomerOverview extends ConsumerWidget {
             loading: loading,
             error: error,
             onRetry: onRetry,
-            onBook: onBook,
+            onSelectService: onSelectService,
           ),
           const SizedBox(height: AppSpace.xxl),
           _RecentBookings(
@@ -232,14 +233,14 @@ class _ServiceGrid extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onRetry,
-    required this.onBook,
+    required this.onSelectService,
   });
 
   final List<TankerService> services;
   final bool loading;
   final String? error;
   final Future<void> Function() onRetry;
-  final VoidCallback? onBook;
+  final ValueChanged<TankerService> onSelectService;
 
   @override
   Widget build(BuildContext context) {
@@ -267,7 +268,7 @@ class _ServiceGrid extends StatelessWidget {
       count: services.length,
       builder: (context, index) => _ServiceTile(
         service: services[index],
-        onTap: onBook,
+        onTap: () => onSelectService(services[index]),
       ),
     );
   }

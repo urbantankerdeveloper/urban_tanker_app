@@ -257,8 +257,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Center(child: BrandLogo()),
-                    const SizedBox(height: AppSpace.lg),
                     Text(
                       'URBAN TANKER',
                       textAlign: TextAlign.center,

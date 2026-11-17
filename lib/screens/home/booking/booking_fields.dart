@@ -113,16 +113,107 @@ class DeliveryLocationField extends StatelessWidget {
   final VoidCallback onChanged;
 
   @override
-  Widget build(BuildContext context) => TextFormField(
-        controller: fields.location,
-        maxLength: 200,
-        decoration: InputDecoration(
-          labelText: 'Delivery location',
-          helperText: fields.latitude == null
-              ? 'Chennai addresses only'
-              : 'Chennai location selected',
-          prefixIcon: IconButton(
-            tooltip: 'Choose delivery location',
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextFormField(
+            controller: fields.location,
+            maxLength: 200,
+            decoration: InputDecoration(
+              labelText: 'Delivery location',
+              helperText: fields.latitude == null
+                  ? 'Chennai addresses only'
+                  : 'Chennai location selected',
+              suffixIcon: IconButton(
+                tooltip: 'Use current location',
+                onPressed: () async {
+                  try {
+                    if (!await Geolocator.isLocationServiceEnabled()) {
+                      if (!context.mounted) return;
+                      await showAppPermissionDialog(
+                        context,
+                        message:
+                            'Turn on location services to use your current location.',
+                        onOpenSettings: () {
+                          unawaited(Geolocator.openLocationSettings());
+                        },
+                      );
+                      return;
+                    }
+                    var permission = await Geolocator.checkPermission();
+                    if (permission == LocationPermission.denied) {
+                      permission = await Geolocator.requestPermission();
+                    }
+                    if (permission == LocationPermission.deniedForever) {
+                      if (!context.mounted) return;
+                      await showAppPermissionDialog(
+                        context,
+                        message:
+                            'Allow location access in device settings to use your current location.',
+                        onOpenSettings: () {
+                          unawaited(Geolocator.openAppSettings());
+                        },
+                      );
+                      return;
+                    }
+                    if (permission == LocationPermission.denied) {
+                      if (context.mounted) {
+                        showAppSnack(
+                          context,
+                          'Location permission is needed to use your current location.',
+                        );
+                      }
+                      return;
+                    }
+                    final position = await Geolocator.getCurrentPosition();
+                    if (!context.mounted) return;
+                    if (!isChennaiLocation(
+                      latitude: position.latitude,
+                      longitude: position.longitude,
+                    )) {
+                      throw const FormatException(
+                        'This location is undeliverable. Select a location inside Chennai.',
+                      );
+                    }
+                    await _applyLocation(
+                      context,
+                      LatLng(position.latitude, position.longitude),
+                    );
+                  } catch (error) {
+                    if (!context.mounted) return;
+                    showAppSnack(
+                      context,
+                      friendlyError(error),
+                      variant: AppSnackVariant.error,
+                    );
+                  }
+                },
+                icon: const Icon(Icons.my_location_outlined),
+              ),
+              errorMaxLines: 2,
+            ),
+            validator: (value) {
+              final text = value?.trim() ?? '';
+              if (text.length < 3) return 'Enter a delivery location.';
+              if (!isChennaiLocation(
+                address: text,
+                latitude: fields.latitude,
+                longitude: fields.longitude,
+              )) {
+                return 'This location is undeliverable. Choose Chennai.';
+              }
+              return null;
+            },
+            onChanged: (_) {
+              fields.latitude = null;
+              fields.longitude = null;
+              onChanged();
+            },
+          ),
+          const SizedBox(height: AppSpace.sm),
+          SecondaryButton(
+            label: 'Choose on map',
+            icon: Icons.map_outlined,
             onPressed: () async {
               final coordinate = await showDialog<LatLng>(
                 context: context,
@@ -134,91 +225,8 @@ class DeliveryLocationField extends StatelessWidget {
               if (coordinate == null || !context.mounted) return;
               await _applyLocation(context, coordinate);
             },
-            icon: const Icon(Icons.map_outlined),
           ),
-          suffixIcon: IconButton(
-            tooltip: 'Use current location',
-            onPressed: () async {
-              try {
-                if (!await Geolocator.isLocationServiceEnabled()) {
-                  if (!context.mounted) return;
-                  await showAppPermissionDialog(
-                    context,
-                    message:
-                        'Turn on location services to use your current location.',
-                    onOpenSettings: () {
-                      unawaited(Geolocator.openLocationSettings());
-                    },
-                  );
-                  return;
-                }
-                var permission = await Geolocator.checkPermission();
-                if (permission == LocationPermission.denied) {
-                  permission = await Geolocator.requestPermission();
-                }
-                if (permission == LocationPermission.deniedForever) {
-                  if (!context.mounted) return;
-                  await showAppPermissionDialog(
-                    context,
-                    message:
-                        'Allow location access in device settings to use your current location.',
-                    onOpenSettings: () {
-                      unawaited(Geolocator.openAppSettings());
-                    },
-                  );
-                  return;
-                }
-                if (permission == LocationPermission.denied) {
-                  if (context.mounted) {
-                    showAppSnack(context,
-                        'Location permission is needed to use your current location.');
-                  }
-                  return;
-                }
-                final position = await Geolocator.getCurrentPosition();
-                if (!context.mounted) return;
-                if (!isChennaiLocation(
-                  latitude: position.latitude,
-                  longitude: position.longitude,
-                )) {
-                  throw const FormatException(
-                    'This location is undeliverable. Select a location inside Chennai.',
-                  );
-                }
-                await _applyLocation(
-                  context,
-                  LatLng(position.latitude, position.longitude),
-                );
-              } catch (error) {
-                if (!context.mounted) return;
-                showAppSnack(
-                  context,
-                  friendlyError(error),
-                  variant: AppSnackVariant.error,
-                );
-              }
-            },
-            icon: const Icon(Icons.my_location_outlined),
-          ),
-          errorMaxLines: 2,
-        ),
-        validator: (value) {
-          final text = value?.trim() ?? '';
-          if (text.length < 3) return 'Enter a delivery location.';
-          if (!isChennaiLocation(
-            address: text,
-            latitude: fields.latitude,
-            longitude: fields.longitude,
-          )) {
-            return 'This location is undeliverable. Choose Chennai.';
-          }
-          return null;
-        },
-        onChanged: (_) {
-          fields.latitude = null;
-          fields.longitude = null;
-          onChanged();
-        },
+        ],
       );
 
   Future<void> _applyLocation(BuildContext context, LatLng coordinate) async {

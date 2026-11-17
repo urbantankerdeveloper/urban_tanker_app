@@ -137,6 +137,13 @@ void main() {
     expect(find.byType(LottieOrIcon), findsOneWidget);
   });
 
+  testWidgets('loading state uses a compact illustration', (tester) async {
+    await tester.pumpWidget(_host(const LoadingState()));
+
+    expect(tester.getSize(find.byType(LottieOrIcon)).width, 48);
+    expect(tester.getSize(find.byType(LottieOrIcon)).height, 48);
+  });
+
   testWidgets('SegmentedTabs reports the tapped segment', (tester) async {
     int? picked;
     await tester.pumpWidget(

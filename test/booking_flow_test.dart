@@ -118,6 +118,49 @@ void main() {
     expect(find.text('Send OTP'), findsNothing);
   });
 
+  testWidgets('home-selected service is preselected in the booking form',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await tester.runAsync(SharedPreferences.getInstance);
+    final controller = AppController(
+      api: _FakeApi(),
+      preferences: preferences!,
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => openBookingForm(
+                context,
+                controller: controller,
+                serviceCatalog: const [_tanker],
+                initialServiceId: _tanker.id,
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).first,
+      '9876543210',
+    );
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Step 2 of 6: Services'), findsOneWidget);
+    expect(find.byTooltip('Remove Water tanker'), findsOneWidget);
+  });
+
   testWidgets('booking falls back to the registered email when SMS is off',
       (tester) async {
     tester.view.physicalSize = const Size(800, 1600);
