@@ -16,7 +16,12 @@ class _FakeApi extends ApiClient {
   String accountPhone = '';
   bool accountPhoneVerified = false;
   String? fallbackPhone;
+  String? requestedBookingEmail;
   String? verifiedEmail;
+  String? verifiedChallengeId;
+  String? verifiedChannel;
+  String? sentPhoneChallengeId;
+  String? verifiedEmailChallengeId;
 
   @override
   Future<PhoneVerificationState> phoneVerification() async =>
@@ -34,8 +39,11 @@ class _FakeApi extends ApiClient {
       ({
         String? challengeId,
         String? emailChallengeId,
+        bool phoneOtpSent,
+        bool emailOtpSent,
         int resendAfterSeconds
       })> requestBookingOtp({required String phone, String? email}) async {
+    requestedBookingEmail = email;
     if (mobileOtpUnavailable) {
       throw const ApiException(
         'Mobile verification is not configured yet.',
@@ -44,7 +52,9 @@ class _FakeApi extends ApiClient {
     }
     return (
       challengeId: 'phone-challenge',
-      emailChallengeId: null,
+      emailChallengeId: email == null ? null : 'email-challenge',
+      phoneOtpSent: true,
+      emailOtpSent: email != null,
       resendAfterSeconds: 30,
     );
   }
@@ -58,15 +68,21 @@ class _FakeApi extends ApiClient {
   }
 
   @override
-  Future<void> verifyPhoneOtp({
+  Future<String> verifyPhoneOtp({
     required String phone,
-    String? challengeId,
-    String? otp,
+    required String challengeId,
+    required String otp,
+    required String verificationChannel,
     String? email,
+    String? phoneChallengeId,
     String? emailChallengeId,
-    String? emailOtp,
   }) async {
     verifiedEmail = email;
+    verifiedChallengeId = challengeId;
+    verifiedChannel = verificationChannel;
+    sentPhoneChallengeId = phoneChallengeId;
+    verifiedEmailChallengeId = emailChallengeId;
+    return emailChallengeId ?? challengeId;
   }
 }
 
@@ -177,6 +193,7 @@ void main() {
       role: WorkspaceRole.customer,
       email: 'registered@example.com',
     );
+    controller.featureFlags = {'booking_email_otp_enabled': false};
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -210,15 +227,95 @@ void main() {
     expect(
       find.byWidgetPredicate(
         (widget) =>
-            widget is TextField && widget.decoration?.labelText == 'Email code',
+            widget is TextField &&
+            widget.decoration?.labelText == '6-digit code',
       ),
       findsOneWidget,
     );
 
-    await tester.enterText(find.byType(TextFormField).last, '123456');
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == '6-digit code',
+      ),
+      '123456',
+    );
     await tester.tap(find.text('Verify OTP'));
     await tester.pumpAndSettle();
     expect(api.verifiedEmail, 'registered@example.com');
+    expect(api.verifiedChallengeId, 'registered-email-challenge');
+    expect(api.verifiedChannel, 'email');
+    expect(find.text('Number verified'), findsOneWidget);
+  });
+
+  testWidgets('booking verifies with a code sent to the entered email',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await tester.runAsync(SharedPreferences.getInstance);
+    final api = _FakeApi();
+    final controller = AppController(api: api, preferences: preferences!);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => openBookingForm(
+                context,
+                controller: controller,
+                serviceCatalog: const [_tanker],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, '9876543210');
+    await tester.enterText(
+      find.byType(TextFormField).at(1),
+      'booking@example.com',
+    );
+    await tester.tap(find.text('Send OTP'));
+    await tester.pumpAndSettle();
+
+    expect(api.requestedBookingEmail, 'booking@example.com');
+    expect(find.text('Code sent to'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == '6-digit code',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byType(DropdownButtonFormField<bool>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Email').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == '6-digit code',
+      ),
+      '123456',
+    );
+    await tester.tap(find.text('Verify OTP'));
+    await tester.pumpAndSettle();
+
+    expect(api.verifiedEmail, 'booking@example.com');
+    expect(api.verifiedChallengeId, 'email-challenge');
+    expect(api.verifiedChannel, 'email');
+    expect(api.sentPhoneChallengeId, 'phone-challenge');
+    expect(api.verifiedEmailChallengeId, 'email-challenge');
     expect(find.text('Number verified'), findsOneWidget);
   });
 

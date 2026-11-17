@@ -161,6 +161,45 @@ void main() {
     expect(state.required, isFalse);
   });
 
+  test('booking email OTP uses the shared challenge and code fields', () async {
+    http.Request? captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        jsonEncode({
+          'verified': true,
+          'challengeId': 'email-challenge',
+          'verificationChannel': 'email',
+        }),
+        200,
+      );
+    });
+
+    final verifiedChallengeId =
+        await _SignedInApiClient(client: client).verifyPhoneOtp(
+      phone: '+91 98765 43210',
+      challengeId: 'email-challenge',
+      otp: '123456',
+      verificationChannel: 'email',
+      email: ' Customer@Example.com ',
+      phoneChallengeId: 'phone-challenge',
+      emailChallengeId: 'email-challenge',
+    );
+
+    expect(verifiedChallengeId, 'email-challenge');
+    expect(captured?.method, 'POST');
+    expect(captured?.url.path, '/api/auth/guest/verify-phone');
+    expect(jsonDecode(captured!.body), {
+      'phone': '9876543210',
+      'challengeId': 'email-challenge',
+      'otp': '123456',
+      'verificationChannel': 'email',
+      'email': 'customer@example.com',
+      'phoneChallengeId': 'phone-challenge',
+      'emailChallengeId': 'email-challenge',
+    });
+  });
+
   test('coupon validation returns the details used by the booking UI',
       () async {
     final client = MockClient((request) async {

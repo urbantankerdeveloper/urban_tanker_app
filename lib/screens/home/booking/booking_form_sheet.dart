@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import '../../../app/app_controller.dart';
-import '../../../app/auth_feature_flags.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/account.dart';
 import '../../../models/booking.dart';
@@ -10,6 +9,7 @@ import '../../../models/booking_service_details.dart';
 import '../../../models/booking_service_form.dart';
 import '../../../models/service.dart';
 import '../../../services/api_client.dart';
+import '../../../services/email_rules.dart';
 import '../../../services/friendly_error.dart';
 import '../../../services/payment/online_payment_flow.dart';
 import '../../../services/payment/payment_checkout.dart';
@@ -109,15 +109,16 @@ class _BookingPhoneVerificationDialogState
       _error = null;
     });
     try {
-      await widget.api.verifyPhoneOtp(
+      final verifiedChallengeId = await widget.api.verifyPhoneOtp(
         phone: phone,
         challengeId: challengeId,
         otp: _otp.text,
+        verificationChannel: 'phone',
       );
       if (mounted) {
         Navigator.pop(
           context,
-          (phone: phone, challengeId: challengeId),
+          (phone: phone, challengeId: verifiedChallengeId),
         );
       }
     } catch (error) {
@@ -235,8 +236,8 @@ Future<void> openBookingForm(
       TextEditingController(text: previousBooking?.notes ?? '');
   final phoneController = TextEditingController();
   final otpController = TextEditingController();
-  final emailController = TextEditingController();
-  final emailOtpController = TextEditingController();
+  final emailController =
+      TextEditingController(text: controller.user?.email ?? '');
   String? selectedAddress;
   final previousDetails = {
     for (final detail in previousBooking?.services ?? <BookingServiceDetails>[])
@@ -316,6 +317,10 @@ Future<void> openBookingForm(
   String? bookingFormError;
   String? phoneChallengeId;
   String? emailChallengeId;
+  var phoneOtpSent = false;
+  var emailOtpSent = false;
+  var verifyBookingByEmail = false;
+  final bookingEmailOtpEnabled = controller.bookingEmailOtpEnabled;
   String? verifiedPhone;
   var phoneVerified = false;
   var phoneVerificationRequired = true;
@@ -344,7 +349,6 @@ Future<void> openBookingForm(
     phoneController.dispose();
     otpController.dispose();
     emailController.dispose();
-    emailOtpController.dispose();
     for (final fields in serviceFields.values) {
       fields.dispose();
     }
@@ -413,7 +417,6 @@ Future<void> openBookingForm(
         phoneController,
         otpController,
         emailController,
-        emailOtpController,
         for (final fields in serviceFields.values) ...[
           fields.quantity,
           fields.waterType,
@@ -867,8 +870,10 @@ Future<void> openBookingForm(
                         if (!phoneVerified) {
                           phoneChallengeId = null;
                           emailChallengeId = null;
+                          phoneOtpSent = false;
+                          emailOtpSent = false;
+                          verifyBookingByEmail = false;
                           otpController.clear();
-                          emailOtpController.clear();
                         }
                         bookingFormError = null;
                       }),
@@ -889,6 +894,32 @@ Future<void> openBookingForm(
                       'Add a mobile number to your account before booking.',
                       style: TextStyle(color: colors.danger.fg),
                     ),
+                  if (bookingEmailOtpEnabled) ...[
+                    const SizedBox(height: AppSpace.md),
+                    TextFormField(
+                      controller: emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Email address',
+                        helperText:
+                            'Optional. A booking verification code can be sent here.',
+                      ),
+                      validator: (value) {
+                        final email = value?.trim() ?? '';
+                        return email.isEmpty || isValidEmail(email)
+                            ? null
+                            : 'Enter a valid email address.';
+                      },
+                      onChanged: (_) => setSheetState(() {
+                        emailChallengeId = null;
+                        emailOtpSent = false;
+                        verifyBookingByEmail = false;
+                        otpController.clear();
+                        bookingFormError = null;
+                      }),
+                    ),
+                  ],
                   if (loadingPhoneVerification)
                     const Padding(
                       padding: EdgeInsets.only(top: AppSpace.md),
@@ -918,77 +949,119 @@ Future<void> openBookingForm(
                       !phoneVerified &&
                       !loadingPhoneVerification) ...[
                     const SizedBox(height: AppSpace.md),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: emailChallengeId == null
-                                ? otpController
-                                : emailOtpController,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              labelText: emailChallengeId != null
-                                  ? 'Email code'
-                                  : AuthFeatureFlags.emailOtp
-                                      ? 'SMS code'
-                                      : 'OTP',
-                            ),
+                    if (phoneOtpSent &&
+                        phoneChallengeId != null &&
+                        emailOtpSent &&
+                        emailChallengeId != null)
+                      DropdownButtonFormField<bool>(
+                        key: ValueKey<bool>(verifyBookingByEmail),
+                        initialValue: verifyBookingByEmail,
+                        decoration:
+                            const InputDecoration(labelText: 'Code sent to'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: false,
+                            child: Text('Mobile'),
                           ),
+                          DropdownMenuItem(
+                            value: true,
+                            child: Text('Email'),
+                          ),
+                        ],
+                        onChanged: (value) => setSheetState(
+                          () => verifyBookingByEmail = value ?? false,
                         ),
-                        const SizedBox(width: AppSpace.sm),
-                        OutlinedButton(
-                          onPressed: () async {
+                      ),
+                    if ((phoneOtpSent && phoneChallengeId != null) ||
+                        (emailOtpSent && emailChallengeId != null))
+                      TextFormField(
+                        controller: otpController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: '6-digit code',
+                          helperText: verifyBookingByEmail
+                              ? 'Enter the code sent to your email.'
+                              : 'Enter the code sent to your mobile.',
+                        ),
+                      ),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final email = bookingEmailOtpEnabled &&
+                                  emailController.text.trim().isNotEmpty
+                              ? normalizeEmail(emailController.text)
+                              : null;
+                          if (email != null && !isValidEmail(email)) {
+                            setSheetState(() => bookingFormError =
+                                'Enter a valid email address.');
+                            return;
+                          }
+                          try {
+                            final normalized =
+                                normalizeIndianPhone(phoneController.text);
+                            final challenge =
+                                await controller.api.requestBookingOtp(
+                              phone: normalized,
+                              email: email,
+                            );
+                            setSheetState(() {
+                              phoneChallengeId = challenge.challengeId;
+                              emailChallengeId = challenge.emailChallengeId;
+                              phoneOtpSent = challenge.phoneOtpSent;
+                              emailOtpSent = challenge.emailOtpSent;
+                              verifyBookingByEmail = challenge.emailOtpSent &&
+                                  !challenge.phoneOtpSent;
+                              otpController.clear();
+                              final channels = [
+                                if (phoneOtpSent) 'mobile',
+                                if (emailOtpSent) 'email',
+                              ];
+                              bookingFormError = channels.isEmpty
+                                  ? 'A verification code could not be sent.'
+                                  : 'Verification code sent to ${channels.join(' and ')}.';
+                            });
+                          } catch (error) {
+                            final accountEmail = controller.user?.email;
+                            final canUseEmailFallback = !bookingEmailOtpEnabled &&
+                                accountEmail != null &&
+                                accountEmail.trim().isNotEmpty &&
+                                error is ApiException &&
+                                error.statusCode == 503 &&
+                                error.message ==
+                                    'Mobile verification is not configured yet.';
+                            if (!canUseEmailFallback) {
+                              setSheetState(() =>
+                                  bookingFormError = friendlyError(error));
+                              return;
+                            }
                             try {
-                              final normalized =
-                                  normalizeIndianPhone(phoneController.text);
-                              final challenge =
-                                  await controller.api.requestBookingOtp(
-                                phone: normalized,
+                              final challengeId = await controller.api
+                                  .requestRegisteredBookingEmailOtp(
+                                phone: normalizeIndianPhone(
+                                  phoneController.text,
+                                ),
                               );
                               setSheetState(() {
-                                phoneChallengeId = challenge.challengeId;
-                                emailChallengeId = challenge.emailChallengeId;
-                                bookingFormError =
-                                    'OTP sent. Enter it to verify this number.';
+                                emailController.text = accountEmail.trim();
+                                phoneChallengeId = null;
+                                emailChallengeId = challengeId;
+                                phoneOtpSent = false;
+                                emailOtpSent = true;
+                                verifyBookingByEmail = true;
+                                otpController.clear();
+                                bookingFormError = 'SMS is unavailable. A '
+                                    'verification code was sent to your '
+                                    'registered email.';
                               });
-                            } catch (error) {
-                              final accountEmail = controller.user?.email;
-                              final canUseEmailFallback = accountEmail !=
-                                      null &&
-                                  accountEmail.trim().isNotEmpty &&
-                                  error is ApiException &&
-                                  error.statusCode == 503 &&
-                                  error.message ==
-                                      'Mobile verification is not configured yet.';
-                              if (!canUseEmailFallback) {
-                                setSheetState(() =>
-                                    bookingFormError = friendlyError(error));
-                                return;
-                              }
-                              try {
-                                final challengeId = await controller.api
-                                    .requestRegisteredBookingEmailOtp(
-                                  phone: normalizeIndianPhone(
-                                    phoneController.text,
-                                  ),
-                                );
-                                setSheetState(() {
-                                  emailController.text = accountEmail.trim();
-                                  phoneChallengeId = null;
-                                  emailChallengeId = challengeId;
-                                  bookingFormError = 'SMS is unavailable. A '
-                                      'verification code was sent to your '
-                                      'registered email.';
-                                });
-                              } catch (fallbackError) {
-                                setSheetState(() => bookingFormError =
-                                    friendlyError(fallbackError));
-                              }
+                            } catch (fallbackError) {
+                              setSheetState(() => bookingFormError =
+                                  friendlyError(fallbackError));
                             }
-                          },
-                          child: const Text('Send OTP'),
-                        ),
-                      ],
+                          }
+                        },
+                        child: const Text('Send OTP'),
+                      ),
                     ),
                     if (bookingFormError != null) ...[
                       const SizedBox(height: AppSpace.sm),
@@ -1002,39 +1075,53 @@ Future<void> openBookingForm(
                       'Verify this shared number before reviewing your booking.',
                       style: theme.textTheme.bodySmall,
                     ),
-                    if (phoneChallengeId != null || emailChallengeId != null)
+                    if ((phoneOtpSent && phoneChallengeId != null) ||
+                        (emailOtpSent && emailChallengeId != null))
                       Align(
                         alignment: AlignmentDirectional.centerEnd,
                         child: TextButton(
                           onPressed: () async {
-                            final enteredPhoneOtp = phoneChallengeId != null &&
-                                otpController.text.trim().isNotEmpty;
-                            final enteredEmailOtp = emailChallengeId != null &&
-                                emailOtpController.text.trim().isNotEmpty;
-                            if (!enteredPhoneOtp && !enteredEmailOtp) {
+                            final enteredEmailOtp = emailOtpSent &&
+                                emailChallengeId != null &&
+                                verifyBookingByEmail;
+                            final selectedChallengeId = enteredEmailOtp
+                                ? emailChallengeId
+                                : phoneOtpSent
+                                    ? phoneChallengeId
+                                    : null;
+                            final otp = otpController.text.trim();
+                            if (selectedChallengeId == null ||
+                                !RegExp(r'^\d{6}$').hasMatch(otp)) {
                               setSheetState(
                                 () => bookingFormError =
-                                    'Enter the code sent to your phone or email.',
+                                    'Enter the 6-digit code sent to your selected channel.',
                               );
                               return;
                             }
                             try {
-                              await controller.api.verifyPhoneOtp(
+                              final primaryChallengeId = enteredEmailOtp
+                                  ? emailChallengeId!
+                                  : phoneChallengeId!;
+                              final verifiedChallengeId =
+                                  await controller.api.verifyPhoneOtp(
                                 phone: phoneController.text,
-                                challengeId:
-                                    enteredPhoneOtp ? phoneChallengeId : null,
-                                otp:
-                                    enteredPhoneOtp ? otpController.text : null,
-                                email: enteredEmailOtp
+                                challengeId: primaryChallengeId,
+                                otp: otp,
+                                verificationChannel:
+                                    enteredEmailOtp ? 'email' : 'phone',
+                                email: emailOtpSent && emailChallengeId != null
                                     ? emailController.text.trim()
                                     : null,
-                                emailChallengeId:
-                                    enteredEmailOtp ? emailChallengeId : null,
-                                emailOtp: enteredEmailOtp
-                                    ? emailOtpController.text
-                                    : null,
+                                phoneChallengeId: phoneChallengeId,
+                                emailChallengeId: emailChallengeId,
                               );
                               setSheetState(() {
+                                phoneChallengeId = verifiedChallengeId;
+                                emailChallengeId = null;
+                                phoneOtpSent = false;
+                                emailOtpSent = false;
+                                verifyBookingByEmail = false;
+                                otpController.clear();
                                 phoneVerified = true;
                                 verifiedPhone =
                                     normalizeIndianPhone(phoneController.text);

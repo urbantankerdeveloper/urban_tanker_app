@@ -182,6 +182,8 @@ class ApiClient implements ApiTransport {
       ({
         String? challengeId,
         String? emailChallengeId,
+        bool phoneOtpSent,
+        bool emailOtpSent,
         int resendAfterSeconds
       })> requestBookingOtp(
           {required String phone, String? email}) =>
@@ -190,21 +192,23 @@ class ApiClient implements ApiTransport {
   Future<String> requestRegisteredBookingEmailOtp({required String phone}) =>
       _auth.requestRegisteredBookingEmailOtp(phone: phone);
 
-  Future<void> verifyPhoneOtp({
+  Future<String> verifyPhoneOtp({
     required String phone,
-    String? challengeId,
-    String? otp,
+    required String challengeId,
+    required String otp,
+    required String verificationChannel,
     String? email,
+    String? phoneChallengeId,
     String? emailChallengeId,
-    String? emailOtp,
   }) =>
       _auth.verifyPhoneOtp(
         phone: phone,
         challengeId: challengeId,
         otp: otp,
+        verificationChannel: verificationChannel,
         email: email,
+        phoneChallengeId: phoneChallengeId,
         emailChallengeId: emailChallengeId,
-        emailOtp: emailOtp,
       );
 
   Future<String> requestEmailAuthOtp(String email) =>

@@ -87,6 +87,8 @@ class AppController extends ChangeNotifier {
   bool get addressGeocodingEnabled =>
       featureFlags['address_geocoding_enabled'] ?? false;
   bool get walletEnabled => featureFlags['wallet_enabled'] ?? false;
+  bool get bookingEmailOtpEnabled =>
+      featureFlags['booking_email_otp_enabled'] ?? true;
 
   static Future<AppController> create() async {
     final preferences = await SharedPreferences.getInstance();

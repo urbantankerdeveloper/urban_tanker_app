@@ -182,12 +182,14 @@ class AuthApi {
     return decoded['challengeId'] as String;
   }
 
-  /// Sends the booking code to the phone and, when [email] is given, a second
-  /// code to the email. Either challenge can be null if that channel is off.
+  /// Sends the booking code to the phone and, when [email] is given, to email.
+  /// Either challenge can be null when that channel is unavailable.
   Future<
       ({
         String? challengeId,
         String? emailChallengeId,
+        bool phoneOtpSent,
+        bool emailOtpSent,
         int resendAfterSeconds
       })> requestBookingOtp({required String phone, String? email}) async {
     final normalized = normalizeIndianPhone(phone);
@@ -216,9 +218,14 @@ class AuthApi {
     if (challengeId == null && emailChallengeId == null) {
       throw const FormatException('The booking OTP response was invalid.');
     }
+    final phoneOtpSent = decoded['phoneOtpSent'];
+    final emailOtpSent = decoded['emailOtpSent'];
     return (
       challengeId: challengeId,
       emailChallengeId: emailChallengeId,
+      phoneOtpSent: phoneOtpSent is bool ? phoneOtpSent : challengeId != null,
+      emailOtpSent:
+          emailOtpSent is bool ? emailOtpSent : emailChallengeId != null,
       resendAfterSeconds: (decoded['resendAfterSeconds'] as num?)?.toInt() ??
           _defaultResendAfterSeconds,
     );
@@ -245,26 +252,27 @@ class AuthApi {
     return decoded['emailChallengeId'] as String;
   }
 
-  /// Verifies the SMS code, the email code, or both. Send only the pair the
-  /// user entered; each pair that is sent must be correct.
-  Future<void> verifyPhoneOtp({
+  /// Verifies the selected booking code using the same fields for either channel.
+  Future<String> verifyPhoneOtp({
     required String phone,
-    String? challengeId,
-    String? otp,
+    required String challengeId,
+    required String otp,
+    required String verificationChannel,
     String? email,
+    String? phoneChallengeId,
     String? emailChallengeId,
-    String? emailOtp,
   }) async {
     final response = await _api.request(
       'POST',
       '/auth/guest/verify-phone',
       body: {
         'phone': normalizeIndianPhone(phone),
-        if (challengeId != null) 'challengeId': challengeId,
-        if (otp != null) 'otp': otp.trim(),
+        'challengeId': challengeId,
+        'otp': otp.trim(),
+        'verificationChannel': verificationChannel,
         if (email != null) 'email': normalizeEmail(email),
+        if (phoneChallengeId != null) 'phoneChallengeId': phoneChallengeId,
         if (emailChallengeId != null) 'emailChallengeId': emailChallengeId,
-        if (emailOtp != null) 'emailOtp': emailOtp.trim(),
       },
       retry: false,
     );
@@ -272,6 +280,9 @@ class AuthApi {
     if (decoded is! Map<String, dynamic> || decoded['verified'] != true) {
       throw const FormatException('Phone verification was not confirmed.');
     }
+    return decoded['challengeId'] is String
+        ? decoded['challengeId'] as String
+        : challengeId;
   }
 
   /// Sends a one-time code to [email]. Returns the challenge the code belongs to.
