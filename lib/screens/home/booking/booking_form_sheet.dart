@@ -491,7 +491,8 @@ Future<void> openBookingForm(
                     .firstWhere((service) => service.id == id)
                     .name,
               );
-              while (context.mounted) {
+              while (true) {
+                if (!context.mounted) return;
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (dialogContext) => AppDialog(
@@ -613,6 +614,7 @@ Future<void> openBookingForm(
                     rethrow;
                   }
                   bookingContactRecoveryUsed = true;
+                  if (!context.mounted) return;
                   final verified = await _showBookingPhoneVerificationDialog(
                     context,
                     controller.api,

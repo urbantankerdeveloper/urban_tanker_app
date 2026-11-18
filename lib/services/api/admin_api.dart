@@ -1,4 +1,5 @@
 import '../../models/account.dart';
+import '../../models/admin_enquiry_page.dart';
 import '../../models/dispatcher.dart';
 import '../../models/vendor.dart';
 import 'api_decode.dart';
@@ -344,6 +345,46 @@ class AdminApi {
     return _records(path, 'partner applications');
   }
 
+  Future<AdminEnquiryPage> adminEnquiries({
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    if (page < 1 || pageSize < 1 || pageSize > 100) {
+      throw ArgumentError('Invalid admin enquiry page.');
+    }
+    final response = await _api.request(
+      'GET',
+      _adminPath('/enquiries', {
+        'page': '$page',
+        'pageSize': '$pageSize',
+      }),
+    );
+    return AdminEnquiryPage.fromJson(
+      await mapResponse(response, 'admin enquiries'),
+    );
+  }
+
+  Future<AccountRecord> updateAdminEnquiry(
+    String id, {
+    required String status,
+    String? responseNote,
+  }) async {
+    final response = await _api.request(
+      'PATCH',
+      '/admin/enquiries/$id',
+      body: {
+        'status': status,
+        if (responseNote != null) 'response': responseNote,
+      },
+    );
+    _api.invalidateReadCache(path: '/admin/enquiries');
+    _api.invalidateReadCache(path: '/admin/enquiries/$id/history');
+    return AccountRecord(await mapResponse(response, 'admin enquiry update'));
+  }
+
+  Future<List<AccountRecord>> adminEnquiryHistory(String id) =>
+      _records('/admin/enquiries/$id/history', 'admin enquiry history');
+
   Future<AccountRecord> reviewPartnerApplication(
     String id, {
     required String status,
@@ -356,6 +397,9 @@ class AdminApi {
     });
     return AccountRecord(await mapResponse(response, 'partner review'));
   }
+
+  Future<List<AccountRecord>> partnerApplicationHistory(String id) => _records(
+      '/admin/partner-applications/$id/history', 'partner application history');
 
   Future<Map<String, dynamic>> adminReport(Map<String, dynamic> body) async {
     final response = await _api.request('POST', '/admin/reports', body: body);

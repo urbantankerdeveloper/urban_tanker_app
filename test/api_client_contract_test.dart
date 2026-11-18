@@ -66,6 +66,165 @@ void main() {
     );
   });
 
+  test('admin enquiries reads the authenticated paginated endpoint', () async {
+    final client = MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(request.url.path, '/api/admin/enquiries');
+      expect(request.url.queryParameters, {'page': '2', 'pageSize': '25'});
+      expect(request.headers['authorization'], 'Bearer access-token');
+      return http.Response(
+        jsonEncode({
+          'rows': [
+            {
+              'id': 'enquiry-1',
+              'subject': 'Borewell service',
+              'message': 'Proposed depth: 120 ft',
+              'status': 'new',
+            },
+          ],
+          'page': 2,
+          'pageSize': 25,
+          'total': 55,
+        }),
+        200,
+      );
+    });
+
+    final page = await _SignedInApiClient(client: client).adminEnquiries(
+      page: 2,
+      pageSize: 25,
+    );
+
+    expect(page.rows.single.title, 'Borewell service');
+    expect(page.rows.single.detail, 'Proposed depth: 120 ft');
+    expect(page.page, 2);
+    expect(page.pageSize, 25);
+    expect(page.total, 55);
+    expect(page.hasNextPage, isTrue);
+  });
+
+  test('admin enquiry status changes use the authenticated admin endpoint',
+      () async {
+    http.Request? captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        jsonEncode({
+          'id': 'enquiry-1',
+          'subject': 'Borewell service',
+          'message': 'Proposed depth: 120 ft',
+          'status': 'in_progress',
+          'response': 'Reviewing the site requirements.',
+        }),
+        200,
+      );
+    });
+
+    final updated = await _SignedInApiClient(client: client).updateAdminEnquiry(
+      'enquiry-1',
+      status: 'in_progress',
+      responseNote: 'Reviewing the site requirements.',
+    );
+
+    expect(captured?.method, 'PATCH');
+    expect(captured?.url.path, '/api/admin/enquiries/enquiry-1');
+    expect(captured?.headers['authorization'], 'Bearer access-token');
+    expect(jsonDecode(captured!.body), {
+      'status': 'in_progress',
+      'response': 'Reviewing the site requirements.',
+    });
+    expect(updated.status, 'in_progress');
+  });
+
+  test('admin enquiry history uses the authenticated history endpoint',
+      () async {
+    final client = MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(request.url.path, '/api/admin/enquiries/enquiry-1/history');
+      expect(request.headers['authorization'], 'Bearer access-token');
+      return http.Response(
+        jsonEncode([
+          {
+            'id': 'history-1',
+            'enquiry_id': 'enquiry-1',
+            'action': 'submitted',
+            'actor_type': 'public',
+            'new_status': 'new',
+            'created_at': '2026-11-18T03:00:00.000Z',
+          },
+        ]),
+        200,
+      );
+    });
+
+    final history = await _SignedInApiClient(client: client)
+        .adminEnquiryHistory('enquiry-1');
+
+    expect(history.single.data['action'], 'submitted');
+    expect(history.single.data['new_status'], 'new');
+  });
+
+  test('partner review supports requesting additional information', () async {
+    http.Request? captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        jsonEncode({
+          'id': 'partner-1',
+          'status': 'additional_info_required',
+          'review_note': 'Upload vehicle insurance.',
+        }),
+        200,
+      );
+    });
+
+    final updated =
+        await _SignedInApiClient(client: client).reviewPartnerApplication(
+      'partner-1',
+      status: 'additional_info_required',
+      reviewNote: 'Upload vehicle insurance.',
+    );
+
+    expect(captured?.method, 'PATCH');
+    expect(captured?.url.path, '/api/admin/partner-applications/partner-1');
+    expect(captured?.headers['authorization'], 'Bearer access-token');
+    expect(jsonDecode(captured!.body), {
+      'status': 'additional_info_required',
+      'reviewNote': 'Upload vehicle insurance.',
+    });
+    expect(updated.status, 'additional_info_required');
+  });
+
+  test('partner application history uses the authenticated admin endpoint',
+      () async {
+    final client = MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(
+        request.url.path,
+        '/api/admin/partner-applications/partner-1/history',
+      );
+      expect(request.headers['authorization'], 'Bearer access-token');
+      return http.Response(
+        jsonEncode([
+          {
+            'id': 'history-1',
+            'action': 'reviewed',
+            'old_status': 'submitted',
+            'new_status': 'additional_info_required',
+            'review_note': 'Upload vehicle insurance.',
+          },
+        ]),
+        200,
+      );
+    });
+
+    final history = await _SignedInApiClient(client: client)
+        .partnerApplicationHistory('partner-1');
+
+    expect(history.single.data['new_status'], 'additional_info_required');
+    expect(history.single.data['review_note'], 'Upload vehicle insurance.');
+  });
+
   test('a non-JSON response gives a generic message', () async {
     final client =
         MockClient((_) async => http.Response('<html>oops</html>', 200));

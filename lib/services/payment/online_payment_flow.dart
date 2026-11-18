@@ -83,7 +83,7 @@ final PaymentCheckout _checkout;
       return OnlinePaymentOutcome(
         OnlinePaymentStatus.verificationPending,
         message:
-            'Payment received, but we could not confirm it yet. Retry confirmation or check the payment status later.',
+            'Payment status is still being confirmed. Retry confirmation later; do not make another payment.',
         pendingSuccess: success,
       );
     }

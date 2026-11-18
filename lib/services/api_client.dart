@@ -2,6 +2,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
+import '../models/admin_enquiry_page.dart';
 import '../models/booking.dart';
 import '../models/booking_service_details.dart';
 import '../models/dispatcher.dart';
@@ -897,6 +898,26 @@ class ApiClient implements ApiTransport {
   Future<List<AccountRecord>> adminPartnerApplications({String? status}) =>
       _admin.adminPartnerApplications(status: status);
 
+  Future<AdminEnquiryPage> adminEnquiries({
+    int page = 1,
+    int pageSize = 50,
+  }) =>
+      _admin.adminEnquiries(page: page, pageSize: pageSize);
+
+  Future<AccountRecord> updateAdminEnquiry(
+    String id, {
+    required String status,
+    String? responseNote,
+  }) =>
+      _admin.updateAdminEnquiry(
+        id,
+        status: status,
+        responseNote: responseNote,
+      );
+
+  Future<List<AccountRecord>> adminEnquiryHistory(String id) =>
+      _admin.adminEnquiryHistory(id);
+
   Future<AccountRecord> reviewPartnerApplication(
     String id, {
     required String status,
@@ -907,6 +928,9 @@ class ApiClient implements ApiTransport {
         status: status,
         reviewNote: reviewNote,
       );
+
+  Future<List<AccountRecord>> partnerApplicationHistory(String id) =>
+      _admin.partnerApplicationHistory(id);
 
   Future<Map<String, dynamic>> adminReport(Map<String, dynamic> body) =>
       _admin.adminReport(body);
