@@ -247,6 +247,21 @@ class ApiCore {
     return uri.path.substring(basePath.length);
   }
 
+  int? _retryAfterSeconds(String? header) {
+    if (header == null) return null;
+    final seconds = int.tryParse(header.trim());
+    if (seconds != null) return seconds.clamp(0, 86400).toInt();
+    try {
+      return HttpDate.parse(header)
+          .difference(_clock())
+          .inSeconds
+          .clamp(0, 86400)
+          .toInt();
+    } on FormatException {
+      return null;
+    }
+  }
+
   Future<http.Response> sendRequest(
     http.BaseRequest request, {
     Duration timeout = const Duration(seconds: 20),
@@ -337,9 +352,20 @@ class ApiCore {
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       var message = ApiException.genericFailureMessage(response.statusCode);
+      String? code;
+      int? bodyRetryAfterSeconds;
       try {
         final decoded = decodeBody(response);
         if (decoded is Map<String, dynamic>) {
+          code = decoded['code'] as String?;
+          final retryAfter =
+              decoded['retryAfterSeconds'] ?? decoded['retryAfter'];
+          if (retryAfter is num) {
+            bodyRetryAfterSeconds = retryAfter.toInt().clamp(0, 86400).toInt();
+          } else if (retryAfter is String) {
+            bodyRetryAfterSeconds =
+                int.tryParse(retryAfter)?.clamp(0, 86400).toInt();
+          }
           if (decoded['error'] is String) {
             message = decoded['error'] as String;
           }
@@ -366,8 +392,16 @@ class ApiCore {
       } on FormatException {
         // The status code remains the useful error when the body is not JSON.
       }
-      throw ApiException(message, response.statusCode);
+      throw ApiException(
+        message,
+        response.statusCode,
+        code: code,
+        retryAfterSeconds:
+            _retryAfterSeconds(response.headers['retry-after']) ??
+                bodyRetryAfterSeconds,
+      );
     }
+
     return response;
   }
 

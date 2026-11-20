@@ -137,6 +137,31 @@ void main() {
       );
     });
 
+    test('preserves server action code and retry-after metadata', () async {
+      final api = _apiFor(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'code': 'PHONE_NOT_VERIFIED',
+              'error': 'Verify your phone first.',
+            }),
+            403,
+            headers: {'retry-after': '12'},
+          ),
+        ),
+      );
+
+      await expectLater(
+        api.request('POST', '/protected-action'),
+        throwsA(
+          isA<ApiException>()
+              .having((error) => error.code, 'code', 'PHONE_NOT_VERIFIED')
+              .having(
+                  (error) => error.retryAfterSeconds, 'retryAfterSeconds', 12),
+        ),
+      );
+    });
+
     test('a success body that is not JSON hides the raw text', () async {
       final api = _apiFor(
         MockClient((_) async => http.Response('<html>secret</html>', 200)),
