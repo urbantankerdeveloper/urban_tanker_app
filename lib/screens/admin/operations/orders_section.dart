@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/auth_feature_flags.dart';
 import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/account.dart';
@@ -11,8 +12,11 @@ import 'admin_common.dart';
 const _orderStatuses = <(String, String?)>[
   ('All', null),
   ('Pending', 'pending_vendor'),
+  ('Partially accepted', 'partially_accepted'),
   ('Accepted', 'accepted'),
+  ('In progress', 'in_progress'),
   ('En route', 'en_route'),
+  ('Partially completed', 'partially_completed'),
   ('Delivered', 'delivered'),
   ('Cancelled', 'cancelled'),
 ];
@@ -69,7 +73,15 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
               spacing: AppSpace.sm,
               runSpacing: AppSpace.sm,
               children: [
-                for (final (label, value) in _orderStatuses)
+                for (final (label, value) in _orderStatuses.where(
+                  (entry) =>
+                      AuthFeatureFlags.multiServiceOrders ||
+                      !const {
+                        'partially_accepted',
+                        'in_progress',
+                        'partially_completed',
+                      }.contains(entry.$2),
+                ))
                   ChoiceChip(
                     label: Text(label),
                     selected: _status == value,
@@ -175,6 +187,18 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
   Map<String, dynamic> _details(Map row) => {
         'Reference': row['reference'] ?? row['id'],
         'Status': row['status'] ?? '—',
+        if (AuthFeatureFlags.multiServiceOrders && row['items'] is List)
+          'Order items': (row['items'] as List)
+              .whereType<Map>()
+              .map((item) =>
+                  '${item['service_type_name'] ?? item['service_type_id'] ?? item['id']}: ${item['status'] ?? 'pending'}')
+              .join('\n'),
+        if (AuthFeatureFlags.multiServiceOrders &&
+            (row['fulfilments'] ?? row['fulfillments']) is List)
+          'Fulfilments': ((row['fulfilments'] ?? row['fulfillments']) as List)
+              .whereType<Map>()
+              .map((item) => item['status']?.toString() ?? 'pending_vendor')
+              .join(', '),
         'Service': row['service_code'] ?? '—',
         'Address': row['address_text'] ?? '—',
         'Coordinates': row['latitude'] == null || row['longitude'] == null

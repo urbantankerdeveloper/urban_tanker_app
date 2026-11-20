@@ -8,6 +8,9 @@ class TankerService {
     this.detailOptions = const [],
     this.waterTypeOptions = const [],
     this.tankerCountOptions = const [],
+    this.minQuantity,
+    this.maxQuantity,
+    this.unit,
     this.accent,
   });
 
@@ -19,9 +22,15 @@ class TankerService {
   final List<String> detailOptions;
   final List<String> waterTypeOptions;
   final List<String> tankerCountOptions;
+  final double? minQuantity;
+  final double? maxQuantity;
+  final String? unit;
   final String? accent;
 
   factory TankerService.fromJson(Map<String, dynamic> json) {
+    final serviceType = json['service_type'] is Map
+        ? Map<String, dynamic>.from(json['service_type'] as Map)
+        : const <String, dynamic>{};
     final config = json['config'] is Map
         ? Map<String, dynamic>.from(json['config'] as Map)
         : const <String, dynamic>{};
@@ -35,6 +44,12 @@ class TankerService {
           .toList(growable: false);
     }
 
+    double? quantity(Object? value) => value is num
+        ? value.toDouble()
+        : value is String
+            ? double.tryParse(value)
+            : null;
+
     return TankerService(
       id: (json['id'] ?? json['code'] ?? '').toString(),
       name: (json['name'] ?? 'Water tanker').toString(),
@@ -47,6 +62,13 @@ class TankerService {
         final count = int.tryParse(value);
         return count != null && count >= 1 && count <= 5;
       }).toList(growable: false),
+      minQuantity: quantity(json['min_quantity'] ??
+          json['minQuantity'] ??
+          serviceType['min_quantity']),
+      maxQuantity: quantity(json['max_quantity'] ??
+          json['maxQuantity'] ??
+          serviceType['max_quantity']),
+      unit: (json['unit'] ?? config['unit'] ?? serviceType['unit'])?.toString(),
       accent: json['accent']?.toString(),
     );
   }

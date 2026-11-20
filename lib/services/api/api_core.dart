@@ -39,6 +39,10 @@ class ApiCore {
   static const _defaultGetRetryBudget = Duration(seconds: 12);
   static const _defaultReadCacheTtl = Duration(seconds: 90);
   static const _slowRequestThreshold = Duration(seconds: 2);
+  static const _appVersion = String.fromEnvironment(
+    'APP_VERSION',
+    defaultValue: '1.1.0',
+  );
   static const _cacheableGetPaths = {
     '/customer/services',
     '/customer/offers',
@@ -464,6 +468,7 @@ class ApiCore {
     final headers = <String, String>{
       'Content-Type': contentType,
       'X-Client-Platform': 'mobile',
+      'X-App-Version': _appVersion,
     };
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';

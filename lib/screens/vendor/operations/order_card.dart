@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/auth_feature_flags.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/vendor.dart';
 import '../vendor_shared.dart';
@@ -114,7 +115,21 @@ class _Details extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Divider(),
-          if (order.serviceDetails.isNotEmpty)
+          if (AuthFeatureFlags.multiServiceOrders &&
+              order.orderItems.isNotEmpty)
+            for (final item in order.orderItems) ...[
+              Text(
+                '${item.serviceName} · ${item.status.replaceAll('_', ' ')}',
+                style: theme.textTheme.titleSmall,
+              ),
+              if (item.details.quantity.isNotEmpty)
+                Text('Capacity/quantity: ${item.details.quantity}'),
+              if (item.details.details.isNotEmpty) Text(item.details.details),
+              if (item.amountPaise > 0)
+                Text('₹${(item.amountPaise / 100).toStringAsFixed(2)}'),
+              const SizedBox(height: AppSpace.sm),
+            ]
+          else if (order.serviceDetails.isNotEmpty)
             for (final detail in order.serviceDetails) ...[
               Text(detail.service, style: theme.textTheme.titleSmall),
               if (detail.capacity.isNotEmpty)

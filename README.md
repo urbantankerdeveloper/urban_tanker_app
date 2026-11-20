@@ -33,6 +33,13 @@ the device. The Socket.IO URL is derived from `API_BASE_URL` by removing the
 `/api` suffix; override it with `--dart-define=SOCKET_URL=...` when the API and
 realtime server use different origins.
 
+The multi-service order experience is opt-in in both the backend and mobile
+build. Enable the backend `MULTI_SERVICE_ORDERS_ENABLED` setting and build the
+app with `--dart-define=MULTI_SERVICE_ORDERS_ENABLED=true`. The API client
+sends `X-App-Version`; its default is the current `pubspec.yaml` version
+(`1.1.0`). Set `--dart-define=APP_VERSION=<semver>` when producing a release
+with a different version so the backend minimum-version check stays accurate.
+
 The app uses the server response to determine the role. Role selection is not
 available in the client. Access tokens are stored in platform secure storage;
 no Supabase secret or service-role key belongs in this project.

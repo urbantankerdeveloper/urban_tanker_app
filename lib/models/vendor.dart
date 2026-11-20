@@ -19,6 +19,11 @@ class VendorOrder {
     this.longitude,
     this.cancellationReason,
     this.statusMessage,
+    this.offerId,
+    this.fulfilmentId,
+    this.itemIds = const [],
+    this.orderItems = const [],
+    this.fulfilments = const [],
   });
 
   final String id;
@@ -38,36 +43,70 @@ class VendorOrder {
   final double? latitude;
   final double? longitude;
   final String? cancellationReason;
+  final String? offerId;
+  final String? fulfilmentId;
+  final List<String> itemIds;
+  final List<BookingOrderItem> orderItems;
+  final List<BookingFulfilment> fulfilments;
 
-  factory VendorOrder.fromJson(Map<String, dynamic> json) => VendorOrder(
-        id: (json['id'] ?? '').toString(),
-        reference: (json['reference'] ?? json['id'] ?? '').toString(),
-        serviceCode: (json['service_code'] ?? json['service'] ?? '').toString(),
-        address: (json['address_text'] ?? json['location'] ?? '').toString(),
-        status: _normalizeVendorOrderStatus(json['status']),
-        statusMessage: json['statusMessage']?.toString(),
-        amountPaise: _vendorAmountPaise(json),
-        serviceDetails: _records(
-          json['serviceDetails'] ?? json['service_details'],
-          VendorOrderServiceDetail.fromJson,
-        ),
-        createdAt: DateTime.tryParse(
-            (json['created_at'] ?? json['createdAt'] ?? '').toString()),
-        scheduledFor: DateTime.tryParse(
-            (json['scheduled_for'] ?? json['scheduledFor'] ?? '').toString()),
-        vehicleId: (json['vehicle_id'] ?? json['vehicleId'])?.toString(),
-        driverId: (json['driver_id'] ?? json['driverId'])?.toString(),
-        vehicle:
-            (json['vehicle'] ?? json['vehicleName'] ?? json['assignedVehicle'])
-                ?.toString(),
-        driver: (json['driver'] ?? json['driverName'] ?? json['assignedDriver'])
-            ?.toString(),
-        latitude: (json['latitude'] as num?)?.toDouble(),
-        longitude: (json['longitude'] as num?)?.toDouble(),
-        cancellationReason:
-            (json['cancellation_reason'] ?? json['cancellationReason'])
-                ?.toString(),
-      );
+  factory VendorOrder.fromJson(Map<String, dynamic> json) {
+    final orderItems = _vendorRecords(
+      json['items'] ?? json['order_items'],
+      BookingOrderItem.fromJson,
+    );
+    final rawItemIds = json['item_ids'] ?? json['itemIds'];
+    final itemIds = rawItemIds is List
+        ? rawItemIds.whereType<String>().toList()
+        : orderItems.map((item) => item.id).toList();
+    final fulfilments = _vendorRecords(
+      json['fulfilments'] ?? json['fulfillments'],
+      BookingFulfilment.fromJson,
+    );
+    final serviceDetails = _records(
+      json['serviceDetails'] ?? json['service_details'],
+      VendorOrderServiceDetail.fromJson,
+    );
+    if (serviceDetails.isEmpty) {
+      serviceDetails.addAll(orderItems.map((item) => VendorOrderServiceDetail(
+            service: item.serviceName,
+            capacity: item.details.quantity,
+            details: item.details.details,
+            waterType: item.details.waterType,
+            tankerCount: item.details.tankerCount,
+          )));
+    }
+    return VendorOrder(
+      id: (json['id'] ?? '').toString(),
+      reference: (json['reference'] ?? json['id'] ?? '').toString(),
+      serviceCode: (json['service_code'] ?? json['service'] ?? '').toString(),
+      address: (json['address_text'] ?? json['location'] ?? '').toString(),
+      status: _normalizeVendorOrderStatus(json['status']),
+      statusMessage: json['statusMessage']?.toString(),
+      amountPaise: _vendorAmountPaise(json),
+      serviceDetails: serviceDetails,
+      createdAt: DateTime.tryParse(
+          (json['created_at'] ?? json['createdAt'] ?? '').toString()),
+      scheduledFor: DateTime.tryParse(
+          (json['scheduled_for'] ?? json['scheduledFor'] ?? '').toString()),
+      vehicleId: (json['vehicle_id'] ?? json['vehicleId'])?.toString(),
+      driverId: (json['driver_id'] ?? json['driverId'])?.toString(),
+      vehicle:
+          (json['vehicle'] ?? json['vehicleName'] ?? json['assignedVehicle'])
+              ?.toString(),
+      driver: (json['driver'] ?? json['driverName'] ?? json['assignedDriver'])
+          ?.toString(),
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      cancellationReason:
+          (json['cancellation_reason'] ?? json['cancellationReason'])
+              ?.toString(),
+      offerId: (json['offer_id'] ?? json['offerId'])?.toString(),
+      fulfilmentId: (json['fulfilment_id'] ?? json['fulfilmentId'])?.toString(),
+      itemIds: itemIds,
+      orderItems: orderItems,
+      fulfilments: fulfilments,
+    );
+  }
 
   double get amountRupees => amountPaise / 100;
 
@@ -83,8 +122,18 @@ class VendorOrder {
         latitude: latitude,
         longitude: longitude,
         cancellationReason: cancellationReason,
+        orderItems: orderItems,
+        fulfilments: fulfilments,
       );
 }
+
+List<T> _vendorRecords<T>(
+  Object? value,
+  T Function(Map<String, dynamic>) parse,
+) =>
+    value is List
+        ? value.whereType<Map<String, dynamic>>().map(parse).toList()
+        : <T>[];
 
 class VendorOrderServiceDetail {
   const VendorOrderServiceDetail({
