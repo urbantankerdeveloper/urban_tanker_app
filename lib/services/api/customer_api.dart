@@ -5,6 +5,7 @@ import '../../models/booking.dart';
 import '../../models/booking_service_details.dart';
 import '../../models/payment.dart';
 import '../../models/service.dart';
+import '../../app/auth_feature_flags.dart';
 import 'api_decode.dart';
 import 'api_transport.dart';
 import 'api_types.dart';
@@ -75,6 +76,97 @@ class CustomerApi {
     }
 
     return decoded;
+  }
+
+  Future<Map<String, dynamic>> createMultiServiceOrder({
+    required String idempotencyKey,
+    required String paymentMethod,
+    required List<Map<String, dynamic>> items,
+    String? phone,
+    String? phoneVerificationChallengeId,
+    String? couponCode,
+  }) async {
+    final response = await _api.request(
+      'POST',
+      '/customer/multi-service-orders',
+      body: {
+        'idempotencyKey': idempotencyKey,
+        'paymentMethod': paymentMethod,
+        'items': items,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+        if (phoneVerificationChallengeId != null)
+          'phoneVerificationChallengeId': phoneVerificationChallengeId,
+        if (couponCode != null && couponCode.isNotEmpty)
+          'couponCode': couponCode,
+      },
+    );
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException(
+          'The multi-service order response was invalid.');
+    }
+    return decoded;
+  }
+
+  Future<void> cancelUnpaidMultiServiceOrder(
+    String orderId, {
+    String? couponCode,
+  }) async {
+    await _api.request(
+      'POST',
+      '/customer/multi-service-orders/$orderId/cancel-online-payment',
+      body: {
+        if (couponCode != null && couponCode.isNotEmpty)
+          'couponCode': couponCode
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> updateMultiServiceOrderItem({
+    required String orderId,
+    required String itemId,
+    required Map<String, dynamic> changes,
+  }) async {
+    final response = await _api.request(
+      'PATCH',
+      '/customer/orders/$orderId/items/$itemId',
+      body: changes,
+    );
+    return mapResponse(response, 'order item update');
+  }
+
+  Future<Map<String, dynamic>> cancelMultiServiceOrderItem({
+    required String orderId,
+    required String itemId,
+  }) async {
+    final response = await _api.request(
+      'DELETE',
+      '/customer/orders/$orderId/items/$itemId',
+    );
+    return mapResponse(response, 'order item cancellation');
+  }
+
+  Future<Map<String, dynamic>> requestMultiServiceDeliveryOtp({
+    required String orderId,
+    required String fulfilmentId,
+  }) async {
+    final response = await _api.request(
+      'POST',
+      '/customer/orders/$orderId/fulfilments/$fulfilmentId/delivery-otp',
+    );
+    return mapResponse(response, 'fulfilment delivery OTP');
+  }
+
+  Future<void> rateMultiServiceFulfilment({
+    required String fulfilmentId,
+    required int rating,
+    String? review,
+  }) async {
+    await _api.request(
+      'POST',
+      '/customer/multi-service-fulfilments/$fulfilmentId/ratings',
+      body: {'rating': rating, if (review != null) 'review': review},
+    );
   }
 
   Future<Map<String, dynamic>> previewBookingQuote({
@@ -220,6 +312,47 @@ class CustomerApi {
   }
 
   Future<BookingPage> bookingsPage({int offset = 0, int pageSize = 100}) async {
+    if (AuthFeatureFlags.multiServiceOrders) {
+      final responses = await Future.wait([
+        _api.request(
+          'GET',
+          '/customer/orders?offset=0&pageSize=100',
+        ),
+        _api.request('GET', '/customer/multi-service-orders'),
+      ]);
+      final legacyDecoded = await decodeBodyAsync(responses[0]);
+      final multiDecoded = await decodeBodyAsync(responses[1]);
+      if (legacyDecoded is! Map<String, dynamic> ||
+          legacyDecoded['rows'] is! List ||
+          multiDecoded is! Map<String, dynamic> ||
+          multiDecoded['rows'] is! List) {
+        throw const FormatException('The bookings response was invalid.');
+      }
+      final multiOrders = (multiDecoded['rows'] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      final compatibilityBookingIds = multiOrders
+          .map((order) => order['legacy_booking_id']?.toString())
+          .whereType<String>()
+          .toSet();
+      final legacyOrders = (legacyDecoded['rows'] as List)
+          .whereType<Map<String, dynamic>>()
+          .where((order) =>
+              !compatibilityBookingIds.contains(order['id']?.toString()));
+      final combined = [
+        ...legacyOrders,
+        ...multiOrders.map(_asBookingOrder),
+      ]..sort((a, b) => (b['created_at'] ?? '')
+          .toString()
+          .compareTo((a['created_at'] ?? '').toString()));
+      final start = offset.clamp(0, combined.length).toInt();
+      final end =
+          (start + pageSize.clamp(1, 100)).clamp(0, combined.length).toInt();
+      return BookingPage(
+        rows: combined.sublist(start, end).map(Booking.fromJson).toList(),
+        nextOffset: end < combined.length ? end : null,
+      );
+    }
     final response = await _api.request(
       'GET',
       '/customer/orders?offset=$offset&pageSize=${pageSize.clamp(1, 100)}',
@@ -236,6 +369,22 @@ class CustomerApi {
           .toList(),
       nextOffset: next is num ? next.toInt() : null,
     );
+  }
+
+  Map<String, dynamic> _asBookingOrder(Map<String, dynamic> order) {
+    final items = order['order_items'];
+    final firstItem = items is List && items.isNotEmpty && items.first is Map
+        ? Map<String, dynamic>.from(items.first as Map)
+        : const <String, dynamic>{};
+    return {
+      ...order,
+      'order_id': order['id'],
+      'service_code': firstItem['service_code'] ?? firstItem['service_type_id'],
+      'scheduled_for': firstItem['scheduled_for'],
+      'total_paise': order['total_paise'],
+      'items': items,
+      'fulfilments': order['order_fulfilments'] ?? order['fulfilments'],
+    };
   }
 
   Future<TrackingSnapshot> bookingTracking(String bookingId) async {

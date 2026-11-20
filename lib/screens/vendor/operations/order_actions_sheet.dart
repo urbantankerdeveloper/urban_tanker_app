@@ -173,7 +173,7 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
               ),
             ],
             const SizedBox(height: AppSpace.lg),
-            if (order.status == 'pending_vendor') ...[
+            if (order.status == 'pending_vendor' && order.offerId == null) ...[
               if (assignableVehicles.isNotEmpty)
                 DropdownButtonFormField<String>(
                   initialValue: selectedVehicle,
@@ -219,7 +219,13 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
                             ),
               ),
             ],
-            if (order.status == 'vendor_assigned')
+            if (order.status == 'pending_vendor' && order.offerId != null)
+              PrimaryButton(
+                label: 'Accept offer',
+                icon: Icons.thumb_up_alt_outlined,
+                onPressed: _saving ? null : () => _confirmAccept(context, ref),
+              ),
+            if (order.status == 'vendor_assigned' && order.fulfilmentId == null)
               PrimaryButton(
                 label: 'Accept order',
                 icon: Icons.thumb_up_alt_outlined,
@@ -229,6 +235,8 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
                         ? () => _showAssignmentRequired(context)
                         : () => _confirmAccept(context, ref),
               ),
+            if (order.status == 'vendor_assigned' && order.fulfilmentId != null)
+              _statusButton(context, ref, 'en_route', 'Start delivery'),
             if (order.status == 'accepted')
               _statusButton(context, ref, 'en_route', 'Mark en route'),
             if (order.status == 'en_route')
@@ -264,10 +272,11 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
               ),
             ],
             if ([
-              'pending_vendor',
-              'vendor_assigned',
-              'accepted',
-            ].contains(order.status)) ...[
+                  'pending_vendor',
+                  'vendor_assigned',
+                  'accepted',
+                ].contains(order.status) &&
+                (order.offerId != null || order.fulfilmentId == null)) ...[
               const SizedBox(height: AppSpace.md),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
@@ -379,12 +388,21 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
     _latestPosition = null;
     _locationUpdatePending = true;
     try {
-      await ref.read(appControllerProvider).api.updateVendorLocation(
-            bookingId: widget.order.id,
-            latitude: position.latitude,
-            longitude: position.longitude,
-            accuracy: position.accuracy,
-          );
+      final api = ref.read(appControllerProvider).api;
+      if (widget.order.fulfilmentId != null) {
+        await api.updateMultiServiceFulfilmentLocation(
+          fulfilmentId: widget.order.fulfilmentId!,
+          latitude: position.latitude,
+          longitude: position.longitude,
+        );
+      } else {
+        await api.updateVendorLocation(
+          bookingId: widget.order.id,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: position.accuracy,
+        );
+      }
       if (mounted) {
         setState(() {
           _locationStatus =
@@ -430,14 +448,35 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
     if (_saving) return;
     setState(() => _saving = true);
     try {
-      await ref.read(appControllerProvider).api.transitionVendorOrder(
-            widget.order.id,
-            action: action,
-            status: status,
-            vehicleId: vehicleId,
-            driverId: driverId,
-            reason: reason,
-          );
+      final api = ref.read(appControllerProvider).api;
+      if (widget.order.offerId != null) {
+        if (action == 'accept') {
+          await api.acceptMultiServiceOffer(widget.order.offerId!);
+        } else if (action == 'reject') {
+          await api.rejectMultiServiceOffer(widget.order.offerId!);
+        } else {
+          throw StateError('This offer action is not supported.');
+        }
+      } else if (widget.order.fulfilmentId != null) {
+        if (action != 'status' ||
+            status == null ||
+            !const {'en_route', 'arrived'}.contains(status)) {
+          throw StateError('This fulfilment action is not supported.');
+        }
+        await api.transitionMultiServiceFulfilment(
+          widget.order.fulfilmentId!,
+          status,
+        );
+      } else {
+        await api.transitionVendorOrder(
+          widget.order.id,
+          action: action,
+          status: status,
+          vehicleId: vehicleId,
+          driverId: driverId,
+          reason: reason,
+        );
+      }
       ref
         ..invalidate(vendorOrdersProvider)
         ..invalidate(vendorDashboardProvider);
@@ -503,22 +542,40 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
       unawaited(discardTemporaryPhotoFile(request.photo?.path));
       return;
     }
+    if (widget.order.fulfilmentId != null && request.otp.isEmpty) {
+      unawaited(discardTemporaryPhotoFile(request.photo?.path));
+      showAppSnack(
+        context,
+        'Enter the delivery OTP.',
+        variant: AppSnackVariant.error,
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       final photo = request.photo;
-      final proofPath = photo == null
-          ? null
-          : await ref.read(appControllerProvider).api.uploadVendorFile(
-                fileName: photo.name,
-                contentType: 'image/jpeg',
-                bytes: await photo.readAsBytes(),
-              );
+      String? proofPath;
+      if (widget.order.fulfilmentId == null && photo != null) {
+        proofPath = await ref.read(appControllerProvider).api.uploadVendorFile(
+              fileName: photo.name,
+              contentType: 'image/jpeg',
+              bytes: await photo.readAsBytes(),
+            );
+      }
       if (photo != null) await discardTemporaryPhotoFile(photo.path);
-      await ref.read(appControllerProvider).api.verifyVendorDelivery(
-            orderId: widget.order.id,
-            otp: request.otp.isEmpty ? null : request.otp,
-            proofPath: proofPath,
-          );
+      final api = ref.read(appControllerProvider).api;
+      if (widget.order.fulfilmentId != null) {
+        await api.verifyMultiServiceFulfilmentDelivery(
+          fulfilmentId: widget.order.fulfilmentId!,
+          otp: request.otp,
+        );
+      } else {
+        await api.verifyVendorDelivery(
+          orderId: widget.order.id,
+          otp: request.otp.isEmpty ? null : request.otp,
+          proofPath: proofPath,
+        );
+      }
       ref
         ..invalidate(vendorOrdersProvider)
         ..invalidate(vendorDashboardProvider);

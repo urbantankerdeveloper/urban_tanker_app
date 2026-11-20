@@ -231,6 +231,46 @@ class AdminApi {
     return AccountRecord(await mapResponse(response, 'admin order status'));
   }
 
+  Future<List<Map<String, dynamic>>> adminMultiServiceOrders() async {
+    final response = await _api.request('GET', '/admin/multi-service-orders');
+    return mapList(response, 'multi-service orders');
+  }
+
+  Future<void> reassignMultiServiceFulfilment({
+    required String fulfilmentId,
+    required String vendorId,
+    required String reason,
+  }) async {
+    final normalizedReason = reason.trim();
+    if (normalizedReason.length < 5 || normalizedReason.length > 500) {
+      throw const FormatException(
+        'Enter an audit reason between 5 and 500 characters.',
+      );
+    }
+    await _api.request(
+      'POST',
+      '/admin/multi-service-fulfilments/$fulfilmentId/reassign',
+      body: {'vendorId': vendorId, 'reason': normalizedReason},
+    );
+  }
+
+  Future<void> completeMultiServiceFulfilment({
+    required String fulfilmentId,
+    required String reason,
+  }) async {
+    final normalizedReason = reason.trim();
+    if (normalizedReason.length < 5 || normalizedReason.length > 500) {
+      throw const FormatException(
+        'Enter an audit reason between 5 and 500 characters.',
+      );
+    }
+    await _api.request(
+      'POST',
+      '/admin/multi-service-fulfilments/$fulfilmentId/complete',
+      body: {'reason': normalizedReason},
+    );
+  }
+
   Future<AccountRecord> cancelAdminOrder(String id, String reason) async {
     final normalizedReason = reason.trim();
     if (normalizedReason.length < 2 || normalizedReason.length > 500) {

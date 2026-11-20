@@ -69,6 +69,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
   Future<PaymentReceipt?>? _receiptFuture;
   bool _payingOnline = false;
   bool _cancelling = false;
+  bool _multiServiceActionPending = false;
 
   static const _payOnlineStatuses = {
     'pending_vendor',
@@ -213,9 +214,13 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     final vehicle = snapshot?.trackingAvailable == true
         ? _mapPoint(snapshot?.latitude, snapshot?.longitude)
         : null;
-    final changesAllowed = !{'delivered', 'cancelled', 'canceled', 'rejected'}
-        .contains(currentStatus);
-    final canCancel = canCancelBookingStatus(currentStatus);
+    final isMultiServiceOrder =
+        AuthFeatureFlags.multiServiceOrders && booking.orderItems.isNotEmpty;
+    final changesAllowed = !isMultiServiceOrder &&
+        !{'delivered', 'cancelled', 'canceled', 'rejected'}
+            .contains(currentStatus);
+    final canCancel =
+        !isMultiServiceOrder && canCancelBookingStatus(currentStatus);
     final canBookAgain =
         canBookAgainStatus(currentStatus) && widget.onBookAgain != null;
 
@@ -324,6 +329,65 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                       ),
                   ]),
                 ),
+                if (isMultiServiceOrder) ...[
+                  const SizedBox(height: AppSpace.md),
+                  SurfaceCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Service actions',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        for (final item in booking.orderItems)
+                          if (const {
+                            'pending',
+                            'pending_vendor',
+                            'offered',
+                          }.contains(item.status.toLowerCase()))
+                            TextButton.icon(
+                              onPressed: _multiServiceActionPending
+                                  ? null
+                                  : () => _cancelMultiServiceItem(
+                                        context,
+                                        ref,
+                                        item,
+                                      ),
+                              icon: const Icon(Icons.cancel_outlined),
+                              label: Text('Cancel ${item.serviceName}'),
+                            ),
+                        for (final fulfilment in booking.fulfilments)
+                          if (fulfilment.status.toLowerCase() == 'arrived')
+                            TextButton.icon(
+                              onPressed: _multiServiceActionPending
+                                  ? null
+                                  : () => _requestMultiServiceDeliveryOtp(
+                                        context,
+                                        ref,
+                                        fulfilment,
+                                      ),
+                              icon: const Icon(Icons.password_outlined),
+                              label: const Text('Request delivery OTP'),
+                            )
+                          else if (fulfilment.status.toLowerCase() ==
+                              'delivered')
+                            TextButton.icon(
+                              onPressed: _multiServiceActionPending
+                                  ? null
+                                  : () => _rateMultiServiceFulfilment(
+                                        context,
+                                        ref,
+                                        fulfilment,
+                                      ),
+                              icon: const Icon(Icons.star_outline),
+                              label: const Text('Rate service'),
+                            ),
+                        if (_multiServiceActionPending)
+                          const LinearProgressIndicator(),
+                      ],
+                    ),
+                  ),
+                ],
                 if (booking.cancellationReason != null &&
                     booking.cancellationReason!.trim().isNotEmpty) ...[
                   const SizedBox(height: AppSpace.md),
@@ -566,6 +630,118 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
         ],
       ),
     );
+  }
+
+  String get _multiServiceOrderId => booking.orderId ?? booking.id;
+
+  Future<void> _cancelMultiServiceItem(
+    BuildContext context,
+    WidgetRef ref,
+    BookingOrderItem item,
+  ) async {
+    setState(() => _multiServiceActionPending = true);
+    try {
+      await ref.read(apiProvider).cancelMultiServiceOrderItem(
+            orderId: _multiServiceOrderId,
+            itemId: item.id,
+          );
+      ref.invalidate(bookingsProvider);
+      if (context.mounted) {
+        showAppSnack(
+          context,
+          '${item.serviceName} was cancelled.',
+          variant: AppSnackVariant.success,
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        showAppSnack(
+          context,
+          'Could not cancel this service: ${friendlyError(error)}',
+          variant: AppSnackVariant.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _multiServiceActionPending = false);
+    }
+  }
+
+  Future<void> _requestMultiServiceDeliveryOtp(
+    BuildContext context,
+    WidgetRef ref,
+    BookingFulfilment fulfilment,
+  ) async {
+    setState(() => _multiServiceActionPending = true);
+    try {
+      final result = await ref.read(apiProvider).requestMultiServiceDeliveryOtp(
+            orderId: _multiServiceOrderId,
+            fulfilmentId: fulfilment.id,
+          );
+      if (context.mounted) {
+        showAppSnack(
+          context,
+          (result['message'] ?? 'Delivery OTP sent to your registered phone.')
+              .toString(),
+          variant: AppSnackVariant.success,
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        showAppSnack(
+          context,
+          'Could not request the delivery OTP: ${friendlyError(error)}',
+          variant: AppSnackVariant.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _multiServiceActionPending = false);
+    }
+  }
+
+  Future<void> _rateMultiServiceFulfilment(
+    BuildContext context,
+    WidgetRef ref,
+    BookingFulfilment fulfilment,
+  ) async {
+    final rating = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rate this service'),
+        content: const Text('How was this service?'),
+        actions: [
+          for (var value = 1; value <= 5; value++)
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, value),
+              child: Text('$value ★'),
+            ),
+        ],
+      ),
+    );
+    if (rating == null || !context.mounted) return;
+    setState(() => _multiServiceActionPending = true);
+    try {
+      await ref.read(apiProvider).rateMultiServiceFulfilment(
+            fulfilmentId: fulfilment.id,
+            rating: rating,
+          );
+      if (context.mounted) {
+        showAppSnack(
+          context,
+          'Thanks for rating this service.',
+          variant: AppSnackVariant.success,
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        showAppSnack(
+          context,
+          'Could not submit your rating: ${friendlyError(error)}',
+          variant: AppSnackVariant.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _multiServiceActionPending = false);
+    }
   }
 
   Future<void> _payOnlineNow(BuildContext context, WidgetRef ref) async {

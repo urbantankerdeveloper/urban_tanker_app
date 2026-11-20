@@ -1,6 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import '../app/auth_feature_flags.dart';
 import '../models/account.dart';
 import '../models/admin_enquiry_page.dart';
 import '../models/booking.dart';
@@ -281,6 +282,69 @@ class ApiClient implements ApiTransport {
         idempotencyKey: idempotencyKey,
       );
 
+  Future<Map<String, dynamic>> createMultiServiceOrder({
+    required String idempotencyKey,
+    required String paymentMethod,
+    required List<Map<String, dynamic>> items,
+    String? phone,
+    String? phoneVerificationChallengeId,
+    String? couponCode,
+  }) =>
+      _customer.createMultiServiceOrder(
+        idempotencyKey: idempotencyKey,
+        paymentMethod: paymentMethod,
+        items: items,
+        phone: phone,
+        phoneVerificationChallengeId: phoneVerificationChallengeId,
+        couponCode: couponCode,
+      );
+
+  Future<void> cancelUnpaidMultiServiceOrder(
+    String orderId, {
+    String? couponCode,
+  }) =>
+      _customer.cancelUnpaidMultiServiceOrder(orderId, couponCode: couponCode);
+
+  Future<Map<String, dynamic>> updateMultiServiceOrderItem({
+    required String orderId,
+    required String itemId,
+    required Map<String, dynamic> changes,
+  }) =>
+      _customer.updateMultiServiceOrderItem(
+        orderId: orderId,
+        itemId: itemId,
+        changes: changes,
+      );
+
+  Future<Map<String, dynamic>> cancelMultiServiceOrderItem({
+    required String orderId,
+    required String itemId,
+  }) =>
+      _customer.cancelMultiServiceOrderItem(
+        orderId: orderId,
+        itemId: itemId,
+      );
+
+  Future<Map<String, dynamic>> requestMultiServiceDeliveryOtp({
+    required String orderId,
+    required String fulfilmentId,
+  }) =>
+      _customer.requestMultiServiceDeliveryOtp(
+        orderId: orderId,
+        fulfilmentId: fulfilmentId,
+      );
+
+  Future<void> rateMultiServiceFulfilment({
+    required String fulfilmentId,
+    required int rating,
+    String? review,
+  }) =>
+      _customer.rateMultiServiceFulfilment(
+        fulfilmentId: fulfilmentId,
+        rating: rating,
+        review: review,
+      );
+
   Future<RazorpayOrder> createRazorpayOrder(String bookingId) =>
       _customer.createRazorpayOrder(bookingId);
 
@@ -481,7 +545,50 @@ class ApiClient implements ApiTransport {
 
   Future<VendorDashboard> vendorDashboard() => _vendor.vendorDashboard();
 
-  Future<List<VendorOrder>> vendorOrders() => _vendor.vendorOrders();
+  Future<List<VendorOrder>> vendorOrders() async {
+    final legacyOrders = await _vendor.vendorOrders();
+    if (!AuthFeatureFlags.multiServiceOrders) return legacyOrders;
+    final normalizedOrders = await _vendor.multiServiceOrders();
+    return [
+      ...legacyOrders.where((order) => order.orderItems.isEmpty),
+      ...normalizedOrders,
+    ];
+  }
+
+  Future<void> acceptMultiServiceOffer(String offerId) =>
+      _vendor.acceptMultiServiceOffer(offerId);
+
+  Future<void> rejectMultiServiceOffer(String offerId) =>
+      _vendor.rejectMultiServiceOffer(offerId);
+
+  Future<void> transitionMultiServiceFulfilment(
+    String fulfilmentId,
+    String status,
+  ) =>
+      _vendor.transitionMultiServiceFulfilment(fulfilmentId, status);
+
+  Future<void> updateMultiServiceFulfilmentLocation({
+    required String fulfilmentId,
+    required double latitude,
+    required double longitude,
+  }) =>
+      _vendor.updateMultiServiceFulfilmentLocation(
+        fulfilmentId: fulfilmentId,
+        latitude: latitude,
+        longitude: longitude,
+      );
+
+  Future<void> dropMultiServiceFulfilment(String fulfilmentId) =>
+      _vendor.dropMultiServiceFulfilment(fulfilmentId);
+
+  Future<void> verifyMultiServiceFulfilmentDelivery({
+    required String fulfilmentId,
+    required String otp,
+  }) =>
+      _vendor.verifyMultiServiceFulfilmentDelivery(
+        fulfilmentId: fulfilmentId,
+        otp: otp,
+      );
 
   Future<List<VendorVehicle>> vendorVehicles() => _vendor.vendorVehicles();
 
@@ -780,16 +887,108 @@ class ApiClient implements ApiTransport {
     String? to,
     bool? assigned,
     int pageSize = 25,
+  }) async {
+    final legacyPage = await _admin.adminOrders(
+      page: AuthFeatureFlags.multiServiceOrders ? 1 : page,
+      status: status,
+      service: service,
+      vendorId: vendorId,
+      from: from,
+      to: to,
+      assigned: assigned,
+      pageSize: AuthFeatureFlags.multiServiceOrders ? 100 : pageSize,
+    );
+    if (!AuthFeatureFlags.multiServiceOrders) return legacyPage;
+
+    final legacyRows = (legacyPage['rows'] as List?)
+            ?.whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    final multiRows = await _admin.adminMultiServiceOrders();
+    final compatibilityIds = multiRows
+        .map((row) => row['legacy_booking_id']?.toString())
+        .whereType<String>()
+        .toSet();
+    legacyRows.removeWhere(
+      (row) => compatibilityIds.contains(row['id']?.toString()),
+    );
+    final filteredMultiRows = multiRows.where((row) {
+      final rowStatus = row['status']?.toString();
+      if (status != null && status.isNotEmpty && rowStatus != status) {
+        return false;
+      }
+      final items = row['order_items'];
+      if (service != null && service.isNotEmpty) {
+        final hasService = items is List &&
+            items.whereType<Map>().any((item) =>
+                item['service_type_id']?.toString() == service ||
+                (item['service_types'] is Map &&
+                    (item['service_types'] as Map)['code']?.toString() ==
+                        service));
+        if (!hasService) return false;
+      }
+      final fulfilments = row['order_fulfilments'];
+      final hasVendor = fulfilments is List &&
+          fulfilments.whereType<Map>().any(
+                (fulfilment) => fulfilment['vendor_id']?.toString() == vendorId,
+              );
+      if (vendorId != null && vendorId.isNotEmpty && !hasVendor) return false;
+      if (assigned == true && !hasVendor) return false;
+      if (assigned == false && hasVendor) return false;
+      final createdAt = DateTime.tryParse(
+        (row['created_at'] ?? '').toString(),
+      );
+      if (from != null && from.isNotEmpty) {
+        final start = DateTime.tryParse(from);
+        if (createdAt != null && start != null && createdAt.isBefore(start)) {
+          return false;
+        }
+      }
+      if (to != null && to.isNotEmpty) {
+        final end = DateTime.tryParse(to);
+        if (createdAt != null && end != null && createdAt.isAfter(end)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+    final rows = [...legacyRows, ...filteredMultiRows]..sort((left, right) =>
+        (right['created_at'] ?? '')
+            .toString()
+            .compareTo((left['created_at'] ?? '').toString()));
+    final start = ((page - 1) * pageSize).clamp(0, rows.length).toInt();
+    final end = (start + pageSize).clamp(0, rows.length).toInt();
+    return {
+      ...legacyPage,
+      'rows': rows.sublist(start, end),
+      'total': rows.length,
+      'page': page,
+      'pageSize': pageSize,
+    };
+  }
+
+  Future<List<Map<String, dynamic>>> adminMultiServiceOrders() =>
+      _admin.adminMultiServiceOrders();
+
+  Future<void> reassignMultiServiceFulfilment({
+    required String fulfilmentId,
+    required String vendorId,
+    required String reason,
   }) =>
-      _admin.adminOrders(
-        page: page,
-        status: status,
-        service: service,
+      _admin.reassignMultiServiceFulfilment(
+        fulfilmentId: fulfilmentId,
         vendorId: vendorId,
-        from: from,
-        to: to,
-        assigned: assigned,
-        pageSize: pageSize,
+        reason: reason,
+      );
+
+  Future<void> completeMultiServiceFulfilment({
+    required String fulfilmentId,
+    required String reason,
+  }) =>
+      _admin.completeMultiServiceFulfilment(
+        fulfilmentId: fulfilmentId,
+        reason: reason,
       );
 
   Future<List<DispatcherOrder>> dispatcherOrderRows({

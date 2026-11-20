@@ -15,6 +15,7 @@ class Booking {
     this.cancellationReason,
     this.orderItems = const [],
     this.fulfilments = const [],
+    this.orderId,
     this.serviceId,
     this.quotedAmount,
     this.paymentStatus,
@@ -46,6 +47,7 @@ class Booking {
   final String? cancellationReason;
   final List<BookingOrderItem> orderItems;
   final List<BookingFulfilment> fulfilments;
+  final String? orderId;
 
   double? get quotedAmountRupees {
     final paise = int.tryParse(quotedAmount ?? '');
@@ -76,6 +78,12 @@ class Booking {
     final rawFulfilments = json['fulfilments'] ?? json['fulfillments'];
     return Booking(
       id: (json['id'] ?? '').toString(),
+      orderId: (json['order_id'] ??
+              json['orderId'] ??
+              ((json['items'] ?? json['order_items']) is List
+                  ? json['id']
+                  : null))
+          ?.toString(),
       reference: (json['reference'] ?? json['order_number'] ?? json['id'] ?? '')
           .toString(),
       status: (json['status'] ?? 'pending').toString(),
@@ -152,14 +160,16 @@ class BookingOrderItem {
         json['service_details'] ?? json['serviceDetails'] ?? json['details'];
     final detailsMap =
         rawDetails is Map<String, dynamic> ? rawDetails : <String, dynamic>{};
-    final serviceId = (json['service_type_id'] ??
+    final serviceType = json['service_types'] ?? json['service_type'];
+    final serviceId = (json['service_code'] ??
+            (serviceType is Map ? serviceType['code'] : null) ??
+            json['service_type_id'] ??
             json['serviceTypeId'] ??
             json['service_id'] ??
             json['serviceId'] ??
             detailsMap['serviceId'] ??
             '')
         .toString();
-    final serviceType = json['service_type'];
     final serviceName = json['service_type_name'] ??
         json['serviceName'] ??
         (serviceType is Map ? serviceType['name'] : null);
@@ -184,6 +194,7 @@ class BookingOrderItem {
         if (json['longitude'] != null) 'longitude': json['longitude'],
       }),
       amountPaise: ((json['price_paise'] ??
+                  json['locked_price_paise'] ??
                   json['amount_paise'] ??
                   json['quoted_amount_paise'] ??
                   json['quotedAmountPaise']) as num?)
@@ -216,10 +227,13 @@ class BookingFulfilment {
   final String? vendorName;
 
   factory BookingFulfilment.fromJson(Map<String, dynamic> json) {
-    final rawItems = json['item_ids'] ?? json['itemIds'] ?? json['items'];
+    final rawItems = json['item_ids'] ??
+        json['itemIds'] ??
+        json['items'] ??
+        json['order_fulfilment_items'];
     final itemIds = rawItems is List
         ? rawItems
-            .map((item) => item is Map ? item['id'] : item)
+            .map((item) => item is Map ? (item['item_id'] ?? item['id']) : item)
             .whereType<String>()
             .toList()
         : const <String>[];

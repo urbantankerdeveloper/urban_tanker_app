@@ -28,6 +28,105 @@ class VendorApi {
     return parseList(response, VendorOrder.fromJson, 'vendor orders');
   }
 
+  Future<List<VendorOrder>> multiServiceOrders() async {
+    final offersResponse =
+        await _api.request('GET', '/vendor/multi-service-orders/offers');
+    final offersDecoded = await decodeBodyAsync(offersResponse);
+    final fulfilmentsResponse =
+        await _api.request('GET', '/vendor/multi-service-fulfilments');
+    final fulfilmentsDecoded = await decodeBodyAsync(fulfilmentsResponse);
+    if (offersDecoded is! List || fulfilmentsDecoded is! List) {
+      throw const FormatException(
+          'The multi-service vendor orders were invalid.');
+    }
+    final offers = offersDecoded.whereType<Map<String, dynamic>>().map((offer) {
+      final order = offer['order'];
+      final orderRecord =
+          order is Map<String, dynamic> ? order : <String, dynamic>{};
+      return VendorOrder.fromJson({
+        ...offer,
+        'id': offer['id'],
+        'offerId': offer['id'],
+        'reference': orderRecord['reference'],
+        'status': 'pending_vendor',
+        'amount': ((orderRecord['total_paise'] as num?)?.toInt() ?? 0) / 100,
+        'items': offer['items'],
+      });
+    });
+    final assigned = fulfilmentsDecoded
+        .whereType<Map<String, dynamic>>()
+        .map((fulfilment) => VendorOrder.fromJson({
+              ...fulfilment,
+              'id': fulfilment['id'],
+              'reference': fulfilment['reference'],
+              'fulfilment_id': fulfilment['id'],
+              'order_id': fulfilment['order_id'],
+              'items': (fulfilment['order_fulfilment_items'] is List
+                      ? fulfilment['order_fulfilment_items'] as List
+                      : const [])
+                  .whereType<Map<String, dynamic>>()
+                  .map((link) => link['order_items'])
+                  .whereType<Map<String, dynamic>>()
+                  .toList(),
+            }));
+    return [...offers, ...assigned];
+  }
+
+  Future<void> acceptMultiServiceOffer(String offerId) async {
+    await _api.request(
+      'POST',
+      '/vendor/multi-service-orders/offers/$offerId/accept',
+    );
+  }
+
+  Future<void> rejectMultiServiceOffer(String offerId) async {
+    await _api.request(
+      'POST',
+      '/vendor/multi-service-orders/offers/$offerId/reject',
+    );
+  }
+
+  Future<void> transitionMultiServiceFulfilment(
+    String fulfilmentId,
+    String status,
+  ) async {
+    await _api.request(
+      'PATCH',
+      '/vendor/multi-service-fulfilments/$fulfilmentId/status',
+      body: {'status': status},
+    );
+  }
+
+  Future<void> updateMultiServiceFulfilmentLocation({
+    required String fulfilmentId,
+    required double latitude,
+    required double longitude,
+  }) async {
+    await _api.request(
+      'POST',
+      '/vendor/multi-service-fulfilments/$fulfilmentId/location',
+      body: {'latitude': latitude, 'longitude': longitude},
+    );
+  }
+
+  Future<void> dropMultiServiceFulfilment(String fulfilmentId) async {
+    await _api.request(
+      'POST',
+      '/vendor/multi-service-fulfilments/$fulfilmentId/drop',
+    );
+  }
+
+  Future<void> verifyMultiServiceFulfilmentDelivery({
+    required String fulfilmentId,
+    required String otp,
+  }) async {
+    await _api.request(
+      'POST',
+      '/vendor/multi-service-fulfilments/$fulfilmentId/delivery/verify',
+      body: {'otp': otp},
+    );
+  }
+
   Future<List<VendorVehicle>> vendorVehicles() async {
     final response = await _api.request('GET', '/vendor/vehicles');
     return parseList(response, VendorVehicle.fromJson, 'vendor vehicles');

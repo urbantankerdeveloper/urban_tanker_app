@@ -21,6 +21,7 @@ class VendorOrder {
     this.statusMessage,
     this.offerId,
     this.fulfilmentId,
+    this.orderId,
     this.itemIds = const [],
     this.orderItems = const [],
     this.fulfilments = const [],
@@ -45,11 +46,18 @@ class VendorOrder {
   final String? cancellationReason;
   final String? offerId;
   final String? fulfilmentId;
+  final String? orderId;
   final List<String> itemIds;
   final List<BookingOrderItem> orderItems;
   final List<BookingFulfilment> fulfilments;
 
   factory VendorOrder.fromJson(Map<String, dynamic> json) {
+    final parentOrder = json['order'];
+    final parentOrderMap =
+        parentOrder is Map ? parentOrder : const <String, dynamic>{};
+    final nestedOrders = json['orders'];
+    final nestedOrderMap =
+        nestedOrders is Map ? nestedOrders : const <String, dynamic>{};
     final orderItems = _vendorRecords(
       json['items'] ?? json['order_items'],
       BookingOrderItem.fromJson,
@@ -62,22 +70,30 @@ class VendorOrder {
       json['fulfilments'] ?? json['fulfillments'],
       BookingFulfilment.fromJson,
     );
-    final serviceDetails = _records(
+    final parsedServiceDetails = _records(
       json['serviceDetails'] ?? json['service_details'],
       VendorOrderServiceDetail.fromJson,
     );
-    if (serviceDetails.isEmpty) {
-      serviceDetails.addAll(orderItems.map((item) => VendorOrderServiceDetail(
-            service: item.serviceName,
-            capacity: item.details.quantity,
-            details: item.details.details,
-            waterType: item.details.waterType,
-            tankerCount: item.details.tankerCount,
-          )));
-    }
+    final serviceDetails = parsedServiceDetails.isEmpty
+        ? orderItems
+            .map((item) => VendorOrderServiceDetail(
+                  service: item.serviceName,
+                  capacity: item.details.quantity,
+                  details: item.details.details,
+                  waterType: item.details.waterType,
+                  tankerCount: item.details.tankerCount,
+                ))
+            .toList()
+        : parsedServiceDetails;
     return VendorOrder(
       id: (json['id'] ?? '').toString(),
-      reference: (json['reference'] ?? json['id'] ?? '').toString(),
+      orderId: (json['order_id'] ?? json['orderId'])?.toString(),
+      reference: (json['reference'] ??
+              parentOrderMap['reference'] ??
+              nestedOrderMap['reference'] ??
+              json['id'] ??
+              '')
+          .toString(),
       serviceCode: (json['service_code'] ?? json['service'] ?? '').toString(),
       address: (json['address_text'] ?? json['location'] ?? '').toString(),
       status: _normalizeVendorOrderStatus(json['status']),
@@ -124,6 +140,7 @@ class VendorOrder {
         cancellationReason: cancellationReason,
         orderItems: orderItems,
         fulfilments: fulfilments,
+        orderId: orderId,
       );
 }
 
@@ -172,7 +189,7 @@ String _normalizeVendorOrderStatus(Object? value) {
 }
 
 int _vendorAmountPaise(Map<String, dynamic> json) {
-  final paise = json['quoted_amount_paise'];
+  final paise = json['quoted_amount_paise'] ?? json['total_paise'];
   if (paise is num) return paise.toInt();
   final amount = json['amount'];
   if (amount is num) return (amount * 100).round();

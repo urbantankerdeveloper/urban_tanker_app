@@ -645,23 +645,81 @@ Future<void> openBookingForm(
                   final booking = await runWithPhoneVerificationRetry(
                     context,
                     controller: controller,
-                    action: () => controller.api.createBooking(
-                      serviceId: services.first.serviceId,
-                      capacity: services.first.quantity,
-                      services: services,
-                      location: services.first.location ?? '',
-                      deliveryDate: services.first.deliveryDate ?? '',
-                      notes: notesController.text,
-                      paymentMethod: method,
-                      latitude: services.first.latitude,
-                      longitude: services.first.longitude,
-                      couponCode: validatedCoupon == null
-                          ? null
-                          : couponController.text.trim(),
-                      phone: phoneController.text,
-                      phoneVerificationChallengeId: phoneChallengeId,
-                      idempotencyKey: bookingKey,
-                    ),
+                    action: () async {
+                      if (AuthFeatureFlags.multiServiceOrders) {
+                        final order =
+                            await controller.api.createMultiServiceOrder(
+                          idempotencyKey: bookingKey!,
+                          paymentMethod: method,
+                          phone: phoneController.text,
+                          phoneVerificationChallengeId: phoneChallengeId,
+                          couponCode: validatedCoupon == null
+                              ? null
+                              : couponController.text.trim(),
+                          items: [
+                            for (final service in services)
+                              {
+                                'serviceId': service.serviceId,
+                                'quantity': int.tryParse(
+                                      service.tankerCount ?? service.quantity,
+                                    ) ??
+                                    1,
+                                'capacity': service.quantity,
+                                'location': service.location ?? '',
+                                'deliveryDate': service.deliveryDate ?? '',
+                                if (service.preferredTime != null &&
+                                    service.preferredTime!.isNotEmpty)
+                                  'slot': service.preferredTime,
+                                if (service.latitude != null)
+                                  'latitude': service.latitude,
+                                if (service.longitude != null)
+                                  'longitude': service.longitude,
+                                'details': {
+                                  'details': service.details,
+                                  if (service.waterType != null)
+                                    'waterType': service.waterType,
+                                  if (service.tankerCount != null)
+                                    'tankerCount': service.tankerCount,
+                                },
+                                if (service.waterType != null)
+                                  'waterType': service.waterType,
+                                if (service.tankerCount != null)
+                                  'quantityText': service.tankerCount,
+                              },
+                          ],
+                        );
+                        final compatibilityId =
+                            order['legacyBookingId']?.toString();
+                        if (compatibilityId == null ||
+                            compatibilityId.isEmpty) {
+                          throw const FormatException(
+                            'The multi-service order response was missing its payment booking.',
+                          );
+                        }
+                        return {
+                          ...order,
+                          'order_id': order['id'],
+                          'id': compatibilityId,
+                        };
+                      }
+                      return controller.api.createBooking(
+                        serviceId: services.first.serviceId,
+                        capacity: services.first.quantity,
+                        services: services,
+                        location: services.first.location ?? '',
+                        deliveryDate: services.first.deliveryDate ?? '',
+                        notes: notesController.text,
+                        paymentMethod: method,
+                        latitude: services.first.latitude,
+                        longitude: services.first.longitude,
+                        couponCode: validatedCoupon == null
+                            ? null
+                            : couponController.text.trim(),
+                        phone: phoneController.text,
+                        phoneVerificationChallengeId: phoneChallengeId,
+                        idempotencyKey: bookingKey,
+                      );
+                    },
                   );
                   booking['service_details'] =
                       services.map((service) => service.toJson()).toList();

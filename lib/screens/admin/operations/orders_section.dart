@@ -118,7 +118,7 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
                     child: AppListRow(
                       title: (row['reference'] ?? row['id']).toString(),
                       subtitle:
-                          '${row['status'] ?? ''}\n${row['address_text'] ?? ''}',
+                          '${row['status'] ?? ''}\n${row['address_text'] ?? row['location'] ?? ''}',
                       onTap: () => _openOrder(row),
                     ),
                   ),
@@ -146,8 +146,15 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
   }
 
   void _openOrder(Map row) {
+    final isMultiService =
+        AuthFeatureFlags.multiServiceOrders && row['order_items'] is List;
     final cancellable =
         row['status'] != 'cancelled' && row['status'] != 'delivered';
+    final fulfilments = isMultiService && row['order_fulfilments'] is List
+        ? (row['order_fulfilments'] as List)
+            .whereType<Map>()
+            .toList(growable: false)
+        : const <Map>[];
     showDetailSheet<void>(
       context,
       title: (row['reference'] ?? 'Booking').toString(),
@@ -156,15 +163,43 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
           .map((entry) => '${entry.key}: ${entry.value}')
           .join('\n'),
       actions: [
-        SecondaryButton(
-          label: 'Assign vendor and fleet',
-          icon: Icons.assignment_ind_outlined,
-          onPressed: () {
-            Navigator.pop(context);
-            _assignOrder(row);
-          },
-        ),
-        if (cancellable) ...[
+        if (!isMultiService)
+          SecondaryButton(
+            label: 'Assign vendor and fleet',
+            icon: Icons.assignment_ind_outlined,
+            onPressed: () {
+              Navigator.pop(context);
+              _assignOrder(row);
+            },
+          ),
+        for (final fulfilment in fulfilments) ...[
+          const SizedBox(height: AppSpace.sm),
+          if (fulfilment['status'] != 'delivered' &&
+              fulfilment['status'] != 'cancelled')
+            OutlinedButton.icon(
+              icon: const Icon(Icons.assignment_ind_outlined),
+              label: Text(
+                'Reassign ${fulfilment['reference'] ?? 'fulfilment'}',
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                _reassignFulfilment(row, fulfilment);
+              },
+            ),
+          if (fulfilment['status'] != 'delivered' &&
+              fulfilment['status'] != 'cancelled')
+            OutlinedButton.icon(
+              icon: const Icon(Icons.done_all_outlined),
+              label: Text(
+                'Complete ${fulfilment['reference'] ?? 'fulfilment'}',
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                _completeFulfilment(fulfilment);
+              },
+            ),
+        ],
+        if (!isMultiService && cancellable) ...[
           const SizedBox(height: AppSpace.sm),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
@@ -200,7 +235,7 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
               .map((item) => item['status']?.toString() ?? 'pending_vendor')
               .join(', '),
         'Service': row['service_code'] ?? '—',
-        'Address': row['address_text'] ?? '—',
+        'Address': row['address_text'] ?? row['location'] ?? '—',
         'Coordinates': row['latitude'] == null || row['longitude'] == null
             ? 'Not provided'
             : '${row['latitude']}, ${row['longitude']}',
@@ -294,6 +329,210 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
       }
     }
   }
+
+  Future<void> _reassignFulfilment(Map row, Map fulfilment) async {
+    final api = ref.read(appControllerProvider).api;
+    try {
+      final vendors = (await api.adminVendors())
+          .where((vendor) =>
+              vendor.status.toLowerCase() == 'approved' ||
+              vendor.data['verification']?.toString().toLowerCase() ==
+                  'approved')
+          .toList(growable: false);
+      if (!mounted) return;
+      if (vendors.isEmpty) {
+        showAppSnack(
+          context,
+          'No approved vendors are available.',
+          variant: AppSnackVariant.error,
+        );
+        return;
+      }
+      final result = await showDialog<({String vendorId, String reason})>(
+        context: context,
+        builder: (dialogContext) => _MultiServiceReassignDialog(
+          vendors: vendors,
+          currentVendorId: fulfilment['vendor_id']?.toString(),
+        ),
+      );
+      if (result == null || !mounted) return;
+      await api.reassignMultiServiceFulfilment(
+        fulfilmentId: fulfilment['id'].toString(),
+        vendorId: result.vendorId,
+        reason: result.reason,
+      );
+      ref.invalidate(dispatcherOrdersProvider);
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        'Fulfilment reassigned.',
+        variant: AppSnackVariant.success,
+      );
+    } catch (error) {
+      if (mounted) {
+        showAppSnack(
+          context,
+          'Reassignment failed: ${friendlyError(error)}',
+          variant: AppSnackVariant.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _completeFulfilment(Map fulfilment) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => const _CompletionReasonDialog(),
+    );
+    if (reason == null || !mounted) return;
+    try {
+      await ref.read(appControllerProvider).api.completeMultiServiceFulfilment(
+            fulfilmentId: fulfilment['id'].toString(),
+            reason: reason,
+          );
+      ref.invalidate(dispatcherOrdersProvider);
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        'Fulfilment marked complete.',
+        variant: AppSnackVariant.success,
+      );
+    } catch (error) {
+      if (mounted) {
+        showAppSnack(
+          context,
+          'Completion failed: ${friendlyError(error)}',
+          variant: AppSnackVariant.error,
+        );
+      }
+    }
+  }
+}
+
+class _MultiServiceReassignDialog extends StatefulWidget {
+  const _MultiServiceReassignDialog({
+    required this.vendors,
+    required this.currentVendorId,
+  });
+
+  final List<AccountRecord> vendors;
+  final String? currentVendorId;
+
+  @override
+  State<_MultiServiceReassignDialog> createState() =>
+      _MultiServiceReassignDialogState();
+}
+
+class _MultiServiceReassignDialogState
+    extends State<_MultiServiceReassignDialog> {
+  late String _vendorId = widget.vendors
+      .firstWhere(
+        (vendor) => vendor.id != widget.currentVendorId,
+        orElse: () => widget.vendors.first,
+      )
+      .id;
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Reassign fulfilment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: _vendorId,
+              decoration: const InputDecoration(labelText: 'Approved vendor'),
+              items: [
+                for (final vendor in widget.vendors)
+                  DropdownMenuItem(
+                    value: vendor.id,
+                    child: Text(vendor.title),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _vendorId = value);
+              },
+            ),
+            const SizedBox(height: AppSpace.md),
+            TextField(
+              controller: _reason,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Audit reason',
+                helperText: 'Enter at least 5 characters.',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: _reason.text.trim().length < 5
+                ? null
+                : () => Navigator.pop(
+                      context,
+                      (vendorId: _vendorId, reason: _reason.text.trim()),
+                    ),
+            child: const Text('Reassign'),
+          ),
+        ],
+      );
+}
+
+class _CompletionReasonDialog extends StatefulWidget {
+  const _CompletionReasonDialog();
+
+  @override
+  State<_CompletionReasonDialog> createState() =>
+      _CompletionReasonDialogState();
+}
+
+class _CompletionReasonDialogState extends State<_CompletionReasonDialog> {
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Manually complete fulfilment'),
+        content: TextField(
+          controller: _reason,
+          minLines: 2,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Audit reason',
+            helperText: 'Enter at least 5 characters.',
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: _reason.text.trim().length < 5
+                ? null
+                : () => Navigator.pop(context, _reason.text.trim()),
+            child: const Text('Complete'),
+          ),
+        ],
+      );
 }
 
 /// The vendor, vehicle and driver chosen for an order.
