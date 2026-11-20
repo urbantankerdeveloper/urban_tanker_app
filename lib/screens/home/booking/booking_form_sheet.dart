@@ -375,31 +375,33 @@ Future<void> openBookingForm(
       return;
     }
     phoneController.text = savedPhone.phone;
-    verifiedPhone = savedPhone.verified ? savedPhone.phone : null;
-    phoneVerified = savedPhone.verified && savedPhone.phone.isNotEmpty;
-    phoneVerificationRequired = savedPhone.required;
+    // Account-level verification is not a booking contact challenge. Every
+    // booking needs its own fresh contact-phone OTP, regardless of profile
+    // verification or a prior booking challenge.
+    phoneVerificationRequired = true;
+    verifiedPhone = null;
+    phoneVerified = false;
+    final user = controller.user;
     if (AuthFeatureFlags.phoneVerifyDialog &&
-        controller.user != null &&
-        savedPhone.required &&
-        !savedPhone.phoneVerified) {
+        user != null &&
+        user.phoneVerified != true) {
       final verified = await showPhoneVerifyDialog(
         context,
         controller: controller,
-        allowSkip: false,
-        initialPhone: savedPhone.phone,
+        allowSkip: user.phoneVerificationRequired == false,
+        initialPhone: user.phone ?? savedPhone.phone,
       );
       if (!context.mounted) {
         disposeFormControllers();
         return;
       }
-      if (verified == null) {
+      if (verified == null && user.phoneVerificationRequired != false) {
         disposeFormControllers();
         return;
       }
-      phoneController.text = verified.phone;
-      verifiedPhone = verified.phone;
-      phoneChallengeId = verified.challengeId;
-      phoneVerified = true;
+      if (verified != null) {
+        phoneController.text = verified.phone;
+      }
     }
   } catch (_) {
     // The booking form still permits verification when the number is changed.
@@ -534,21 +536,25 @@ Future<void> openBookingForm(
             var bookingContactRecoveryUsed = false;
             try {
               final services = buildServiceDetails();
-              final quotePreview = await controller.api.previewBookingQuote(
-                serviceId: services.first.serviceId,
-                capacity: services.first.quantity,
-                services: services,
-                location: services.first.location ?? '',
-                deliveryDate: services.first.deliveryDate ?? '',
-                notes: notesController.text,
-                paymentMethod: method,
-                latitude: services.first.latitude,
-                longitude: services.first.longitude,
-                couponCode: validatedCoupon == null
-                    ? null
-                    : couponController.text.trim(),
-                phone: phoneController.text,
-                phoneVerificationChallengeId: phoneChallengeId,
+              final quotePreview = await runWithPhoneVerificationRetry(
+                context,
+                controller: controller,
+                action: () => controller.api.previewBookingQuote(
+                  serviceId: services.first.serviceId,
+                  capacity: services.first.quantity,
+                  services: services,
+                  location: services.first.location ?? '',
+                  deliveryDate: services.first.deliveryDate ?? '',
+                  notes: notesController.text,
+                  paymentMethod: method,
+                  latitude: services.first.latitude,
+                  longitude: services.first.longitude,
+                  couponCode: validatedCoupon == null
+                      ? null
+                      : couponController.text.trim(),
+                  phone: phoneController.text,
+                  phoneVerificationChallengeId: phoneChallengeId,
+                ),
               );
               if (!context.mounted) return;
               final quote = quotePreview['quote'];
@@ -627,22 +633,26 @@ Future<void> openBookingForm(
                   bookingKey = newIdempotencyKey();
                 }
                 try {
-                  final booking = await controller.api.createBooking(
-                    serviceId: services.first.serviceId,
-                    capacity: services.first.quantity,
-                    services: services,
-                    location: services.first.location ?? '',
-                    deliveryDate: services.first.deliveryDate ?? '',
-                    notes: notesController.text,
-                    paymentMethod: method,
-                    latitude: services.first.latitude,
-                    longitude: services.first.longitude,
-                    couponCode: validatedCoupon == null
-                        ? null
-                        : couponController.text.trim(),
-                    phone: phoneController.text,
-                    phoneVerificationChallengeId: phoneChallengeId,
-                    idempotencyKey: bookingKey,
+                  final booking = await runWithPhoneVerificationRetry(
+                    context,
+                    controller: controller,
+                    action: () => controller.api.createBooking(
+                      serviceId: services.first.serviceId,
+                      capacity: services.first.quantity,
+                      services: services,
+                      location: services.first.location ?? '',
+                      deliveryDate: services.first.deliveryDate ?? '',
+                      notes: notesController.text,
+                      paymentMethod: method,
+                      latitude: services.first.latitude,
+                      longitude: services.first.longitude,
+                      couponCode: validatedCoupon == null
+                          ? null
+                          : couponController.text.trim(),
+                      phone: phoneController.text,
+                      phoneVerificationChallengeId: phoneChallengeId,
+                      idempotencyKey: bookingKey,
+                    ),
                   );
                   booking['service_details'] =
                       services.map((service) => service.toJson()).toList();

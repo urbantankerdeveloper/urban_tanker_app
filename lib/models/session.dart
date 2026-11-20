@@ -16,6 +16,7 @@ class SessionUser {
     this.email,
     this.phone,
     this.phoneVerified,
+    this.phoneVerificationRequired,
     this.themeMode,
     this.selfieRequired = false,
   });
@@ -27,6 +28,7 @@ class SessionUser {
   final String? email;
   final String? phone;
   final bool? phoneVerified;
+  final bool? phoneVerificationRequired;
   final String? themeMode;
   final bool selfieRequired;
 
@@ -39,6 +41,7 @@ class SessionUser {
       email: json['email'] as String?,
       phone: json['phone'] as String?,
       phoneVerified: json['phoneVerified'] as bool?,
+      phoneVerificationRequired: json['phoneVerificationRequired'] as bool?,
       themeMode: json['themeMode'] as String?,
       // A selfie is required unless the server explicitly says it is not.
       selfieRequired: json['selfieRequired'] != false,
@@ -48,6 +51,7 @@ class SessionUser {
   SessionUser copyWith({
     String? phone,
     bool? phoneVerified,
+    bool? phoneVerificationRequired,
     bool? selfieRequired,
   }) =>
       SessionUser(
@@ -58,6 +62,8 @@ class SessionUser {
         email: email,
         phone: phone ?? this.phone,
         phoneVerified: phoneVerified ?? this.phoneVerified,
+        phoneVerificationRequired:
+            phoneVerificationRequired ?? this.phoneVerificationRequired,
         themeMode: themeMode,
         selfieRequired: selfieRequired ?? this.selfieRequired,
       );

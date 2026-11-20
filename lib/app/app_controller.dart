@@ -467,6 +467,7 @@ class AppController extends ChangeNotifier {
         'email': sessionUser.email,
         'phone': sessionUser.phone,
         'phoneVerified': sessionUser.phoneVerified,
+        'phoneVerificationRequired': sessionUser.phoneVerificationRequired,
         'themeMode': sessionUser.themeMode,
         'selfieRequired': sessionUser.selfieRequired,
       });

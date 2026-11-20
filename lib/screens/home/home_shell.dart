@@ -102,11 +102,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Future<void> _promptPhoneVerification() async {
-    if (!AuthFeatureFlags.phoneVerifyDialog ||
-        widget.controller.user?.phoneVerified == true) {
+    if (!AuthFeatureFlags.phoneVerifyDialog || widget.controller.user == null) {
       return;
     }
-    if (widget.controller.user?.phoneVerified == null) {
+    if (widget.controller.user?.phoneVerified == null ||
+        widget.controller.user?.phoneVerificationRequired == null) {
       final refreshed = await widget.controller.refreshUserProfile();
       if (!mounted) return;
       if (!refreshed) {
@@ -123,7 +123,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     await showPhoneVerifyDialog(
       context,
       controller: widget.controller,
-      allowSkip: true,
+      allowSkip: user?.phoneVerificationRequired == false,
       initialPhone: user?.phone,
     );
   }

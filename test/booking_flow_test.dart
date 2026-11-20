@@ -15,8 +15,10 @@ class _FakeApi extends ApiClient {
   bool bookingPhoneVerificationRequired = true;
   String accountPhone = '';
   bool accountPhoneVerified = false;
+  bool profilePhoneVerified = false;
   String? fallbackPhone;
   String? verifiedEmail;
+  int bookingOtpRequests = 0;
 
   @override
   Future<PhoneVerificationState> phoneVerification() async =>
@@ -24,6 +26,7 @@ class _FakeApi extends ApiClient {
         phone: accountPhone,
         verified: accountPhoneVerified,
         required: bookingPhoneVerificationRequired,
+        phoneVerified: profilePhoneVerified,
       );
 
   @override
@@ -37,6 +40,7 @@ class _FakeApi extends ApiClient {
         String? emailChallengeId,
         int resendAfterSeconds
       })> requestBookingOtp({required String phone, String? email}) async {
+    bookingOtpRequests++;
     if (mobileOtpUnavailable) {
       throw const ApiException(
         'Mobile verification is not configured yet.',
@@ -83,7 +87,7 @@ const _tanker = TankerService(
 );
 
 void main() {
-  testWidgets('disabled booking verification uses the profile phone',
+  testWidgets('account phone status does not bypass a fresh booking OTP',
       (tester) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
@@ -93,7 +97,8 @@ void main() {
     final api = _FakeApi()
       ..bookingPhoneVerificationRequired = false
       ..accountPhone = '9876543210'
-      ..accountPhoneVerified = true;
+      ..accountPhoneVerified = true
+      ..profilePhoneVerified = true;
     final controller = AppController(api: api, preferences: preferences!);
     addTearDown(controller.dispose);
 
@@ -116,8 +121,71 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Using your account phone: 9876543210'), findsOneWidget);
-    expect(find.text('Send OTP'), findsNothing);
+    expect(find.text('Send OTP'), findsOneWidget);
+    expect(find.text('Number verified'), findsNothing);
+    await tester.tap(find.text('Send OTP'));
+    await tester.pumpAndSettle();
+    expect(api.bookingOtpRequests, 1);
+    expect(
+      find.text('We sent a code via WhatsApp to +91 9876543210.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('account phone verification does not satisfy a booking OTP',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await tester.runAsync(SharedPreferences.getInstance);
+    final api = _FakeApi()
+      ..bookingPhoneVerificationRequired = true
+      ..accountPhone = '9876543210'
+      ..accountPhoneVerified = true
+      ..profilePhoneVerified = true;
+    final controller = AppController(api: api, preferences: preferences!)
+      ..user = const SessionUser(
+        id: 'user-1',
+        name: 'Verified User',
+        username: 'verified',
+        role: WorkspaceRole.customer,
+        phone: '9876543210',
+        phoneVerified: true,
+        phoneVerificationRequired: true,
+      );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => openBookingForm(
+                context,
+                controller: controller,
+                serviceCatalog: const [_tanker],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Number verified'), findsNothing);
+    expect(find.text('Send OTP'), findsOneWidget);
+    expect(api.bookingOtpRequests, 0);
+    await tester.tap(find.text('Send OTP'));
+    await tester.pumpAndSettle();
+
+    expect(api.bookingOtpRequests, 1);
+    expect(
+      find.text('We sent a code via WhatsApp to +91 9876543210.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets(

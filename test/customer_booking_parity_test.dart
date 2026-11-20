@@ -59,6 +59,8 @@ class _ParityApi extends ApiClient {
   int notificationCalls = 0;
   int previewCalls = 0;
   int createCalls = 0;
+  int bookingOtpRequests = 0;
+  int bookingOtpVerifications = 0;
   String? requestedOtpBookingId;
   Future<Booking> Function()? cancelOperation;
 
@@ -93,6 +95,35 @@ class _ParityApi extends ApiClient {
         verified: true,
         required: false,
       );
+
+  @override
+  Future<
+      ({
+        String? challengeId,
+        PhoneOtpChannel? channel,
+        String? emailChallengeId,
+        int resendAfterSeconds
+      })> requestBookingOtp({required String phone, String? email}) async {
+    bookingOtpRequests++;
+    return (
+      challengeId: 'booking-contact-challenge',
+      channel: PhoneOtpChannel.sms,
+      emailChallengeId: null,
+      resendAfterSeconds: 30,
+    );
+  }
+
+  @override
+  Future<void> verifyPhoneOtp({
+    required String phone,
+    String? challengeId,
+    String? otp,
+    String? email,
+    String? emailChallengeId,
+    String? emailOtp,
+  }) async {
+    bookingOtpVerifications++;
+  }
 
   @override
   Future<Map<String, dynamic>> previewBookingQuote({
@@ -500,6 +531,13 @@ void main() {
 
     await tester.tap(find.text('Open booking'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Send OTP'));
+    await tester.pumpAndSettle();
+    expect(api.bookingOtpRequests, 1);
+    await tester.enterText(find.byType(TextFormField).last, '123456');
+    await tester.tap(find.text('Verify OTP'));
+    await tester.pumpAndSettle();
+    expect(api.bookingOtpVerifications, 1);
     await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add service'));
@@ -558,7 +596,11 @@ void main() {
     await tester.tap(find.text('Open booking'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Step 1 of 6: Contact'), findsOneWidget);
+    expect(find.text('Send OTP'), findsOneWidget);
     expect(find.text('Tank cleaning'), findsNothing);
+    await tester.tap(find.text('Send OTP'));
+    await tester.pumpAndSettle();
+    expect(api.bookingOtpRequests, 2);
   });
 
   testWidgets('accepted booking updates refresh tracking and notify once',
