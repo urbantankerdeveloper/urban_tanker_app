@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_controller.dart';
+import '../../app/auth_feature_flags.dart';
 import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../core/design_system/gallery/design_system_gallery.dart';
@@ -23,6 +24,7 @@ import '../customer_account_screen.dart';
 import '../dispatcher/alerts_screen.dart';
 import '../dispatcher/dispatch_screen.dart';
 import '../dispatcher/live_screen.dart';
+import '../auth/phone_verify_dialog.dart';
 import '../notification_inbox.dart';
 import '../vendor/vendor_earnings_screen.dart';
 import '../vendor/fleet/vendor_fleet_screen.dart';
@@ -92,8 +94,38 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) offerUnlockSetup(context, widget.controller);
+      if (!mounted) return;
+      unawaited(_promptPhoneVerification().then((_) {
+        if (mounted) offerUnlockSetup(context, widget.controller);
+      }));
     });
+  }
+
+  Future<void> _promptPhoneVerification() async {
+    if (!AuthFeatureFlags.phoneVerifyDialog ||
+        widget.controller.user?.phoneVerified == true) {
+      return;
+    }
+    if (widget.controller.user?.phoneVerified == null) {
+      final refreshed = await widget.controller.refreshUserProfile();
+      if (!mounted) return;
+      if (!refreshed) {
+        final message = widget.controller.errorMessage;
+        if (message != null) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(message)));
+        }
+        return;
+      }
+    }
+    final user = widget.controller.user;
+    if (user?.phoneVerified != false || !mounted) return;
+    await showPhoneVerifyDialog(
+      context,
+      controller: widget.controller,
+      allowSkip: true,
+      initialPhone: user?.phone,
+    );
   }
 
   void _refreshBookingTracking(dynamic payload) {

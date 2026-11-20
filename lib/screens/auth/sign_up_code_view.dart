@@ -127,6 +127,7 @@ class _SignUpCodeViewState extends State<SignUpCodeView> {
                       child: OtpField(
                         controller: _otp,
                         autofocus: true,
+                        autofillOneTimeCode: true,
                         onChanged: (_) => field.didChange(_otp.text),
                         onCompleted: (_) => _verify(),
                       ),

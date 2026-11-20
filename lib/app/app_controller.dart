@@ -40,6 +40,7 @@ class AppController extends ChangeNotifier {
   bool pendingUnlockSetup = false;
   bool pendingMpinReset = false;
   String? phoneOtpChallengeId;
+  PhoneOtpChannel? phoneOtpChannel;
   String? emailOtpChallengeId;
 
   /// Set after an email sign-up that needs the confirmation link. The sign-in
@@ -117,8 +118,13 @@ class AppController extends ChangeNotifier {
 
   Future<void> requestPhoneAuthOtp(String phone) async {
     await _run(() async {
-      phoneOtpChallengeId = await api.requestPhoneAuthOtp(phone);
-      successMessage = 'Verification code sent. It expires in 10 minutes.';
+      final request = await api.requestPhoneAuthOtp(phone);
+      phoneOtpChallengeId = request.challengeId;
+      phoneOtpChannel = request.channel;
+      final channel =
+          request.channel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS';
+      successMessage =
+          'Verification code sent via $channel. It expires in 10 minutes.';
     });
   }
 
@@ -139,6 +145,7 @@ class AppController extends ChangeNotifier {
         name: name,
       );
       phoneOtpChallengeId = null;
+      phoneOtpChannel = null;
       _setSession(result);
       pendingUnlockSetup = !quickUnlockEnabled && !biometricPromptOffered;
     });
@@ -425,6 +432,31 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void markPhoneVerified(String phone) {
+    final current = user;
+    if (current == null) return;
+    final updated = current.copyWith(phone: phone, phoneVerified: true);
+    user = updated;
+    unawaited(_persistSessionUser(updated));
+    notifyListeners();
+  }
+
+  Future<bool> refreshUserProfile() async {
+    var refreshed = false;
+    await _run(() async {
+      final profile = await api.currentUserProfile();
+      user = profile;
+      final savedTheme = themeModeFromName(profile.themeMode);
+      if (savedTheme != null) {
+        themeMode = savedTheme;
+        unawaited(_preferences.setString('theme_mode', savedTheme.name));
+      }
+      await _persistSessionUser(profile);
+      refreshed = true;
+    });
+    return refreshed;
+  }
+
   Future<void> _persistSessionUser(SessionUser sessionUser) async {
     try {
       await api.saveSessionUser({
@@ -433,6 +465,9 @@ class AppController extends ChangeNotifier {
         'username': sessionUser.username,
         'role': sessionUser.role.name,
         'email': sessionUser.email,
+        'phone': sessionUser.phone,
+        'phoneVerified': sessionUser.phoneVerified,
+        'themeMode': sessionUser.themeMode,
         'selfieRequired': sessionUser.selfieRequired,
       });
     } catch (_) {
@@ -452,15 +487,17 @@ class AppController extends ChangeNotifier {
       unawaited(pushNotifications.identify(userId));
     }
     unawaited(_persistSessionUser(result.user));
-    final socketUrl = const String.fromEnvironment('SOCKET_URL');
     realtime?.dispose();
-    realtime = RealtimeService(
-      socketUrl: socketUrl.isNotEmpty
-          ? socketUrl
-          : api.baseUrl.replaceFirst(RegExp(r'/api$'), ''),
-      readToken: api.readAccessToken,
-    );
-    realtime!.connect((_, __) {});
+    realtime = null;
+    if (userId != null) {
+      final socketUrl = const String.fromEnvironment('SOCKET_URL');
+      realtime = RealtimeService(
+        socketUrl: socketUrl.isNotEmpty
+            ? socketUrl
+            : api.baseUrl.replaceFirst(RegExp(r'/api$'), ''),
+        readToken: api.readAccessToken,
+      )..connect((_, __) {});
+    }
     errorMessage = null;
     successMessage = null;
     notifyListeners();

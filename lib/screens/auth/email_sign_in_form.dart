@@ -204,6 +204,7 @@ class _EmailSignInFormState extends State<EmailSignInForm> {
                           child: OtpField(
                             controller: _otp,
                             autofocus: true,
+                            autofillOneTimeCode: true,
                             onChanged: (_) => field.didChange(_otp.text),
                             onCompleted: (_) => _verifyCode(),
                           ),

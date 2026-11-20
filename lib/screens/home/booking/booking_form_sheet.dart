@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../app/app_controller.dart';
 import '../../../app/auth_feature_flags.dart';
 import '../../../core/design_system/design_system.dart';
@@ -11,11 +12,13 @@ import '../../../models/booking_service_form.dart';
 import '../../../models/service.dart';
 import '../../../services/api_client.dart';
 import '../../../services/friendly_error.dart';
+import '../../../services/masking.dart';
 import '../../../services/payment/online_payment_flow.dart';
 import '../../../services/payment/payment_checkout.dart';
 import '../../../services/service_area.dart';
 import '../../booking_details_screen.dart';
 import '../../common/booking_format.dart';
+import '../../auth/phone_verify_dialog.dart';
 import 'booking_fields.dart';
 import 'live_quote_summary.dart';
 
@@ -55,6 +58,7 @@ class _BookingPhoneVerificationDialogState
       TextEditingController(text: widget.initialPhone);
   final _otp = TextEditingController();
   String? _challengeId;
+  PhoneOtpChannel? _channel;
   String? _error;
   bool _busy = false;
 
@@ -84,6 +88,7 @@ class _BookingPhoneVerificationDialogState
       }
       setState(() {
         _challengeId = result.challengeId;
+        _channel = result.channel;
         _otp.clear();
       });
     } catch (error) {
@@ -141,15 +146,43 @@ class _BookingPhoneVerificationDialogState
               decoration: const InputDecoration(labelText: 'Mobile number'),
               onChanged: (_) => setState(() {
                 _challengeId = null;
+                _channel = null;
                 _error = null;
               }),
             ),
+            if (_challengeId != null && _channel != null) ...[
+              const SizedBox(height: AppSpace.sm),
+              Row(
+                children: [
+                  Icon(
+                    _channel == PhoneOtpChannel.whatsapp
+                        ? Icons.chat_outlined
+                        : Icons.sms_outlined,
+                    color: _channel == PhoneOtpChannel.whatsapp
+                        ? const Color(0xFF25D366)
+                        : context.colors.primary,
+                  ),
+                  const SizedBox(width: AppSpace.sm),
+                  Expanded(
+                    child: Text(
+                      'We sent a code via ${_channel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS'} to +91 ${maskPhone(_phone.text)}.',
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: AppSpace.md),
             TextField(
               controller: _otp,
               keyboardType: TextInputType.number,
+              autofillHints: _channel == PhoneOtpChannel.sms
+                  ? const [AutofillHints.oneTimeCode]
+                  : null,
+              maxLength: 6,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: const InputDecoration(
                 labelText: '6-digit verification code',
+                counterText: '',
               ),
               onChanged: (_) => setState(() => _error = null),
             ),
@@ -308,7 +341,9 @@ Future<void> openBookingForm(
   Map<String, dynamic>? validatedCoupon;
   String? couponMessage;
   String? bookingFormError;
+  String? bookingFormNotice;
   String? phoneChallengeId;
+  PhoneOtpChannel? phoneOtpChannel;
   String? emailChallengeId;
   String? verifiedPhone;
   var phoneVerified = false;
@@ -321,18 +356,7 @@ Future<void> openBookingForm(
   String? bookingKey;
   String? bookingKeyFingerprint;
   String? paymentMethod;
-  try {
-    final savedPhone = await controller.api.phoneVerification();
-    phoneController.text = savedPhone.phone;
-    verifiedPhone = savedPhone.verified ? savedPhone.phone : null;
-    phoneVerified = savedPhone.verified && savedPhone.phone.isNotEmpty;
-    phoneVerificationRequired = savedPhone.required;
-  } catch (_) {
-    // The booking form still permits verification when the number is changed.
-  } finally {
-    loadingPhoneVerification = false;
-  }
-  if (!context.mounted) {
+  void disposeFormControllers() {
     couponController.dispose();
     notesController.dispose();
     phoneController.dispose();
@@ -342,6 +366,48 @@ Future<void> openBookingForm(
     for (final fields in serviceFields.values) {
       fields.dispose();
     }
+  }
+
+  try {
+    final savedPhone = await controller.api.phoneVerification();
+    if (!context.mounted) {
+      disposeFormControllers();
+      return;
+    }
+    phoneController.text = savedPhone.phone;
+    verifiedPhone = savedPhone.verified ? savedPhone.phone : null;
+    phoneVerified = savedPhone.verified && savedPhone.phone.isNotEmpty;
+    phoneVerificationRequired = savedPhone.required;
+    if (AuthFeatureFlags.phoneVerifyDialog &&
+        controller.user != null &&
+        savedPhone.required &&
+        !savedPhone.phoneVerified) {
+      final verified = await showPhoneVerifyDialog(
+        context,
+        controller: controller,
+        allowSkip: false,
+        initialPhone: savedPhone.phone,
+      );
+      if (!context.mounted) {
+        disposeFormControllers();
+        return;
+      }
+      if (verified == null) {
+        disposeFormControllers();
+        return;
+      }
+      phoneController.text = verified.phone;
+      verifiedPhone = verified.phone;
+      phoneChallengeId = verified.challengeId;
+      phoneVerified = true;
+    }
+  } catch (_) {
+    // The booking form still permits verification when the number is changed.
+  } finally {
+    loadingPhoneVerification = false;
+  }
+  if (!context.mounted) {
+    disposeFormControllers();
     return;
   }
   bool serviceHasMissingFields(String id) {
@@ -839,6 +905,8 @@ Future<void> openBookingForm(
                         if (!phoneVerified) {
                           phoneChallengeId = null;
                           emailChallengeId = null;
+                          phoneOtpChannel = null;
+                          bookingFormNotice = null;
                           otpController.clear();
                           emailOtpController.clear();
                         }
@@ -898,12 +966,14 @@ Future<void> openBookingForm(
                                 ? otpController
                                 : emailOtpController,
                             keyboardType: TextInputType.number,
+                            autofillHints: phoneChallengeId != null &&
+                                    phoneOtpChannel == PhoneOtpChannel.sms
+                                ? const [AutofillHints.oneTimeCode]
+                                : null,
                             decoration: InputDecoration(
                               labelText: emailChallengeId != null
                                   ? 'Email code'
-                                  : AuthFeatureFlags.emailOtp
-                                      ? 'SMS code'
-                                      : 'OTP',
+                                  : 'Phone code',
                             ),
                           ),
                         ),
@@ -920,8 +990,11 @@ Future<void> openBookingForm(
                               setSheetState(() {
                                 phoneChallengeId = challenge.challengeId;
                                 emailChallengeId = challenge.emailChallengeId;
-                                bookingFormError =
-                                    'OTP sent. Enter it to verify this number.';
+                                phoneOtpChannel = challenge.channel;
+                                bookingFormError = null;
+                                bookingFormNotice = challenge.channel == null
+                                    ? 'Enter the phone code to verify this number.'
+                                    : 'We sent a code via ${challenge.channel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS'} to +91 ${normalizeIndianPhone(phoneController.text)}.';
                               });
                             } catch (error) {
                               final accountEmail = controller.user?.email;
@@ -930,8 +1003,9 @@ Future<void> openBookingForm(
                                   accountEmail.trim().isNotEmpty &&
                                   error is ApiException &&
                                   error.statusCode == 503 &&
-                                  error.message ==
-                                      'Mobile verification is not configured yet.';
+                                  (error.message ==
+                                          'Mobile verification is not configured yet.' ||
+                                      error.message == 'OTP delivery failed.');
                               if (!canUseEmailFallback) {
                                 setSheetState(() =>
                                     bookingFormError = friendlyError(error));
@@ -947,8 +1021,11 @@ Future<void> openBookingForm(
                                 setSheetState(() {
                                   emailController.text = accountEmail.trim();
                                   phoneChallengeId = null;
+                                  phoneOtpChannel = null;
                                   emailChallengeId = challengeId;
-                                  bookingFormError = 'SMS is unavailable. A '
+                                  bookingFormError = null;
+                                  bookingFormNotice =
+                                      'Phone delivery is unavailable. A '
                                       'verification code was sent to your '
                                       'registered email.';
                                 });
@@ -967,6 +1044,13 @@ Future<void> openBookingForm(
                       Text(
                         bookingFormError!,
                         style: TextStyle(color: colors.danger.fg),
+                      ),
+                    ],
+                    if (bookingFormNotice != null) ...[
+                      const SizedBox(height: AppSpace.sm),
+                      Text(
+                        bookingFormNotice!,
+                        style: TextStyle(color: colors.success.fg),
                       ),
                     ],
                     const SizedBox(height: AppSpace.xs),

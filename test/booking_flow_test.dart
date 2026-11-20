@@ -33,6 +33,7 @@ class _FakeApi extends ApiClient {
   Future<
       ({
         String? challengeId,
+        PhoneOtpChannel? channel,
         String? emailChallengeId,
         int resendAfterSeconds
       })> requestBookingOtp({required String phone, String? email}) async {
@@ -44,6 +45,7 @@ class _FakeApi extends ApiClient {
     }
     return (
       challengeId: 'phone-challenge',
+      channel: PhoneOtpChannel.whatsapp,
       emailChallengeId: null,
       resendAfterSeconds: 30,
     );
@@ -118,7 +120,8 @@ void main() {
     expect(find.text('Send OTP'), findsNothing);
   });
 
-  testWidgets('booking falls back to the registered email when SMS is off',
+  testWidgets(
+      'booking falls back to the registered email when phone delivery is off',
       (tester) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
@@ -161,7 +164,7 @@ void main() {
     expect(api.fallbackPhone, '9876543210');
     expect(
       find.text(
-          'SMS is unavailable. A verification code was sent to your registered email.'),
+          'Phone delivery is unavailable. A verification code was sent to your registered email.'),
       findsOneWidget,
     );
     expect(

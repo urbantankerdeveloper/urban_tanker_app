@@ -156,7 +156,8 @@ class ApiClient implements ApiTransport {
   Future<void> requestPasswordReset(String email) =>
       _auth.requestPasswordReset(email);
 
-  Future<String> requestPhoneAuthOtp(String phone) =>
+  Future<({String challengeId, PhoneOtpChannel channel})> requestPhoneAuthOtp(
+          String phone) =>
       _auth.requestPhoneAuthOtp(phone);
 
   Future<AuthResult> verifyPhoneAuthOtp({
@@ -175,11 +176,25 @@ class ApiClient implements ApiTransport {
   Future<PhoneVerificationState> phoneVerification() =>
       _auth.phoneVerification();
 
+  Future<PhoneVerificationChallenge> requestAccountPhoneVerification(
+    String phone,
+  ) =>
+      _auth.requestAccountPhoneVerification(phone);
+
+  Future<PhoneVerificationResult> confirmAccountPhoneVerification({
+    required String phone,
+    required String code,
+  }) =>
+      _auth.confirmAccountPhoneVerification(phone: phone, code: code);
+
+  Future<SessionUser> currentUserProfile() => _auth.currentUserProfile();
+
   Future<String> requestPhoneOtp(String phone) => _auth.requestPhoneOtp(phone);
 
   Future<
       ({
         String? challengeId,
+        PhoneOtpChannel? channel,
         String? emailChallengeId,
         int resendAfterSeconds
       })> requestBookingOtp(

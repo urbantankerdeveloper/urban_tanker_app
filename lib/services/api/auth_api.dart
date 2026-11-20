@@ -96,7 +96,8 @@ class AuthApi {
     }
   }
 
-  Future<String> requestPhoneAuthOtp(String phone) async {
+  Future<({String challengeId, PhoneOtpChannel channel})> requestPhoneAuthOtp(
+      String phone) async {
     final normalized = normalizeIndianPhone(phone);
     if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
       throw const FormatException('Enter a valid 10-digit mobile number.');
@@ -108,10 +109,17 @@ class AuthApi {
       retry: false,
     );
     final decoded = decodeBody(response);
-    if (decoded is! Map<String, dynamic> || decoded['challengeId'] is! String) {
+    if (decoded is! Map<String, dynamic> ||
+        decoded['challengeId'] is! String ||
+        (decoded['channel'] != 'whatsapp' && decoded['channel'] != 'sms')) {
       throw const FormatException('The phone sign-in response was invalid.');
     }
-    return decoded['challengeId'] as String;
+    return (
+      challengeId: decoded['challengeId'] as String,
+      channel: decoded['channel'] == 'sms'
+          ? PhoneOtpChannel.sms
+          : PhoneOtpChannel.whatsapp,
+    );
   }
 
   Future<AuthResult> verifyPhoneAuthOtp({
@@ -152,7 +160,80 @@ class AuthApi {
       phone: normalizeIndianPhone((decoded['phone'] ?? '').toString()),
       verified: decoded['verified'] == true,
       required: decoded['required'] != false,
+      phoneVerified: decoded['phoneVerified'] == true,
+      challengeId: decoded['challengeId'] as String?,
     );
+  }
+
+  Future<PhoneVerificationChallenge> requestAccountPhoneVerification(
+    String phone,
+  ) async {
+    final normalized = normalizeIndianPhone(phone);
+    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
+      throw const FormatException('Enter a valid 10-digit mobile number.');
+    }
+    final response = await _api.request(
+      'POST',
+      '/auth/phone/verify/request',
+      body: {'phone': normalized},
+      retry: false,
+    );
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic> ||
+        decoded['challengeId'] is! String ||
+        !const ['whatsapp', 'sms'].contains(decoded['channel'])) {
+      throw const FormatException('The phone OTP response was invalid.');
+    }
+    return PhoneVerificationChallenge(
+      challengeId: decoded['challengeId'] as String,
+      channel: decoded['channel'] == 'sms'
+          ? PhoneOtpChannel.sms
+          : PhoneOtpChannel.whatsapp,
+      expiresInSeconds: (decoded['expiresInSeconds'] as num?)?.toInt() ?? 300,
+      resendAfterSeconds:
+          (decoded['resendAfterSeconds'] as num?)?.toInt() ?? 30,
+    );
+  }
+
+  Future<PhoneVerificationResult> confirmAccountPhoneVerification({
+    required String phone,
+    required String code,
+  }) async {
+    final normalized = normalizeIndianPhone(phone);
+    if (!RegExp(r'^\d{10}$').hasMatch(normalized)) {
+      throw const FormatException('Enter a valid 10-digit mobile number.');
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(code.trim())) {
+      throw const FormatException('Enter the 6-digit verification code.');
+    }
+    final response = await _api.request(
+      'POST',
+      '/auth/phone/verify/confirm',
+      body: {'phone': normalized, 'code': code.trim()},
+      retry: false,
+    );
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic> ||
+        decoded['challengeId'] is! String ||
+        decoded['phoneVerified'] != true) {
+      throw const FormatException(
+          'The phone verification response was invalid.');
+    }
+    return PhoneVerificationResult(
+      phone: normalized,
+      challengeId: decoded['challengeId'] as String,
+      verified: true,
+    );
+  }
+
+  Future<SessionUser> currentUserProfile() async {
+    final response = await _api.request('GET', '/auth/me');
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic> ||
+        decoded['user'] is! Map<String, dynamic>) {
+      throw const FormatException('The profile response was invalid.');
+    }
+    return SessionUser.fromJson(decoded['user'] as Map<String, dynamic>);
   }
 
   Future<String> requestPhoneOtp(String phone) async {
@@ -178,6 +259,7 @@ class AuthApi {
   Future<
       ({
         String? challengeId,
+        PhoneOtpChannel? channel,
         String? emailChallengeId,
         int resendAfterSeconds
       })> requestBookingOtp({required String phone, String? email}) async {
@@ -204,11 +286,20 @@ class AuthApi {
     }
     final challengeId = decoded['challengeId'] as String?;
     final emailChallengeId = decoded['emailChallengeId'] as String?;
+    final rawChannel = decoded['channel'] ?? decoded['phoneOtpChannel'];
+    if (rawChannel != null && rawChannel != 'whatsapp' && rawChannel != 'sms') {
+      throw const FormatException('The booking OTP response was invalid.');
+    }
     if (challengeId == null && emailChallengeId == null) {
       throw const FormatException('The booking OTP response was invalid.');
     }
     return (
       challengeId: challengeId,
+      channel: rawChannel == 'sms'
+          ? PhoneOtpChannel.sms
+          : rawChannel == 'whatsapp'
+              ? PhoneOtpChannel.whatsapp
+              : null,
       emailChallengeId: emailChallengeId,
       resendAfterSeconds: (decoded['resendAfterSeconds'] as num?)?.toInt() ??
           _defaultResendAfterSeconds,
