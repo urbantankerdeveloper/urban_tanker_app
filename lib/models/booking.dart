@@ -13,6 +13,8 @@ class Booking {
     this.longitude,
     this.notes,
     this.cancellationReason,
+    this.orderItems = const [],
+    this.fulfilments = const [],
     this.serviceId,
     this.quotedAmount,
     this.paymentStatus,
@@ -42,6 +44,8 @@ class Booking {
   final double? longitude;
   final String? notes;
   final String? cancellationReason;
+  final List<BookingOrderItem> orderItems;
+  final List<BookingFulfilment> fulfilments;
 
   double? get quotedAmountRupees {
     final paise = int.tryParse(quotedAmount ?? '');
@@ -58,6 +62,18 @@ class Booking {
 
   factory Booking.fromJson(Map<String, dynamic> json) {
     final customer = json['customer'];
+    final orderItems = _records(
+      json['items'] ?? json['order_items'],
+      BookingOrderItem.fromJson,
+    );
+    final services = _records(
+      json['service_details'] ?? json['services'],
+      BookingServiceDetails.fromJson,
+    );
+    if (services.isEmpty) {
+      services.addAll(orderItems.map((item) => item.details));
+    }
+    final rawFulfilments = json['fulfilments'] ?? json['fulfillments'];
     return Booking(
       id: (json['id'] ?? '').toString(),
       reference: (json['reference'] ?? json['order_number'] ?? json['id'] ?? '')
@@ -75,6 +91,8 @@ class Booking {
       cancellationReason:
           (json['cancellation_reason'] ?? json['cancellationReason'])
               ?.toString(),
+      orderItems: orderItems,
+      fulfilments: _records(rawFulfilments, BookingFulfilment.fromJson),
       deliveryDate: DateTime.tryParse(
         (json['scheduled_for'] ?? json['delivery_date'] ?? '').toString(),
       ),
@@ -82,7 +100,10 @@ class Booking {
         (json['created_at'] ?? '').toString(),
       ),
       serviceId: (json['service_code'] ?? json['service_id'] ?? '').toString(),
-      quotedAmount: json['quoted_amount_paise']?.toString(),
+      quotedAmount: (json['total_paise'] ??
+              json['totalPaise'] ??
+              json['quoted_amount_paise'])
+          ?.toString(),
       paymentStatus: json['payment_status']?.toString(),
       paymentMethod:
           (json['payment_method'] ?? json['paymentMethod'])?.toString(),
@@ -98,13 +119,134 @@ class Booking {
       customerEmail:
           (json['customer_email'] ?? json['customerEmail'] ?? json['email'])
               ?.toString(),
-      services: (json['service_details'] as List<dynamic>? ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .map(BookingServiceDetails.fromJson)
-          .toList(),
+      services: services,
     );
   }
 }
+
+class BookingOrderItem {
+  const BookingOrderItem({
+    required this.id,
+    required this.serviceId,
+    required this.serviceName,
+    required this.status,
+    required this.details,
+    required this.amountPaise,
+    this.location,
+    this.scheduledFor,
+    this.fulfilmentId,
+  });
+
+  final String id;
+  final String serviceId;
+  final String serviceName;
+  final String status;
+  final BookingServiceDetails details;
+  final int amountPaise;
+  final String? location;
+  final DateTime? scheduledFor;
+  final String? fulfilmentId;
+
+  factory BookingOrderItem.fromJson(Map<String, dynamic> json) {
+    final rawDetails =
+        json['service_details'] ?? json['serviceDetails'] ?? json['details'];
+    final detailsMap =
+        rawDetails is Map<String, dynamic> ? rawDetails : <String, dynamic>{};
+    final serviceId = (json['service_type_id'] ??
+            json['serviceTypeId'] ??
+            json['service_id'] ??
+            json['serviceId'] ??
+            detailsMap['serviceId'] ??
+            '')
+        .toString();
+    final serviceType = json['service_type'];
+    final serviceName = json['service_type_name'] ??
+        json['serviceName'] ??
+        (serviceType is Map ? serviceType['name'] : null);
+    final location = (json['address_text'] ?? json['location'])?.toString();
+    final scheduledFor = json['scheduled_for'] ??
+        json['scheduledFor'] ??
+        detailsMap['deliveryDate'];
+    return BookingOrderItem(
+      id: (json['id'] ?? json['item_id'] ?? serviceId).toString(),
+      serviceId: serviceId,
+      serviceName: (serviceName ?? serviceId).toString(),
+      status: (json['status'] ?? 'pending').toString(),
+      details: BookingServiceDetails.fromJson({
+        ...detailsMap,
+        'serviceId': serviceId,
+        if (json['capacity'] != null) 'capacity': json['capacity'],
+        if (json['quantity'] != null) 'quantity': json['quantity'],
+        if (json['details'] is String) 'details': json['details'],
+        if (location != null) 'location': location,
+        if (scheduledFor != null) 'deliveryDate': scheduledFor,
+        if (json['latitude'] != null) 'latitude': json['latitude'],
+        if (json['longitude'] != null) 'longitude': json['longitude'],
+      }),
+      amountPaise: ((json['price_paise'] ??
+                  json['amount_paise'] ??
+                  json['quoted_amount_paise'] ??
+                  json['quotedAmountPaise']) as num?)
+              ?.toInt() ??
+          0,
+      location: location,
+      scheduledFor: DateTime.tryParse((scheduledFor ?? '').toString()),
+      fulfilmentId: (json['fulfilment_id'] ?? json['fulfilmentId'])?.toString(),
+    );
+  }
+}
+
+class BookingFulfilment {
+  const BookingFulfilment({
+    required this.id,
+    required this.status,
+    required this.itemIds,
+    required this.amountPaise,
+    this.location,
+    this.scheduledFor,
+    this.vendorName,
+  });
+
+  final String id;
+  final String status;
+  final List<String> itemIds;
+  final int amountPaise;
+  final String? location;
+  final DateTime? scheduledFor;
+  final String? vendorName;
+
+  factory BookingFulfilment.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['item_ids'] ?? json['itemIds'] ?? json['items'];
+    final itemIds = rawItems is List
+        ? rawItems
+            .map((item) => item is Map ? item['id'] : item)
+            .whereType<String>()
+            .toList()
+        : const <String>[];
+    final scheduledFor = json['scheduled_for'] ?? json['scheduledFor'];
+    return BookingFulfilment(
+      id: (json['id'] ?? '').toString(),
+      status: (json['status'] ?? 'pending_vendor').toString(),
+      itemIds: itemIds,
+      amountPaise: ((json['amount_paise'] ??
+                  json['amountPaise'] ??
+                  json['quoted_amount_paise']) as num?)
+              ?.toInt() ??
+          0,
+      location: (json['address_text'] ?? json['location'])?.toString(),
+      scheduledFor: DateTime.tryParse((scheduledFor ?? '').toString()),
+      vendorName: (json['vendor_name'] ?? json['vendorName'])?.toString(),
+    );
+  }
+}
+
+List<T> _records<T>(
+  Object? value,
+  T Function(Map<String, dynamic>) parse,
+) =>
+    value is List
+        ? value.whereType<Map<String, dynamic>>().map(parse).toList()
+        : <T>[];
 
 class TrackingSnapshot {
   const TrackingSnapshot({

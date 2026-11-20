@@ -181,6 +181,20 @@ void main() {
   });
 
   group('retries', () {
+    test('sends the app version for minimum-version enforcement', () async {
+      String? appVersion;
+      final api = _apiFor(
+        MockClient((request) async {
+          appVersion = request.headers['x-app-version'];
+          return http.Response('[]', 200);
+        }),
+      );
+
+      await api.services();
+
+      expect(appVersion, '1.1.0');
+    });
+
     test('a GET retries after a dropped connection', () async {
       var calls = 0;
       final api = _apiFor(

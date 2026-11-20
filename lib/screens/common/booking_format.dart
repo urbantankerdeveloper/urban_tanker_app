@@ -3,6 +3,8 @@ import '../../models/booking.dart';
 const _finishedStatuses = {
   'delivered',
   'completed',
+  'partially_completed',
+  'partially_cancelled',
   'cancelled',
   'canceled',
   'rejected',
@@ -32,9 +34,18 @@ const bookingProgressSteps = [
 /// off the delivery path (cancelled or rejected). Unknown statuses count as
 /// requested.
 int? bookingProgressIndex(String status) => switch (status.toLowerCase()) {
-      'accepted' || 'vendor_accepted' || 'assigned' || 'vendor_assigned' => 1,
-      'in_transit' || 'on_the_way' || 'arrived' => 2,
-      'delivered' || 'completed' => 3,
+      'accepted' ||
+      'partially_accepted' ||
+      'vendor_accepted' ||
+      'assigned' ||
+      'vendor_assigned' =>
+        1,
+      'in_transit' || 'on_the_way' || 'arrived' || 'in_progress' => 2,
+      'delivered' ||
+      'completed' ||
+      'partially_completed' ||
+      'partially_cancelled' =>
+        3,
       'cancelled' || 'canceled' || 'rejected' => null,
       _ => 0,
     };

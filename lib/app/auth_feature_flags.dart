@@ -16,4 +16,11 @@ abstract final class AuthFeatureFlags {
     'PHONE_VERIFY_DIALOG_ENABLED',
     defaultValue: false,
   );
+
+  /// Parent orders with independent service fulfilments.
+  /// Enable with `--dart-define=MULTI_SERVICE_ORDERS_ENABLED=true`.
+  static const multiServiceOrders = bool.fromEnvironment(
+    'MULTI_SERVICE_ORDERS_ENABLED',
+    defaultValue: false,
+  );
 }

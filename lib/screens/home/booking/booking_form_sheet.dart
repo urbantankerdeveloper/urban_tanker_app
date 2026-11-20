@@ -280,7 +280,10 @@ Future<void> openBookingForm(
         quantity: previousDetails[service.id]?.quantity ??
             (previousBooking == null && service.capacityOptions.isNotEmpty
                 ? service.capacityOptions.first
-                : ''),
+                : AuthFeatureFlags.multiServiceOrders &&
+                        service.minQuantity != null
+                    ? service.minQuantity!.toString()
+                    : ''),
         details: previousDetails[service.id]?.details ?? '',
         location: previousDetails[service.id]?.location ??
             (previousBooking?.location ?? selectedAddress ?? ''),
@@ -419,7 +422,14 @@ Future<void> openBookingForm(
         ? fields.waterType.text.trim().isEmpty ||
             fields.tankerCount.text.trim().isEmpty
         : fields.details.text.trim().isEmpty;
-    return fields.quantity.text.trim().isEmpty ||
+    final quantity = double.tryParse(fields.quantity.text.trim());
+    final quantityValid = service.capacityOptions.isNotEmpty
+        ? service.capacityOptions.contains(fields.quantity.text)
+        : AuthFeatureFlags.multiServiceOrders &&
+            quantity != null &&
+            quantity >= (service.minQuantity ?? 1) &&
+            quantity <= (service.maxQuantity ?? double.infinity);
+    return !quantityValid ||
         serviceSpecificMissing ||
         fields.location.text.trim().isEmpty ||
         !isChennaiLocation(
@@ -428,7 +438,6 @@ Future<void> openBookingForm(
           longitude: fields.longitude,
         ) ||
         DateTime.tryParse(fields.deliveryDate.text.trim()) == null ||
-        service.capacityOptions.contains(fields.quantity.text) == false ||
         (id == 'water_tanker' &&
             (!service.waterTypeOptions.contains(fields.waterType.text) ||
                 !service.tankerCountOptions.contains(fields.tankerCount.text)));
@@ -821,6 +830,10 @@ Future<void> openBookingForm(
 
           Widget serviceEditor(TankerService service) {
             final fields = serviceFields[service.id]!;
+            final form = BookingServiceForm.forService(service.id);
+            final quantityLabel = service.unit?.trim().isNotEmpty == true
+                ? service.unit!
+                : form.quantityLabel;
             return SurfaceCard(
               padding: const EdgeInsets.all(AppSpace.md),
               child: Column(
@@ -847,14 +860,29 @@ Future<void> openBookingForm(
                     ],
                   ),
                   const SizedBox(height: AppSpace.sm),
-                  ServiceDropdownField(
-                    controller: fields.quantity,
-                    label:
-                        BookingServiceForm.forService(service.id).quantityLabel,
-                    options: service.capacityOptions,
-                    emptyMessage: 'No capacity options are configured.',
-                    onChanged: (_) => setSheetState(() {}),
-                  ),
+                  if (AuthFeatureFlags.multiServiceOrders &&
+                      service.capacityOptions.isEmpty)
+                    TextFormField(
+                      controller: fields.quantity,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: quantityLabel,
+                        helperText: service.minQuantity == null &&
+                                service.maxQuantity == null
+                            ? null
+                            : 'Allowed range: ${service.minQuantity ?? 1} to ${service.maxQuantity ?? 'no maximum'}',
+                      ),
+                      onChanged: (_) => setSheetState(() {}),
+                    )
+                  else
+                    ServiceDropdownField(
+                      controller: fields.quantity,
+                      label: form.quantityLabel,
+                      options: service.capacityOptions,
+                      emptyMessage: 'No capacity options are configured.',
+                      onChanged: (_) => setSheetState(() {}),
+                    ),
                   if (service.id == 'water_tanker') ...[
                     const SizedBox(height: AppSpace.sm),
                     ServiceDropdownField(
@@ -874,14 +902,26 @@ Future<void> openBookingForm(
                     ),
                   ] else ...[
                     const SizedBox(height: AppSpace.sm),
-                    ServiceDropdownField(
-                      controller: fields.details,
-                      label: BookingServiceForm.forService(service.id)
-                          .detailsLabel,
-                      options: service.detailOptions,
-                      emptyMessage: 'No service detail options are configured.',
-                      onChanged: (_) => setSheetState(() {}),
-                    ),
+                    if (AuthFeatureFlags.multiServiceOrders &&
+                        service.detailOptions.isEmpty)
+                      TextFormField(
+                        controller: fields.details,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          labelText: form.detailsLabel,
+                          hintText: form.detailsHint,
+                        ),
+                        onChanged: (_) => setSheetState(() {}),
+                      )
+                    else
+                      ServiceDropdownField(
+                        controller: fields.details,
+                        label: form.detailsLabel,
+                        options: service.detailOptions,
+                        emptyMessage:
+                            'No service detail options are configured.',
+                        onChanged: (_) => setSheetState(() {}),
+                      ),
                   ],
                 ],
               ),

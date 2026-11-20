@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../app/auth_feature_flags.dart';
 import '../app/providers.dart';
 import '../core/design_system/design_system.dart';
 import '../models/booking.dart';
 import '../models/booking_service_form.dart';
 import '../models/payment.dart';
 import '../services/friendly_error.dart';
+import '../services/api_client.dart';
 import '../services/payment/online_payment_flow.dart';
 import '../services/payment/payment_checkout.dart';
 import '../services/realtime_service.dart';
@@ -191,7 +193,13 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final booking = widget.booking;
+    final currentBookings = AuthFeatureFlags.multiServiceOrders
+        ? ref.watch(bookingsProvider).value?.items ?? const <Booking>[]
+        : const <Booking>[];
+    final booking = currentBookings
+            .where((item) => item.id == widget.booking.id)
+            .firstOrNull ??
+        widget.booking;
     final colors = context.colors;
     final theme = Theme.of(context);
     final tracking = ref.watch(bookingTrackingProvider(booking.id));
@@ -405,24 +413,64 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                 const _SectionTitle('Order'),
                 SurfaceCard(
                   child: _Rows([
-                    for (final service in booking.services)
-                      AppListRow(
-                        leading: const Icon(Icons.local_shipping_outlined),
-                        title: BookingServiceForm.forService(service.serviceId)
-                            .serviceName,
-                        subtitle: [
-                          if (service.quantity.trim().isNotEmpty)
-                            'Quantity/capacity: ${service.quantity}',
-                          if (service.waterType?.trim().isNotEmpty == true)
-                            'Water type: ${service.waterType}',
-                          if (service.tankerCount?.trim().isNotEmpty == true)
-                            'Tanker count: ${service.tankerCount}',
-                          if (service.preferredTime?.trim().isNotEmpty == true)
-                            'Preferred time: ${service.preferredTime}',
-                          if (service.details.trim().isNotEmpty)
-                            'Details: ${service.details}',
-                        ].join('\n'),
-                      ),
+                    if (AuthFeatureFlags.multiServiceOrders &&
+                        booking.orderItems.isNotEmpty)
+                      for (final item in booking.orderItems)
+                        AppListRow(
+                          leading: const Icon(Icons.local_shipping_outlined),
+                          title: item.serviceName,
+                          subtitle: [
+                            'Status: ${item.status.replaceAll('_', ' ')}',
+                            if (item.details.quantity.trim().isNotEmpty)
+                              'Quantity/capacity: ${item.details.quantity}',
+                            if (item.details.details.trim().isNotEmpty)
+                              'Details: ${item.details.details}',
+                            if (item.scheduledFor != null)
+                              'Scheduled: ${formatBookingDate(item.scheduledFor)}',
+                            if (item.location?.trim().isNotEmpty == true)
+                              'Location: ${item.location}',
+                            if (item.amountPaise > 0)
+                              'Price: ₹${(item.amountPaise / 100).toStringAsFixed(2)}',
+                          ].join('\n'),
+                        )
+                    else
+                      for (final service in booking.services)
+                        AppListRow(
+                          leading: const Icon(Icons.local_shipping_outlined),
+                          title:
+                              BookingServiceForm.forService(service.serviceId)
+                                  .serviceName,
+                          subtitle: [
+                            if (service.quantity.trim().isNotEmpty)
+                              'Quantity/capacity: ${service.quantity}',
+                            if (service.waterType?.trim().isNotEmpty == true)
+                              'Water type: ${service.waterType}',
+                            if (service.tankerCount?.trim().isNotEmpty == true)
+                              'Tanker count: ${service.tankerCount}',
+                            if (service.preferredTime?.trim().isNotEmpty ==
+                                true)
+                              'Preferred time: ${service.preferredTime}',
+                            if (service.details.trim().isNotEmpty)
+                              'Details: ${service.details}',
+                          ].join('\n'),
+                        ),
+                    if (AuthFeatureFlags.multiServiceOrders)
+                      for (final fulfilment in booking.fulfilments)
+                        AppListRow(
+                          leading: const Icon(Icons.local_shipping_outlined),
+                          title:
+                              'Fulfilment · ${fulfilment.status.replaceAll('_', ' ')}',
+                          subtitle: [
+                            if (fulfilment.vendorName?.trim().isNotEmpty ==
+                                true)
+                              'Vendor: ${fulfilment.vendorName}',
+                            '${fulfilment.itemIds.length} service${fulfilment.itemIds.length == 1 ? '' : 's'}',
+                            if (fulfilment.scheduledFor != null)
+                              'Scheduled: ${formatBookingDate(fulfilment.scheduledFor)}',
+                            if (fulfilment.location?.trim().isNotEmpty == true)
+                              'Location: ${fulfilment.location}',
+                          ].join('\n'),
+                        ),
                     AppListRow(
                       leading: const Icon(Icons.water_drop_outlined),
                       title: 'Capacity',
@@ -968,7 +1016,10 @@ class _LiveTrackingSection extends StatelessWidget {
           error: (error, _) => SurfaceCard(
             child: AppStateInline.error(
               error: error,
-              message: 'Live tracking is temporarily unavailable.',
+              message:
+                  error is ApiException && error.code == 'APP_UPDATE_REQUIRED'
+                      ? error.message
+                      : 'Live tracking is temporarily unavailable.',
               onRetry: onRetry,
             ),
           ),
