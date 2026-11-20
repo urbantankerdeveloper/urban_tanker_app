@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:urban_tanker_app/app/app_controller.dart';
@@ -12,6 +13,7 @@ class _FakeApiClient extends ApiClient {
   _FakeApiClient() : super(baseUrl: 'https://example.test/api');
 
   String? requestError;
+  PhoneOtpChannel requestedPhoneChannel = PhoneOtpChannel.whatsapp;
   String? verifyError;
   String? loginError;
   String? requestedPhone;
@@ -49,10 +51,15 @@ class _FakeApiClient extends ApiClient {
   }
 
   @override
-  Future<String> requestPhoneAuthOtp(String phone) async {
+  Future<({String challengeId, PhoneOtpChannel channel})> requestPhoneAuthOtp(
+    String phone,
+  ) async {
     requestedPhone = phone;
     if (requestError != null) throw ApiException(requestError!, 503);
-    return 'challenge-id';
+    return (
+      challengeId: 'challenge-id',
+      channel: requestedPhoneChannel,
+    );
   }
 
   @override
@@ -243,8 +250,51 @@ void main() {
 
     expect(api.requestedPhone, '9876543210');
     expect(find.text('Verification code'), findsOneWidget);
+    expect(
+      find.text('We sent a code via WhatsApp to +91 ******3210.'),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<TextField>(_otpInput()).autofillHints,
+      isNull,
+    );
     expect(find.text('Full name'), findsOneWidget);
     expect(find.text('Verify code and create account'), findsOneWidget);
+  });
+
+  testWidgets('uses SMS copy and one-time-code autofill for SMS fallback',
+      (tester) async {
+    api.requestedPhoneChannel = PhoneOtpChannel.sms;
+    await showAuthScreen(tester);
+    await tester.enterText(find.byType(TextFormField).first, '9876543210');
+    await tester.tap(find.text('Send verification code'));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.text('We sent a code via SMS to +91 ******3210.'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(_otpInput()).autofillHints,
+      const [AutofillHints.oneTimeCode],
+    );
+  });
+
+  testWidgets('pastes the complete copied code into the OTP field',
+      (tester) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async =>
+          call.method == 'Clipboard.getData' ? {'text': '123456'} : null,
+    );
+    await showAuthScreen(tester);
+    await tester.enterText(find.byType(TextFormField).first, '9876543210');
+    await tester.tap(find.text('Send verification code'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste code'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Verify code and sign in'));
+    await tester.pumpAndSettle();
+
+    expect(api.verifiedOtp, '123456');
   });
 
   testWidgets('sends the phone, OTP, and optional new-account name to verify',

@@ -133,6 +133,7 @@ void main() {
     final outcome = await flow.pay(bookingId: 'b1', name: 'n', description: 'd');
 
     expect(outcome.status, OnlinePaymentStatus.verificationPending);
+    expect(outcome.message, contains('do not make another payment'));
     expect(outcome.pendingSuccess?.paymentId, 'pay_1');
 
     final retried = await flow.confirm(outcome.pendingSuccess!);

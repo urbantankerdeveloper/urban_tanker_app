@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app/app_controller.dart';
 import '../core/design_system/design_system.dart';
 import '../services/masking.dart';
+import '../services/api/api_types.dart';
 import 'auth/email_sign_in_form.dart';
 import 'auth/email_sign_up_form.dart';
 import 'auth/resend_cooldown.dart';
@@ -129,6 +130,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _otp.clear();
     _resendCooldown.cancel();
     widget.controller.phoneOtpChallengeId = null;
+    widget.controller.phoneOtpChannel = null;
     widget.controller.clearError();
   }
 
@@ -145,6 +147,7 @@ class _AuthScreenState extends State<AuthScreen> {
     if (_method == method) return;
     if (method != _AuthMethod.phone) {
       widget.controller.phoneOtpChallengeId = null;
+      widget.controller.phoneOtpChannel = null;
       _otp.clear();
       _resendCooldown.cancel();
     }
@@ -234,7 +237,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     : 'Sign in with your email and password, or with a one-time '
                         'code.'
                 : _otpRequested
-                    ? 'Enter the 6-digit code sent to ${maskPhone(_phone.text)}.'
+                    ? 'Enter the verification code below.'
                     : _isRegistration
                         ? 'Create a customer account with your mobile number and a one-time code.'
                         : _usesPhone
@@ -391,6 +394,28 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
             if (_otpRequested) ...[
               const SizedBox(height: AppSpace.md),
+              if (controller.phoneOtpChannel != null)
+                Row(
+                  children: [
+                    Icon(
+                      controller.phoneOtpChannel == PhoneOtpChannel.whatsapp
+                          ? Icons.chat_outlined
+                          : Icons.sms_outlined,
+                      color: controller.phoneOtpChannel ==
+                              PhoneOtpChannel.whatsapp
+                          ? const Color(0xFF25D366)
+                          : colors.primary,
+                    ),
+                    const SizedBox(width: AppSpace.sm),
+                    Expanded(
+                      child: Text(
+                        'We sent a code via ${controller.phoneOtpChannel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS'} to +91 ${maskPhone(_phone.text)}.',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: AppSpace.md),
               FormField<String>(
                 validator: (_) => _validateOtp(_otp.text),
                 builder: (field) => Column(
@@ -403,6 +428,8 @@ class _AuthScreenState extends State<AuthScreen> {
                       ignoring: controller.busy,
                       child: OtpField(
                         controller: _otp,
+                        autofillOneTimeCode:
+                            controller.phoneOtpChannel == PhoneOtpChannel.sms,
                         onChanged: (_) => field.didChange(_otp.text),
                       ),
                     ),

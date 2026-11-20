@@ -9,4 +9,11 @@ abstract final class AuthFeatureFlags {
     'EMAIL_OTP_ENABLED',
     defaultValue: false,
   );
+
+  /// Prompts signed-in users to verify their phone. Turn on with
+  /// `--dart-define=PHONE_VERIFY_DIALOG_ENABLED=true`.
+  static const phoneVerifyDialog = bool.fromEnvironment(
+    'PHONE_VERIFY_DIALOG_ENABLED',
+    defaultValue: false,
+  );
 }

@@ -4,11 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/account.dart';
+import '../../../models/admin_enquiry_page.dart';
 import '../../../models/notification.dart';
 import '../../../services/friendly_error.dart';
 import 'admin_common.dart';
 
-const _setupTabs = ['Services', 'Notifications', 'Audit'];
+const _setupTabs = ['Services', 'Enquiries', 'Inbox', 'Audit'];
+const _enquiryPageSize = 25;
 
 /// Admin setup: service configuration, customer notifications and the admin
 /// inbox, and the audit log.
@@ -22,15 +24,33 @@ class AdminSetupSection extends ConsumerStatefulWidget {
 class _AdminSetupSectionState extends ConsumerState<AdminSetupSection> {
   int _tab = 0;
   late Future<List<AccountRecord>> _services;
+  late Future<AdminEnquiryPage> _enquiries;
+  final _enquirySearch = TextEditingController();
+  int _enquiryPage = 1;
+  String _enquiryQuery = '';
 
   @override
   void initState() {
     super.initState();
     _reloadServices();
+    _reloadEnquiries();
+  }
+
+  @override
+  void dispose() {
+    _enquirySearch.dispose();
+    super.dispose();
   }
 
   void _reloadServices() {
     _services = ref.read(appControllerProvider).api.adminServices();
+  }
+
+  void _reloadEnquiries() {
+    _enquiries = ref.read(appControllerProvider).api.adminEnquiries(
+          page: _enquiryPage,
+          pageSize: _enquiryPageSize,
+        );
   }
 
   @override
@@ -49,11 +69,118 @@ class _AdminSetupSectionState extends ConsumerState<AdminSetupSection> {
         const SizedBox(height: AppSpace.lg),
         switch (_tab) {
           0 => _servicesTab(),
-          1 => const _NotificationsPanel(),
+          1 => _enquiriesTab(),
+          2 => const _NotificationsPanel(),
           _ => const _AuditPanel(),
         },
       ],
     );
+  }
+
+  Widget _enquiriesTab() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: AdminSearchField(
+                  controller: _enquirySearch,
+                  label: 'Search this page',
+                  onChanged: (value) => setState(() => _enquiryQuery = value),
+                ),
+              ),
+              const SizedBox(width: AppSpace.sm),
+              IconButton(
+                tooltip: 'Refresh enquiries',
+                onPressed: () => setState(_reloadEnquiries),
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpace.md),
+          FutureBuilder<AdminEnquiryPage>(
+            future: _enquiries,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const LoadingState(message: 'Loading enquiries...');
+              }
+              if (snapshot.hasError) {
+                return ErrorState(
+                  error: snapshot.error!,
+                  message: 'Enquiries could not be loaded. '
+                      '${friendlyError(snapshot.error!)}',
+                  onRetry: () => setState(_reloadEnquiries),
+                );
+              }
+
+              final page = snapshot.data!;
+              final query = _enquiryQuery.trim().toLowerCase();
+              final records = page.rows
+                  .where((record) =>
+                      query.isEmpty ||
+                      record.data.values.any((value) =>
+                          value.toString().toLowerCase().contains(query)))
+                  .toList(growable: false);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (records.isEmpty)
+                    EmptyState(
+                      icon: Icons.inbox_outlined,
+                      title: page.rows.isEmpty
+                          ? 'No service enquiries yet.'
+                          : 'No enquiries on this page match your search.',
+                    )
+                  else
+                    for (final record in records)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpace.md),
+                        child: AdminRecordRow(
+                          record: record,
+                          onTap: () => showAdminRecordSheet(context, record),
+                          trailing: IconButton(
+                            tooltip: 'Update enquiry',
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () => _editEnquiry(record),
+                          ),
+                        ),
+                      ),
+                  if (page.total > page.pageSize) ...[
+                    const SizedBox(height: AppSpace.sm),
+                    AdminPager(
+                      page: page.page,
+                      hasNext: page.hasNextPage,
+                      onPage: (value) => setState(() {
+                        _enquiryPage = value;
+                        _reloadEnquiries();
+                      }),
+                    ),
+                    Text(
+                      '${page.total} enquiries',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      );
+
+  Future<void> _editEnquiry(AccountRecord record) async {
+    final saved = await showAppBottomSheet<bool>(
+      context,
+      builder: (_) => _EnquiryEditorSheet(record: record),
+    );
+    if (saved == true && mounted) {
+      setState(_reloadEnquiries);
+      showAppSnack(
+        context,
+        'Enquiry updated.',
+        variant: AppSnackVariant.success,
+      );
+    }
   }
 
   Widget _servicesTab() => Column(
@@ -334,6 +461,208 @@ class _ServiceEditorSheetState extends ConsumerState<_ServiceEditorSheet> {
           maxLines: 5,
         ),
       );
+}
+
+class _EnquiryEditorSheet extends ConsumerStatefulWidget {
+  const _EnquiryEditorSheet({required this.record});
+
+  final AccountRecord record;
+
+  @override
+  ConsumerState<_EnquiryEditorSheet> createState() =>
+      _EnquiryEditorSheetState();
+}
+
+class _EnquiryEditorSheetState extends ConsumerState<_EnquiryEditorSheet> {
+  static const _statuses = ['new', 'in_progress', 'resolved', 'closed'];
+
+  final _formKey = GlobalKey<FormState>();
+  late final _response = TextEditingController(
+    text: widget.record.response ?? '',
+  );
+  late String? _status =
+      _statuses.contains(widget.record.status) ? widget.record.status : null;
+  late Future<List<AccountRecord>> _history;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _history = ref
+        .read(appControllerProvider)
+        .api
+        .adminEnquiryHistory(widget.record.id);
+  }
+
+  @override
+  void dispose() {
+    _response.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate() || _status == null) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await ref.read(appControllerProvider).api.updateAdminEnquiry(
+            widget.record.id,
+            status: _status!,
+            responseNote: _response.text.trim(),
+          );
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = friendlyError(error);
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Form(
+        key: _formKey,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpace.xl,
+            0,
+            AppSpace.xl,
+            AppSpace.xl,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Update service enquiry',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpace.lg),
+                DropdownButtonFormField<String>(
+                  initialValue: _status,
+                  decoration: const InputDecoration(labelText: 'Status'),
+                  items: [
+                    for (final status in _statuses)
+                      DropdownMenuItem(value: status, child: Text(status)),
+                  ],
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _status = value),
+                  validator: (value) =>
+                      value == null ? 'Choose an enquiry status.' : null,
+                ),
+                const SizedBox(height: AppSpace.md),
+                TextFormField(
+                  controller: _response,
+                  maxLength: 2000,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'Response note',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.xs),
+                Text(
+                  'This note is saved on the enquiry; it does not send a message.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: AppSpace.lg),
+                Text('Enquiry history',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: AppSpace.sm),
+                FutureBuilder<List<AccountRecord>>(
+                  future: _history,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const LinearProgressIndicator();
+                    }
+                    if (snapshot.hasError) {
+                      return Text(
+                        'History could not be loaded. ${friendlyError(snapshot.error!)}',
+                        style: TextStyle(color: context.colors.danger.fg),
+                      );
+                    }
+                    final events = snapshot.data ?? const <AccountRecord>[];
+                    if (events.isEmpty) {
+                      return Text(
+                        'No history recorded.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      );
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final event in events)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: AppSpace.sm),
+                            child: Text(
+                              _enquiryHistoryLabel(event),
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: AppSpace.md),
+                  Text(
+                    _error!,
+                    style: TextStyle(color: context.colors.danger.fg),
+                  ),
+                ],
+                const SizedBox(height: AppSpace.xl),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SecondaryButton(
+                        label: 'Cancel',
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.pop(context, false),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpace.md),
+                    Expanded(
+                      child: PrimaryButton(
+                        label: 'Save',
+                        loading: _saving,
+                        onPressed: _saving ? null : _save,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+String _enquiryHistoryLabel(AccountRecord event) {
+  final action = event.data['action']?.toString() ?? 'updated';
+  final oldStatus = event.data['old_status']?.toString();
+  final newStatus = event.data['new_status']?.toString();
+  final createdAt = DateTime.tryParse(
+    event.data['created_at']?.toString() ?? '',
+  );
+  final timestamp = createdAt == null
+      ? ''
+      : ' · ${createdAt.toLocal().toString().split('.').first}';
+  final status = newStatus == null
+      ? ''
+      : ' · ${oldStatus == null ? '—' : StatusChip.statusLabel(oldStatus)}'
+          ' → ${StatusChip.statusLabel(newStatus)}';
+  final response = event.response;
+  return '${StatusChip.statusLabel(action)}$status$timestamp'
+      '${response == null || response.isEmpty ? '' : '\n$response'}';
 }
 
 /// Options typed one per line, trimmed, without blanks or repeats.

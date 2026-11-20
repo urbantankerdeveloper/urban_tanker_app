@@ -14,6 +14,8 @@ class SessionUser {
     required this.username,
     required this.role,
     this.email,
+    this.phone,
+    this.phoneVerified,
     this.themeMode,
     this.selfieRequired = false,
   });
@@ -23,6 +25,8 @@ class SessionUser {
   final String username;
   final WorkspaceRole role;
   final String? email;
+  final String? phone;
+  final bool? phoneVerified;
   final String? themeMode;
   final bool selfieRequired;
 
@@ -33,18 +37,27 @@ class SessionUser {
       username: (json['username'] ?? json['email'] ?? '').toString(),
       role: roleFromString(json['role'] as String?),
       email: json['email'] as String?,
+      phone: json['phone'] as String?,
+      phoneVerified: json['phoneVerified'] as bool?,
       themeMode: json['themeMode'] as String?,
       // A selfie is required unless the server explicitly says it is not.
       selfieRequired: json['selfieRequired'] != false,
     );
   }
 
-  SessionUser copyWith({bool? selfieRequired}) => SessionUser(
+  SessionUser copyWith({
+    String? phone,
+    bool? phoneVerified,
+    bool? selfieRequired,
+  }) =>
+      SessionUser(
         id: id,
         name: name,
         username: username,
         role: role,
         email: email,
+        phone: phone ?? this.phone,
+        phoneVerified: phoneVerified ?? this.phoneVerified,
         themeMode: themeMode,
         selfieRequired: selfieRequired ?? this.selfieRequired,
       );

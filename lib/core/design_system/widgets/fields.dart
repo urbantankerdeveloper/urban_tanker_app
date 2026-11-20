@@ -98,7 +98,7 @@ class AppTextField extends StatelessWidget {
 }
 
 /// Six-box one-time-code input. A transparent text field sits over the boxes,
-/// so the platform keyboard, paste and SMS autofill still work.
+/// with an explicit paste action for codes copied from another app.
 ///
 /// Pass [controller] to read or clear the code from outside. Without it, the
 /// field keeps its own controller.
@@ -110,6 +110,7 @@ class OtpField extends StatefulWidget {
     this.length = 6,
     this.onCompleted,
     this.autofocus = false,
+    this.autofillOneTimeCode = false,
   });
 
   final TextEditingController? controller;
@@ -117,6 +118,7 @@ class OtpField extends StatefulWidget {
   final ValueChanged<String> onChanged;
   final ValueChanged<String>? onCompleted;
   final bool autofocus;
+  final bool autofillOneTimeCode;
 
   @override
   State<OtpField> createState() => _OtpFieldState();
@@ -170,6 +172,21 @@ class _OtpFieldState extends State<OtpField> {
     if (value.length == widget.length) widget.onCompleted?.call(value);
   }
 
+  Future<void> _pasteCode() async {
+    final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
+    final pasted = clipboard?.text?.trim().replaceAll(RegExp(r'[\s-]'), '');
+    if (pasted == null ||
+        pasted.length != widget.length ||
+        !RegExp(r'^\d+$').hasMatch(pasted)) {
+      return;
+    }
+    _controller.value = TextEditingValue(
+      text: pasted,
+      selection: TextSelection.collapsed(offset: pasted.length),
+    );
+    _handleChanged(pasted);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -180,69 +197,85 @@ class _OtpFieldState extends State<OtpField> {
     return Semantics(
       textField: true,
       label: 'One-time code, ${widget.length} digits',
-      child: SizedBox(
-        height: 56,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Row(
-                children: [
-                  for (var i = 0; i < widget.length; i++)
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: colors.surface,
-                            borderRadius: AppRadius.inputBorder,
-                            border: Border.all(
-                              color: _focusNode.hasFocus && i == active
-                                  ? colors.primary
-                                  : colors.hairline,
-                              width: _focusNode.hasFocus && i == active ? 2 : 1,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              i < text.length ? text[i] : '',
-                              style: AppTypography.numeric(
-                                Theme.of(context).textTheme.titleLarge!,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 56,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < widget.length; i++)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: colors.surface,
+                                borderRadius: AppRadius.inputBorder,
+                                border: Border.all(
+                                  color: _focusNode.hasFocus && i == active
+                                      ? colors.primary
+                                      : colors.hairline,
+                                  width:
+                                      _focusNode.hasFocus && i == active ? 2 : 1,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  i < text.length ? text[i] : '',
+                                  style: AppTypography.numeric(
+                                    Theme.of(context).textTheme.titleLarge!,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Positioned.fill(
-              child: TextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                autofocus: widget.autofocus,
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.done,
-                autofillHints: const [AutofillHints.oneTimeCode],
-                maxLength: widget.length,
-                showCursor: false,
-                enableInteractiveSelection: false,
-                style: const TextStyle(color: Colors.transparent),
-                cursorColor: Colors.transparent,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                onChanged: _handleChanged,
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  filled: false,
-                  counterText: '',
-                  contentPadding: EdgeInsets.zero,
+                    ],
+                  ),
                 ),
-              ),
+                Positioned.fill(
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    autofocus: widget.autofocus,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: widget.autofillOneTimeCode
+                        ? const [AutofillHints.oneTimeCode]
+                        : null,
+                    maxLength: widget.length,
+                    showCursor: false,
+                    enableInteractiveSelection: true,
+                    style: const TextStyle(color: Colors.transparent),
+                    cursorColor: Colors.transparent,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: _handleChanged,
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      counterText: '',
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _pasteCode,
+              icon: const Icon(Icons.content_paste, size: 18),
+              label: const Text('Paste code'),
+            ),
+          ),
+        ],
       ),
     );
   }

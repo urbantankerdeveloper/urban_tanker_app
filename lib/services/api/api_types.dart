@@ -96,11 +96,43 @@ class PhoneVerificationState {
     required this.phone,
     required this.verified,
     this.required = true,
+    this.phoneVerified = false,
+    this.challengeId,
   });
 
   final String phone;
   final bool verified;
   final bool required;
+  final bool phoneVerified;
+  final String? challengeId;
+}
+
+enum PhoneOtpChannel { whatsapp, sms }
+
+class PhoneVerificationChallenge {
+  const PhoneVerificationChallenge({
+    required this.challengeId,
+    required this.channel,
+    required this.expiresInSeconds,
+    required this.resendAfterSeconds,
+  });
+
+  final String challengeId;
+  final PhoneOtpChannel channel;
+  final int expiresInSeconds;
+  final int resendAfterSeconds;
+}
+
+class PhoneVerificationResult {
+  const PhoneVerificationResult({
+    required this.phone,
+    required this.challengeId,
+    required this.verified,
+  });
+
+  final String phone;
+  final String challengeId;
+  final bool verified;
 }
 
 class BookingPage {
