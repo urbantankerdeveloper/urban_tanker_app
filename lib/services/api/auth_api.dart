@@ -226,6 +226,44 @@ class AuthApi {
     );
   }
 
+  Future<String> requestEmailLinkCode(String email) async {
+    final response = await _api.request(
+      'POST',
+      '/auth/email/link/request-otp',
+      body: {'email': normalizeEmail(email)},
+      retry: false,
+    );
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic> || decoded['challengeId'] is! String) {
+      throw const FormatException('The email code response was invalid.');
+    }
+    return decoded['challengeId'] as String;
+  }
+
+  Future<void> confirmEmailLinkCode({
+    required String email,
+    required String challengeId,
+    required String otp,
+  }) async {
+    final normalized = normalizeEmail(email);
+    if (!isValidEmail(normalized)) {
+      throw const FormatException('Enter a valid email address.');
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(otp.trim())) {
+      throw const FormatException('Enter the 6-digit verification code.');
+    }
+    await _api.request(
+      'POST',
+      '/auth/email/link/verify-otp',
+      body: {
+        'email': normalized,
+        'challengeId': challengeId,
+        'otp': otp.trim(),
+      },
+      retry: false,
+    );
+  }
+
   Future<SessionUser> currentUserProfile() async {
     final response = await _api.request('GET', '/auth/me');
     final decoded = decodeBody(response);

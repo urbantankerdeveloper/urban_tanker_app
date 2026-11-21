@@ -531,11 +531,20 @@ void main() {
 
     await tester.tap(find.text('Open booking'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Send OTP'));
+    await tester.enterText(
+      find.byKey(const Key('booking-phone-number')),
+      '9876543210',
+    );
+    await tester.tap(find.text('Send code').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send code').last);
     await tester.pumpAndSettle();
     expect(api.bookingOtpRequests, 1);
-    await tester.enterText(find.byType(TextFormField).last, '123456');
-    await tester.tap(find.text('Verify OTP'));
+    await tester.enterText(
+      find.byKey(const Key('booking-otp-digit-0')),
+      '123456',
+    );
+    await tester.tap(find.text('Verify number'));
     await tester.pumpAndSettle();
     expect(api.bookingOtpVerifications, 1);
     await tester.tap(find.text('Next'));
@@ -596,9 +605,15 @@ void main() {
     await tester.tap(find.text('Open booking'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Step 1 of 6: Contact'), findsOneWidget);
-    expect(find.text('Send OTP'), findsOneWidget);
+    expect(find.text('Send code'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('booking-phone-number')),
+      '9876543210',
+    );
     expect(find.text('Tank cleaning'), findsNothing);
-    await tester.tap(find.text('Send OTP'));
+    await tester.tap(find.text('Send code').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send code').last);
     await tester.pumpAndSettle();
     expect(api.bookingOtpRequests, 2);
   });

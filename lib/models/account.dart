@@ -3,11 +3,13 @@ class CustomerProfile {
     required this.name,
     required this.email,
     required this.phone,
+    this.phoneVerified = false,
   });
 
   final String name;
   final String email;
   final String phone;
+  final bool phoneVerified;
 
   factory CustomerProfile.fromJson(Map<String, dynamic> json) {
     return CustomerProfile(
@@ -15,6 +17,8 @@ class CustomerProfile {
           .toString(),
       email: (json['email'] ?? '').toString(),
       phone: (json['phone'] ?? json['phone_e164'] ?? '').toString(),
+      phoneVerified:
+          json['phoneVerified'] == true || json['phone_verified'] == true,
     );
   }
 }

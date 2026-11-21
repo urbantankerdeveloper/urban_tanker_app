@@ -486,10 +486,29 @@ class CustomerApi {
     return CustomerProfile.fromJson(decoded);
   }
 
+  Future<String?> profileSelfieUrl() async {
+    final response = await _api.request('GET', '/customer/profile/selfie');
+    if (response.statusCode == 404) return null;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(
+        ApiException.genericFailureMessage(response.statusCode),
+        response.statusCode,
+      );
+    }
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic> || decoded['url'] is! String) {
+      throw const FormatException('The profile photo response was invalid.');
+    }
+    return decoded['url'] as String;
+  }
+
   Future<CustomerProfile> updateProfile({
     required String name,
     required String email,
     String? phone,
+    String? phoneVerificationChallengeId,
+    String? emailVerificationChallengeId,
+    String? currentPassword,
   }) async {
     final response = await _api.request(
       'PATCH',
@@ -499,6 +518,12 @@ class CustomerApi {
         'email': email,
         if (phone != null && phone.trim().isNotEmpty)
           'phone': normalizeIndianPhone(phone),
+        if (phoneVerificationChallengeId != null)
+          'phoneVerificationChallengeId': phoneVerificationChallengeId,
+        if (emailVerificationChallengeId != null)
+          'emailVerificationChallengeId': emailVerificationChallengeId,
+        if (currentPassword != null && currentPassword.isNotEmpty)
+          'currentPassword': currentPassword,
       },
     );
     final decoded = decodeBody(response);

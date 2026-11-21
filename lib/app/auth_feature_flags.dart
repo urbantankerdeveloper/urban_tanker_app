@@ -17,6 +17,13 @@ abstract final class AuthFeatureFlags {
     defaultValue: false,
   );
 
+  /// Shows the My Profile item in the workspace menu.
+  /// Enable with `--dart-define=PROFILE_MENU_ENABLED=true`.
+  static const profileMenu = bool.fromEnvironment(
+    'PROFILE_MENU_ENABLED',
+    defaultValue: false,
+  );
+
   /// Parent orders with independent service fulfilments.
   /// Enable with `--dart-define=MULTI_SERVICE_ORDERS_ENABLED=true`.
   static const multiServiceOrders = bool.fromEnvironment(

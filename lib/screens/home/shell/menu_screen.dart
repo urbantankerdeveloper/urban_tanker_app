@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/app_controller.dart';
+import '../../../app/auth_feature_flags.dart';
+import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/notification.dart';
 import '../../../models/session.dart';
 import '../../../models/workspace_navigation.dart';
 import '../../security_settings_screen.dart';
+import '../../profile_dialog.dart';
 import 'appearance.dart';
 
 /// Menu tab for vendor, dispatcher and admin. Replaces the old drawer: the
 /// role's destinations, notifications, security, appearance and sign out.
-class MenuScreen extends StatelessWidget {
+class MenuScreen extends ConsumerWidget {
   const MenuScreen({
     required this.controller,
     required this.role,
@@ -27,8 +31,35 @@ class MenuScreen extends StatelessWidget {
   final VoidCallback onNotifications;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final user = controller.user;
+    final profilePhoto = ref.watch(profileSelfieProvider);
+    final profilePhotoUrl = profilePhoto.when(
+      data: (url) => url,
+      loading: () => null,
+      error: (_, __) => null,
+    );
+    final profilePhotoFuture = ref.read(profileSelfieProvider.future);
+
+    void openProfile() {
+      if (user == null) return;
+      showUserProfileDialog(
+        context: context,
+        api: controller.api,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
+        role: role.name,
+        profilePhotoUrl: profilePhotoFuture,
+        initialProfilePhotoUrl: profilePhotoUrl,
+        onSaved: (_) async {
+          ref.invalidate(profileSelfieProvider);
+          await controller.refreshUserProfile();
+        },
+      );
+    }
+
     return ListView(
       padding: AppPageInsets.withSafeAreaBottom(
         context,
@@ -36,7 +67,15 @@ class MenuScreen extends StatelessWidget {
       ),
       children: [
         if (user != null)
-          _ProfileHeader(name: user.name, username: user.username, role: role),
+          _ProfileHeader(
+            name: user.name,
+            username: user.username,
+            role: role,
+            email: user.email,
+            phone: user.phone,
+            imageUrl: profilePhotoUrl,
+            onTap: openProfile,
+          ),
         for (final group in workspaceNavigationForRole(role)) ...[
           const SizedBox(height: AppSpace.xl),
           _GroupLabel(group.title),
@@ -57,6 +96,13 @@ class MenuScreen extends StatelessWidget {
         SurfaceCard(
           padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
           child: _Rows([
+            if (AuthFeatureFlags.profileMenu)
+              AppListRow(
+                leading: const Icon(Icons.person_outline),
+                title: 'My profile',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: openProfile,
+              ),
             AppListRow(
               leading: _NotificationIcon(notifications: notifications),
               title: 'Notifications',
@@ -117,43 +163,63 @@ class _ProfileHeader extends StatelessWidget {
     required this.name,
     required this.username,
     required this.role,
+    required this.imageUrl,
+    required this.onTap,
+    this.email,
+    this.phone,
   });
 
   final String name;
   final String username;
   final WorkspaceRole role;
+  final String? imageUrl;
+  final String? email;
+  final String? phone;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
-      children: [
-        AppAvatar(name: name, size: 56),
-        const SizedBox(width: AppSpace.lg),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Semantics(
+      button: true,
+      label: 'Open profile for $name',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpace.xs),
+          child: Row(
             children: [
-              Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleLarge,
-              ),
-              Text(maskUsername(username), style: theme.textTheme.bodyMedium),
-              const SizedBox(height: AppSpace.sm),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: StatusChip(
-                  label: StatusChip.statusLabel(role.name),
-                  icon: Icons.badge_outlined,
-                  tone: context.colors.info,
+              AppAvatar(name: name, imageUrl: imageUrl, size: 56),
+              const SizedBox(width: AppSpace.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    Text(maskUsername(username),
+                        style: theme.textTheme.bodyMedium),
+                    const SizedBox(height: AppSpace.sm),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: StatusChip(
+                        label: StatusChip.statusLabel(role.name),
+                        icon: Icons.badge_outlined,
+                        tone: context.colors.info,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 }

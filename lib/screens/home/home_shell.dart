@@ -25,6 +25,7 @@ import '../dispatcher/alerts_screen.dart';
 import '../dispatcher/dispatch_screen.dart';
 import '../dispatcher/live_screen.dart';
 import '../auth/phone_verify_dialog.dart';
+import '../profile_dialog.dart';
 import '../notification_inbox.dart';
 import '../vendor/vendor_earnings_screen.dart';
 import '../vendor/fleet/vendor_fleet_screen.dart';
@@ -125,6 +126,32 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       controller: widget.controller,
       allowSkip: user?.phoneVerificationRequired == false,
       initialPhone: user?.phone,
+    );
+  }
+
+  void _showCustomerProfile() {
+    final user = widget.controller.user;
+    if (user == null) return;
+    showUserProfileDialog(
+      context: context,
+      api: widget.controller.api,
+      name: user.name,
+      role: user.role.name,
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      profilePhotoUrl: ref.read(profileSelfieProvider.future),
+      initialProfilePhotoUrl: ref.read(profileSelfieProvider).when(
+            data: (url) => url,
+            loading: () => null,
+            error: (_, __) => null,
+          ),
+      onSaved: (_) async {
+        await widget.controller.refreshUserProfile();
+        if (!mounted) return;
+        ref.invalidate(customerProfileProvider);
+        ref.invalidate(profileSelfieProvider);
+      },
     );
   }
 
@@ -316,6 +343,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             onBook: _services.isEmpty ? null : _createBooking,
             onOpenBookings: () => _selectPage(ShellPage.bookings),
             onOpenAccount: () => _selectPage(ShellPage.account),
+            onViewProfile: _showCustomerProfile,
           ),
         ShellPage.bookings => BookingsScreen(
             onBookAgain: (booking) => _createBooking(previousBooking: booking),

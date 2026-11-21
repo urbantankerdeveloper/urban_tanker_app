@@ -121,6 +121,11 @@ final customerProfileProvider =
   return ref.watch(apiProvider).profile();
 });
 
+final profileSelfieProvider = FutureProvider.autoDispose<String?>((ref) {
+  ref.watch(sessionUserIdProvider);
+  return ref.watch(apiProvider).profileSelfieUrl();
+});
+
 final customerAddressesProvider =
     FutureProvider.autoDispose<List<AccountRecord>>((ref) {
   ref.watch(sessionUserIdProvider);

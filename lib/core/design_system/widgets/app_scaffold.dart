@@ -66,6 +66,7 @@ class AppHeader extends StatelessWidget {
     super.key,
     this.avatarName,
     this.avatarUrl,
+    this.onAvatarTap,
     this.unreadCount = 0,
     this.onNotifications,
     this.leading,
@@ -75,6 +76,7 @@ class AppHeader extends StatelessWidget {
   final String title;
   final String? avatarName;
   final String? avatarUrl;
+  final VoidCallback? onAvatarTap;
   final int unreadCount;
   final VoidCallback? onNotifications;
 
@@ -91,7 +93,18 @@ class AppHeader extends StatelessWidget {
           const SizedBox(width: AppSpace.md),
         ],
         if (avatarName != null) ...[
-          AppAvatar(name: avatarName!, imageUrl: avatarUrl),
+          if (onAvatarTap == null)
+            AppAvatar(name: avatarName!, imageUrl: avatarUrl)
+          else
+            Semantics(
+              button: true,
+              label: 'Open profile for $avatarName',
+              child: InkWell(
+                onTap: onAvatarTap,
+                customBorder: const CircleBorder(),
+                child: AppAvatar(name: avatarName!, imageUrl: avatarUrl),
+              ),
+            ),
           const SizedBox(width: AppSpace.md),
         ],
         Expanded(

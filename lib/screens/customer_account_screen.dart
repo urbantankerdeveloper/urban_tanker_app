@@ -4,13 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app/providers.dart';
 import '../core/design_system/design_system.dart';
 import '../models/account.dart';
-import '../services/api_client.dart';
 import '../services/masking.dart';
 import '../services/secure_screen.dart';
 import '../services/friendly_error.dart';
 import 'home/shell/appearance.dart';
 import 'invoice_detail_screen.dart';
 import 'security_settings_screen.dart';
+import 'profile_dialog.dart';
 import 'support_request_detail_screen.dart';
 
 /// Customer Account tab: profile, usage, memberships, offers, payments and
@@ -21,6 +21,12 @@ class CustomerAccountScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(customerProfileProvider);
+    final profilePhoto = ref.watch(profileSelfieProvider);
+    final profilePhotoUrl = profilePhoto.when(
+      data: (url) => url,
+      loading: () => null,
+      error: (_, __) => null,
+    );
     ref
       ..watch(customerUsageProvider)
       ..watch(customerMembershipProvider)
@@ -47,7 +53,37 @@ class CustomerAccountScreen extends ConsumerWidget {
             ),
             data: (user) => _ProfileCard(
               profile: user,
-              onEdit: () => _editProfile(context, ref, user),
+              imageUrl: profilePhotoUrl,
+              onView: () => showUserProfileDialog(
+                context: context,
+                api: ref.read(apiProvider),
+                name: user.name,
+                role: 'customer',
+                email: user.email,
+                phone: user.phone,
+                profilePhotoUrl: ref.read(profileSelfieProvider.future),
+                initialProfilePhotoUrl: profilePhotoUrl,
+                onSaved: (_) async {
+                  ref.invalidate(profileSelfieProvider);
+                  await ref.read(appControllerProvider).refreshUserProfile();
+                  ref.invalidate(customerProfileProvider);
+                },
+              ),
+              onEdit: () => showUserProfileDialog(
+                context: context,
+                api: ref.read(apiProvider),
+                name: user.name,
+                role: 'customer',
+                email: user.email,
+                phone: user.phone,
+                profilePhotoUrl: ref.read(profileSelfieProvider.future),
+                initialProfilePhotoUrl: profilePhotoUrl,
+                onSaved: (_) async {
+                  ref.invalidate(profileSelfieProvider);
+                  await ref.read(appControllerProvider).refreshUserProfile();
+                  ref.invalidate(customerProfileProvider);
+                },
+              ),
             ),
           ),
           const SizedBox(height: AppSpace.md),
@@ -260,141 +296,6 @@ class CustomerAccountScreen extends ConsumerWidget {
   String _displayValue(Object? value) {
     if (value is Map || value is List) return value.toString();
     return value.toString();
-  }
-
-  Future<void> _editProfile(
-    BuildContext context,
-    WidgetRef ref,
-    CustomerProfile profile,
-  ) async {
-    final name = TextEditingController(text: profile.name);
-    final email = TextEditingController(text: profile.email);
-    final phone = TextEditingController(
-      text: profile.phone.replaceFirst('+91', ''),
-    );
-    final initialName = name.text;
-    final initialEmail = email.text;
-    final initialPhone = phone.text;
-    String? error;
-    var saving = false;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setState) {
-          final dirty = name.text != initialName ||
-              email.text != initialEmail ||
-              phone.text != initialPhone;
-          return AppDialog(
-            title: 'Edit profile',
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: name,
-                    enabled: !saving,
-                    decoration: const InputDecoration(labelText: 'Name'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  TextField(
-                    controller: email,
-                    enabled: !saving,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  TextField(
-                    controller: phone,
-                    enabled: !saving,
-                    keyboardType: TextInputType.phone,
-                    decoration:
-                        const InputDecoration(labelText: '10-digit mobile'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  if (error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpace.sm),
-                      child: Text(
-                        error!,
-                        style: TextStyle(
-                          color: dialogContext.colors.danger.fg,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: saving ? null : () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: !dirty || saving
-                    ? null
-                    : () async {
-                        final emailValue = email.text.trim();
-                        final phoneValue =
-                            normalizeIndianPhone(phone.text.trim());
-                        if (name.text.trim().isEmpty ||
-                            !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-                                .hasMatch(emailValue)) {
-                          setState(() =>
-                              error = 'Enter a name and valid email address.');
-                          return;
-                        }
-                        if (phoneValue.isNotEmpty &&
-                            !RegExp(r'^\d{10}$').hasMatch(phoneValue)) {
-                          setState(() =>
-                              error = 'Enter a valid 10-digit mobile number.');
-                          return;
-                        }
-                        setState(() {
-                          saving = true;
-                          error = null;
-                        });
-                        try {
-                          await ref
-                              .read(appControllerProvider)
-                              .api
-                              .updateProfile(
-                                name: name.text.trim(),
-                                email: emailValue,
-                                phone: phoneValue.isEmpty ? null : phoneValue,
-                              );
-                          ref.invalidate(customerProfileProvider);
-                          if (dialogContext.mounted) {
-                            Navigator.pop(dialogContext);
-                            showAppSnack(
-                              context,
-                              'Profile saved successfully.',
-                              variant: AppSnackVariant.success,
-                            );
-                          }
-                        } catch (value) {
-                          if (dialogContext.mounted) {
-                            setState(() {
-                              saving = false;
-                              error = friendlyError(value);
-                            });
-                          }
-                        }
-                      },
-                child: saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save profile'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    name.dispose();
-    email.dispose();
-    phone.dispose();
   }
 
   Future<void> _addAddress(BuildContext context, WidgetRef ref) async {
@@ -672,9 +573,15 @@ class CustomerAccountScreen extends ConsumerWidget {
 }
 
 class _ProfileCard extends StatelessWidget {
-  const _ProfileCard({required this.profile, required this.onEdit});
+  const _ProfileCard(
+      {required this.profile,
+      required this.imageUrl,
+      required this.onView,
+      required this.onEdit});
 
   final CustomerProfile profile;
+  final String? imageUrl;
+  final VoidCallback onView;
   final VoidCallback onEdit;
 
   @override
@@ -686,21 +593,34 @@ class _ProfileCard extends StatelessWidget {
     return SurfaceCard(
       child: Row(
         children: [
-          AppAvatar(name: profile.name, size: 56),
-          const SizedBox(width: AppSpace.lg),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  profile.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleLarge,
+            child: InkWell(
+              onTap: onView,
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpace.xs),
+                child: Row(
+                  children: [
+                    AppAvatar(name: profile.name, imageUrl: imageUrl, size: 56),
+                    const SizedBox(width: AppSpace.lg),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            profile.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleLarge,
+                          ),
+                          if (contact.isNotEmpty)
+                            Text(contact, style: theme.textTheme.bodyMedium),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                if (contact.isNotEmpty)
-                  Text(contact, style: theme.textTheme.bodyMedium),
-              ],
+              ),
             ),
           ),
           IconButton(

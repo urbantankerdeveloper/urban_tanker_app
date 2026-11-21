@@ -18,6 +18,7 @@ class _FakeApi extends ApiClient {
   bool profilePhoneVerified = false;
   String? fallbackPhone;
   String? verifiedEmail;
+  String? verifiedOtp;
   int bookingOtpRequests = 0;
 
   @override
@@ -73,6 +74,7 @@ class _FakeApi extends ApiClient {
     String? emailOtp,
   }) async {
     verifiedEmail = email;
+    verifiedOtp = otp ?? emailOtp;
   }
 }
 
@@ -121,15 +123,33 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Send OTP'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('booking-phone-number')))
+          .controller!
+          .text,
+      isEmpty,
+    );
+    expect(find.text('Send code'), findsOneWidget);
     expect(find.text('Number verified'), findsNothing);
-    await tester.tap(find.text('Send OTP'));
+    await tester.enterText(
+      find.byKey(const Key('booking-phone-number')),
+      '9876543210',
+    );
+    await tester.tap(find.text('Send code').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send code').last);
     await tester.pumpAndSettle();
     expect(api.bookingOtpRequests, 1);
-    expect(
-      find.text('We sent a code via WhatsApp to +91 9876543210.'),
-      findsOneWidget,
+    expect(find.textContaining('We sent a code via WhatsApp'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('booking-otp-digit-0')),
+      '123456',
     );
+    await tester.tap(find.text('Verify number'));
+    await tester.pumpAndSettle();
+    expect(api.verifiedOtp, '123456');
+    expect(find.text('Number verified'), findsOneWidget);
   });
 
   testWidgets('account phone verification does not satisfy a booking OTP',
@@ -176,16 +196,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Number verified'), findsNothing);
-    expect(find.text('Send OTP'), findsOneWidget);
+    expect(find.text('Send code'), findsOneWidget);
     expect(api.bookingOtpRequests, 0);
-    await tester.tap(find.text('Send OTP'));
+    await tester.enterText(
+      find.byKey(const Key('booking-phone-number')),
+      '9876543210',
+    );
+    await tester.tap(find.text('Send code').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send code').last);
     await tester.pumpAndSettle();
 
     expect(api.bookingOtpRequests, 1);
-    expect(
-      find.text('We sent a code via WhatsApp to +91 9876543210.'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('We sent a code via WhatsApp'), findsOneWidget);
   });
 
   testWidgets(
@@ -226,25 +249,22 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
-    await tester.tap(find.text('Send OTP'));
+    await tester.tap(find.text('Send code').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send code').last);
     await tester.pumpAndSettle();
 
     expect(api.fallbackPhone, '9876543210');
     expect(
       find.text(
-          'Phone delivery is unavailable. A verification code was sent to your registered email.'),
+          'Phone delivery is unavailable. We sent a code to registered@example.com.'),
       findsOneWidget,
     );
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField && widget.decoration?.labelText == 'Email code',
-      ),
-      findsOneWidget,
+    await tester.enterText(
+      find.byKey(const Key('booking-otp-digit-0')),
+      '123456',
     );
-
-    await tester.enterText(find.byType(TextFormField).last, '123456');
-    await tester.tap(find.text('Verify OTP'));
+    await tester.tap(find.text('Verify number'));
     await tester.pumpAndSettle();
     expect(api.verifiedEmail, 'registered@example.com');
     expect(find.text('Number verified'), findsOneWidget);

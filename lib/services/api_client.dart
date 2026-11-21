@@ -188,6 +188,20 @@ class ApiClient implements ApiTransport {
   }) =>
       _auth.confirmAccountPhoneVerification(phone: phone, code: code);
 
+  Future<String> requestEmailLinkCode(String email) =>
+      _auth.requestEmailLinkCode(email);
+
+  Future<void> confirmEmailLinkCode({
+    required String email,
+    required String challengeId,
+    required String otp,
+  }) =>
+      _auth.confirmEmailLinkCode(
+        email: email,
+        challengeId: challengeId,
+        otp: otp,
+      );
+
   Future<SessionUser> currentUserProfile() => _auth.currentUserProfile();
 
   Future<String> requestPhoneOtp(String phone) => _auth.requestPhoneOtp(phone);
@@ -435,12 +449,24 @@ class ApiClient implements ApiTransport {
 
   Future<CustomerProfile> profile() => _customer.profile();
 
+  Future<String?> profileSelfieUrl() => _customer.profileSelfieUrl();
+
   Future<CustomerProfile> updateProfile({
     required String name,
     required String email,
     String? phone,
+    String? phoneVerificationChallengeId,
+    String? emailVerificationChallengeId,
+    String? currentPassword,
   }) =>
-      _customer.updateProfile(name: name, email: email, phone: phone);
+      _customer.updateProfile(
+        name: name,
+        email: email,
+        phone: phone,
+        phoneVerificationChallengeId: phoneVerificationChallengeId,
+        emailVerificationChallengeId: emailVerificationChallengeId,
+        currentPassword: currentPassword,
+      );
 
   Future<List<AccountRecord>> addresses() => _customer.addresses();
 

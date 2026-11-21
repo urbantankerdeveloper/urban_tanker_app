@@ -20,6 +20,7 @@ class CustomerOverview extends ConsumerWidget {
     required this.onBook,
     required this.onOpenBookings,
     required this.onOpenAccount,
+    required this.onViewProfile,
     super.key,
     this.error,
   });
@@ -34,9 +35,15 @@ class CustomerOverview extends ConsumerWidget {
   final VoidCallback? onBook;
   final VoidCallback onOpenBookings;
   final VoidCallback onOpenAccount;
+  final VoidCallback onViewProfile;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final profilePhotoUrl = ref.watch(profileSelfieProvider).when(
+          data: (url) => url,
+          loading: () => null,
+          error: (_, __) => null,
+        );
     final bookings = ref.watch(bookingsProvider);
     final items = bookings.value?.items ?? const <Booking>[];
     Booking? active;
@@ -61,6 +68,8 @@ class CustomerOverview extends ConsumerWidget {
             greeting: 'Good to see you,',
             title: user.name.split(' ').first,
             avatarName: user.name,
+            avatarUrl: profilePhotoUrl,
+            onAvatarTap: onViewProfile,
             leading: const PulsingLogoBadge(),
           ),
           const SizedBox(height: AppSpace.xl),
