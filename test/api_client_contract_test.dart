@@ -10,8 +10,21 @@ class _SignedInApiClient extends ApiClient {
   _SignedInApiClient({required http.Client client})
       : super(client: client, baseUrl: 'https://example.test/api');
 
+  String? savedAccessToken;
+  String? savedRefreshToken;
+
   @override
   Future<String?> readAccessToken() async => 'access-token';
+
+  @override
+  Future<void> saveAccessToken(String token) async {
+    savedAccessToken = token;
+  }
+
+  @override
+  Future<void> saveRefreshToken(String token) async {
+    savedRefreshToken = token;
+  }
 }
 
 Map<String, dynamic> _booking(String id) => {
@@ -24,6 +37,50 @@ Map<String, dynamic> _booking(String id) => {
     };
 
 void main() {
+  test('phone OTP sign-in accepts the existing-account response', () async {
+    late http.Request captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        jsonEncode({
+          'accessToken': 'phone-access-token',
+          'refreshToken': 'phone-refresh-token',
+          'user': {
+            'id': 'existing-customer',
+            'email': 'customer@example.com',
+            'username': 'customer-one',
+            'name': 'Existing Customer',
+            'role': 'customer',
+            'phone': '9876543210',
+            'phoneVerified': true,
+            'themeMode': 'dark',
+            'selfieRequired': false,
+          },
+        }),
+        200,
+      );
+    });
+    final api = _SignedInApiClient(client: client);
+
+    final result = await api.verifyPhoneAuthOtp(
+      phone: '9876543210',
+      challengeId: 'challenge-id',
+      otp: '123456',
+    );
+
+    expect(captured.url.path, '/api/auth/phone/verify-otp');
+    expect(jsonDecode(captured.body), {
+      'phone': '9876543210',
+      'challengeId': 'challenge-id',
+      'otp': '123456',
+    });
+    expect(result.user.id, 'existing-customer');
+    expect(result.user.username, 'customer-one');
+    expect(result.user.phoneVerified, isTrue);
+    expect(api.savedAccessToken, 'phone-access-token');
+    expect(api.savedRefreshToken, 'phone-refresh-token');
+  });
+
   test('bookings follows nextOffset until the server reports no more pages',
       () async {
     final offsets = <String?>[];
