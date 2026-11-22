@@ -1,2 +1,3 @@
-// Copy to Maps.xcconfig (gitignored) and fill in your iOS key locally or in CI.
+// Copy to Maps.xcconfig (gitignored). Pass the same iOS-restricted key as
+// --dart-define=GOOGLE_MAPS_API_KEY=... when building Flutter.
 GOOGLE_MAPS_API_KEY = YOUR_IOS_MAPS_API_KEY

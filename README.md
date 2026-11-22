@@ -25,7 +25,7 @@ credentials should be injected securely in CI rather than written to logs.
 
 ```powershell
 flutter pub get
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000/api
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000/api --dart-define=GOOGLE_MAPS_API_KEY=$env:GOOGLE_MAPS_API_KEY
 ```
 
 For a physical device, replace `10.0.2.2` with a host address reachable from
@@ -39,6 +39,14 @@ app with `--dart-define=MULTI_SERVICE_ORDERS_ENABLED=true`. The API client
 sends `X-App-Version`; its default is the current `pubspec.yaml` version
 (`1.1.0`). Set `--dart-define=APP_VERSION=<semver>` when producing a release
 with a different version so the backend minimum-version check stays accurate.
+
+Google Maps is the primary mobile map provider. Configure a restricted
+platform key in the native project and pass that same key at build time as
+`--dart-define=GOOGLE_MAPS_API_KEY=<key>` so the Flutter app selects Google
+Maps. Android reads `MAPS_API_KEY` from `android/local.properties`; iOS reads
+`GOOGLE_MAPS_API_KEY` from `ios/Flutter/Maps.xcconfig`. If Google Maps cannot
+initialize, the app falls back to OpenStreetMap/CARTO. See
+`../ut_landing/README.md#maps` for shared provider behavior and web setup.
 
 The app uses the server response to determine the role. Role selection is not
 available in the client. Access tokens are stored in platform secure storage;
@@ -121,6 +129,10 @@ require macOS and Xcode and have not been claimed as verified from Windows.
 Release builds are obfuscated and keep the Dart symbol files out of the app.
 Keep the `build/symbols/` folder with the release build so crash reports can be
 symbolicated, and do not ship it inside the app or the repository.
+For Google Maps to be selected, also pass
+`--dart-define=GOOGLE_MAPS_API_KEY=<platform-key>` using the same restricted
+key configured in the Android or iOS native project. Inject it from the
+environment or CI secret; without it, the app uses the OpenStreetMap fallback.
 
 ```bash
 flutter build apk --release --obfuscate --split-debug-info=build/symbols/android --dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api

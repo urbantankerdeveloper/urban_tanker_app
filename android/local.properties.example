@@ -1,4 +1,3 @@
-# Copy this file to android/local.properties (gitignored) and fill in your local values.
-# MAPS_API_KEY is the Android Google Maps key (restricted to package name + SHA-1).
-# Leave it empty to build without Google Maps; the app falls back to OpenStreetMap.
+# Copy this file to android/local.properties (gitignored) and add a restricted
+# Android Maps SDK key. Pass the same key as --dart-define=GOOGLE_MAPS_API_KEY=...
 MAPS_API_KEY=YOUR_ANDROID_MAPS_API_KEY

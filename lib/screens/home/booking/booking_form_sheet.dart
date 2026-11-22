@@ -75,6 +75,14 @@ class _BookingPhoneVerificationDialogState
   String get _otp => _digits.map((digit) => digit.text).join();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_sendCode());
+    });
+  }
+
+  @override
   void dispose() {
     _resendTimer?.cancel();
     _phone.dispose();

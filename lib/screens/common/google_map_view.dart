@@ -50,6 +50,7 @@ class _GoogleMapViewState extends State<GoogleMapView>
   bool _followVehicle = true;
   bool _programmaticCameraMove = false;
   bool _initialCameraFitDone = false;
+  bool _mapReady = false;
 
   @override
   void initState() {
@@ -60,9 +61,9 @@ class _GoogleMapViewState extends State<GoogleMapView>
       duration: const Duration(milliseconds: 1100),
     )..addListener(_updateAnimatedPosition);
     _creationTimer = Timer(_creationTimeout, () {
-      if (_mapController == null) {
+      if (!_mapReady) {
         debugPrint(
-          'Google Maps did not initialize within '
+          'Google Maps did not become ready within '
           '${_creationTimeout.inSeconds} seconds; using OpenStreetMap.',
         );
         widget.resolver.markUnavailable();
@@ -184,7 +185,6 @@ class _GoogleMapViewState extends State<GoogleMapView>
   }
 
   void _onMapCreated(google.GoogleMapController controller) {
-    _creationTimer.cancel();
     _mapController = controller;
     unawaited(_fitInitialCamera());
   }
@@ -278,6 +278,9 @@ class _GoogleMapViewState extends State<GoogleMapView>
 
   void _onCameraIdle() {
     _programmaticCameraMove = false;
+    if (_mapReady) return;
+    _mapReady = true;
+    _creationTimer.cancel();
   }
 
   void _recenter() {

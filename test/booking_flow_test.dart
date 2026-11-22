@@ -18,8 +18,10 @@ class _FakeApi extends ApiClient {
   bool profilePhoneVerified = false;
   String? fallbackPhone;
   String? verifiedEmail;
+  String? verifiedPhone;
   String? verifiedOtp;
   int bookingOtpRequests = 0;
+  final requestedBookingPhones = <String>[];
 
   @override
   Future<PhoneVerificationState> phoneVerification() async =>
@@ -42,6 +44,7 @@ class _FakeApi extends ApiClient {
         int resendAfterSeconds
       })> requestBookingOtp({required String phone, String? email}) async {
     bookingOtpRequests++;
+    requestedBookingPhones.add(phone);
     if (mobileOtpUnavailable) {
       throw const ApiException(
         'Mobile verification is not configured yet.',
@@ -73,6 +76,7 @@ class _FakeApi extends ApiClient {
     String? emailChallengeId,
     String? emailOtp,
   }) async {
+    verifiedPhone = phone;
     verifiedEmail = email;
     verifiedOtp = otp ?? emailOtp;
   }
@@ -138,9 +142,8 @@ void main() {
     );
     await tester.tap(find.text('Send code').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Send code').last);
-    await tester.pumpAndSettle();
     expect(api.bookingOtpRequests, 1);
+    expect(api.requestedBookingPhones, ['9876543210']);
     expect(find.textContaining('We sent a code via WhatsApp'), findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('booking-otp-digit-0')),
@@ -204,10 +207,9 @@ void main() {
     );
     await tester.tap(find.text('Send code').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Send code').last);
-    await tester.pumpAndSettle();
 
     expect(api.bookingOtpRequests, 1);
+    expect(api.requestedBookingPhones, ['9876543210']);
     expect(find.textContaining('We sent a code via WhatsApp'), findsOneWidget);
   });
 
@@ -251,8 +253,6 @@ void main() {
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
     await tester.tap(find.text('Send code').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Send code').last);
-    await tester.pumpAndSettle();
 
     expect(api.fallbackPhone, '9876543210');
     expect(
@@ -267,6 +267,76 @@ void main() {
     await tester.tap(find.text('Verify number'));
     await tester.pumpAndSettle();
     expect(api.verifiedEmail, 'registered@example.com');
+    expect(find.text('Number verified'), findsOneWidget);
+  });
+
+  testWidgets('registered customer can verify a different booking number',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await tester.runAsync(SharedPreferences.getInstance);
+    final api = _FakeApi()
+      ..bookingPhoneVerificationRequired = true
+      ..accountPhone = '9876543210'
+      ..accountPhoneVerified = true
+      ..profilePhoneVerified = true;
+    final controller = AppController(api: api, preferences: preferences!)
+      ..user = const SessionUser(
+        id: 'user-1',
+        name: 'Registered User',
+        username: 'registered',
+        role: WorkspaceRole.customer,
+        phone: '9876543210',
+        phoneVerified: true,
+        phoneVerificationRequired: true,
+      );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => openBookingForm(
+                context,
+                controller: controller,
+                serviceCatalog: const [_tanker],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('booking-phone-number')),
+      '9123456789',
+    );
+    await tester.tap(find.text('Send code'));
+    await tester.pumpAndSettle();
+
+    expect(api.bookingOtpRequests, 1);
+    expect(api.requestedBookingPhones, ['9123456789']);
+    expect(find.textContaining('We sent a code via WhatsApp'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('booking-otp-digit-0')),
+      '123456',
+    );
+    await tester.tap(find.text('Verify number'));
+    await tester.pumpAndSettle();
+
+    expect(api.verifiedPhone, '9123456789');
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('booking-phone-number')))
+          .controller!
+          .text,
+      '9123456789',
+    );
     expect(find.text('Number verified'), findsOneWidget);
   });
 

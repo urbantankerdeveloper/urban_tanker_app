@@ -133,4 +133,33 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('renders OSM after Google Maps is marked unavailable',
+      (tester) async {
+    final resolver = MapProviderResolver(
+      apiKey: 'configured-key',
+      platformSupported: true,
+    )..markUnavailable();
+    addTearDown(resolver.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          height: 320,
+          child: LiveFleetMap(
+            vehicle: const LatLng(13.0827, 80.2707),
+            destination: null,
+            timeline: const [],
+            lastUpdated: null,
+            resolver: resolver,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }
