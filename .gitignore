@@ -165,3 +165,5 @@ ios/Runner/GoogleService-Info.plist
 # Kotlin compiler logs and Java heap dumps
 android/.kotlin/
 *.hprof
+# Widget Preview related
+.widget_preview/
