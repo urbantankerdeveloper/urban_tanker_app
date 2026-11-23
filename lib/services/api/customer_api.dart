@@ -399,6 +399,24 @@ class CustomerApi {
     return TrackingSnapshot.fromJson(decoded);
   }
 
+  Future<Uri> bookingTrackingLink(String bookingId) async {
+    final response = await _api.request(
+      'GET',
+      '/customer/orders/$bookingId/tracking-link',
+      retry: false,
+    );
+    final decoded = decodeBody(response);
+    final rawUrl =
+        decoded is Map<String, dynamic> ? decoded['trackingUrl'] : null;
+    final trackingUrl = rawUrl is String ? Uri.tryParse(rawUrl) : null;
+    if (trackingUrl == null ||
+        !const {'http', 'https'}.contains(trackingUrl.scheme) ||
+        trackingUrl.host.isEmpty) {
+      throw const FormatException('The tracking link response was invalid.');
+    }
+    return trackingUrl;
+  }
+
   Future<PublicTrackingSnapshot> publicTracking(String token) async {
     final response = await _api.request(
         'GET', '/public/tracking/${Uri.encodeComponent(token)}',

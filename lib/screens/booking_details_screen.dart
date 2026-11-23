@@ -467,10 +467,18 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                 ),
                 if (booking.normalizedPaymentStatus != 'cod') ...[
                   const SizedBox(height: AppSpace.md),
-                  _PaymentReceiptSection(
+                  PaymentReceiptSection(
                     future: _receiptFuture,
-                    showCheckAction: booking.normalizedPaymentStatus != 'paid',
+                    showCheckAction: true,
+                    canPayOnline: booking.paymentMethod == 'gateway' &&
+                        _payOnlineStatuses.contains(currentStatus),
+                    isPayingOnline: _payingOnline,
                     onCheck: _refreshReceipt,
+                    onPayOnline: () => _payOnlineNow(
+                      context,
+                      ref,
+                      switchFromCod: false,
+                    ),
                   ),
                 ],
                 const SizedBox(height: AppSpace.xl),
@@ -586,7 +594,11 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
                         expand: false,
                         onPressed: _payingOnline
                             ? null
-                            : () => _payOnlineNow(context, ref),
+                            : () => _payOnlineNow(
+                                  context,
+                                  ref,
+                                  switchFromCod: true,
+                                ),
                       );
                       final prompt = const Text('Want to pay online');
                       if (constraints.maxWidth < 600) {
@@ -744,7 +756,11 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     }
   }
 
-  Future<void> _payOnlineNow(BuildContext context, WidgetRef ref) async {
+  Future<void> _payOnlineNow(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool switchFromCod,
+  }) async {
     final controller = ref.read(appControllerProvider);
     final flow = OnlinePaymentFlow(
       api: controller.api,
@@ -752,14 +768,34 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
     );
     final description = 'Booking ${booking.reference}';
     final email = controller.user?.email?.trim();
+    Future<OnlinePaymentOutcome> startPayment() {
+      final arguments = (
+        bookingId: booking.id,
+        name: 'Urban Tanker',
+        description: description,
+        contact: booking.customerPhone,
+        email: email == null || email.isEmpty ? null : email,
+      );
+      return switchFromCod
+          ? flow.payAfterCodSwitch(
+              bookingId: arguments.bookingId,
+              name: arguments.name,
+              description: arguments.description,
+              contact: arguments.contact,
+              email: arguments.email,
+            )
+          : flow.pay(
+              bookingId: arguments.bookingId,
+              name: arguments.name,
+              description: arguments.description,
+              contact: arguments.contact,
+              email: arguments.email,
+            );
+    }
+
     setState(() => _payingOnline = true);
 
-    var outcome = await flow.payAfterCodSwitch(
-      bookingId: booking.id,
-      name: 'Urban Tanker',
-      description: description,
-      email: email == null || email.isEmpty ? null : email,
-    );
+    var outcome = await startPayment();
     while (true) {
       switch (outcome.status) {
         case OnlinePaymentStatus.paid:
@@ -768,7 +804,10 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
           if (context.mounted) {
             showAppSnack(
               context,
-              'Payment received. The vendor and driver have been told not to collect cash.',
+              switchFromCod
+                  ? 'Payment received. The vendor and driver have been told not to collect cash.'
+                  : 'Payment received successfully.',
+              variant: AppSnackVariant.success,
             );
           }
           return;
@@ -803,12 +842,7 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
             _onPaymentSettled();
             return;
           }
-          outcome = await flow.payAfterCodSwitch(
-            bookingId: booking.id,
-            name: 'Urban Tanker',
-            description: description,
-            email: email == null || email.isEmpty ? null : email,
-          );
+          outcome = await startPayment();
       }
     }
   }
@@ -1013,16 +1047,23 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen>
 /// paid time once Razorpay has captured the payment, plus a manual check for
 /// online payments that are not yet confirmed (for example, when the app was
 /// closed mid-checkout).
-class _PaymentReceiptSection extends StatelessWidget {
-  const _PaymentReceiptSection({
+class PaymentReceiptSection extends StatelessWidget {
+  const PaymentReceiptSection({
+    super.key,
     required this.future,
     required this.showCheckAction,
+    required this.canPayOnline,
+    required this.isPayingOnline,
     required this.onCheck,
+    required this.onPayOnline,
   });
 
   final Future<PaymentReceipt?>? future;
   final bool showCheckAction;
+  final bool canPayOnline;
+  final bool isPayingOnline;
   final VoidCallback onCheck;
+  final VoidCallback onPayOnline;
 
   @override
   Widget build(BuildContext context) {
@@ -1032,23 +1073,26 @@ class _PaymentReceiptSection extends StatelessWidget {
         final receipt = snapshot.connectionState == ConnectionState.done
             ? snapshot.data
             : null;
-        final paidAt = receipt?.capturedAt;
+        final paidReceipt = receipt != null && receipt.isPaid ? receipt : null;
+        final paidAt = paidReceipt?.capturedAt;
+        final isPaid = paidReceipt != null;
+        final paymentPending = receipt?.status == 'pending';
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (receipt != null && receipt.isPaid) ...[
+            if (paidReceipt != null) ...[
               AppListRow(
                 leading: const Icon(Icons.receipt_long_outlined),
                 title: 'Amount paid',
                 trailing: AmountText(
-                  _formatRupees(receipt.amountPaise / 100),
+                  _formatRupees(paidReceipt.amountPaise / 100),
                 ),
               ),
               AppListRow(
                 leading: const Icon(Icons.credit_card_outlined),
                 title: 'Paid via',
-                subtitle: receipt.methodLabel,
+                subtitle: paidReceipt.methodLabel,
               ),
               if (paidAt != null)
                 AppListRow(
@@ -1056,15 +1100,49 @@ class _PaymentReceiptSection extends StatelessWidget {
                   title: 'Paid at',
                   subtitle: _formatPaidAt(paidAt),
                 ),
+            ] else if (snapshot.hasError) ...[
+              const AppListRow(
+                leading: Icon(Icons.error_outline),
+                title: 'Payment status could not be loaded',
+                subtitle: 'Check the status again before retrying payment.',
+              ),
+            ] else if (paymentPending) ...[
+              const AppListRow(
+                leading: Icon(Icons.hourglass_top_outlined),
+                title: 'Payment confirmation is pending',
+                subtitle:
+                    'Check the status again before making another payment.',
+              ),
+            ] else if (receipt != null) ...[
+              AppListRow(
+                leading: const Icon(Icons.info_outline),
+                title: 'Payment ${bookingPaymentLabel(receipt.status)}',
+              ),
             ],
-            if (showCheckAction)
+            if (showCheckAction && !isPaid)
               Padding(
                 padding: const EdgeInsets.only(top: AppSpace.sm),
                 child: SecondaryButton(
                   label: 'Check payment status',
                   icon: Icons.refresh_outlined,
                   expand: false,
-                  onPressed: onCheck,
+                  onPressed: snapshot.connectionState == ConnectionState.waiting
+                      ? null
+                      : onCheck,
+                ),
+              ),
+            if (canPayOnline &&
+                !isPaid &&
+                !paymentPending &&
+                !snapshot.hasError &&
+                snapshot.connectionState == ConnectionState.done)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpace.sm),
+                child: PrimaryButton(
+                  label:
+                      isPayingOnline ? 'Processing payment…' : 'Pay online now',
+                  icon: Icons.credit_card_outlined,
+                  onPressed: isPayingOnline ? null : onPayOnline,
                 ),
               ),
           ],

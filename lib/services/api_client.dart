@@ -423,6 +423,9 @@ class ApiClient implements ApiTransport {
   Future<TrackingSnapshot> bookingTracking(String bookingId) =>
       _customer.bookingTracking(bookingId);
 
+  Future<Uri> bookingTrackingLink(String bookingId) =>
+      _customer.bookingTrackingLink(bookingId);
+
   Future<PublicTrackingSnapshot> publicTracking(String token) =>
       _customer.publicTracking(token);
 

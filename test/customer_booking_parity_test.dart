@@ -56,6 +56,7 @@ class _ParityApi extends ApiClient {
 
   int cancellationCalls = 0;
   int trackingCalls = 0;
+  int trackingLinkCalls = 0;
   int notificationCalls = 0;
   int previewCalls = 0;
   int createCalls = 0;
@@ -77,6 +78,12 @@ class _ParityApi extends ApiClient {
       status: 'pending_vendor',
       trackingAvailable: false,
     );
+  }
+
+  @override
+  Future<Uri> bookingTrackingLink(String bookingId) async {
+    trackingLinkCalls++;
+    return Uri.parse('https://example.test/track/${'a' * 43}');
   }
 
   @override
@@ -465,6 +472,7 @@ void main() {
                   'totalPaise': 105000,
                 },
                 'cod',
+                api: _ParityApi(),
                 paidNote: 'Paid ₹1,050.00 via UPI',
                 onReturnHome: () => returnedHome = true,
               ),
@@ -485,6 +493,7 @@ void main() {
     expect(find.text('2026-11-15'), findsWidgets);
     expect(find.textContaining('Water type: Potable'), findsOneWidget);
     expect(find.text('Paid ₹1,050.00 via UPI'), findsOneWidget);
+    expect(find.text('Share tracking link'), findsOneWidget);
     await tester.ensureVisible(find.text('Return home'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Return home'));
@@ -593,7 +602,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
 
     expect(api.createCalls, 1);
-    expect(find.text('Booking submitted'), findsOneWidget);
+    expect(find.text('Booking confirmed'), findsOneWidget);
     expect(find.text('Leave booking?'), findsNothing);
     await tester.ensureVisible(find.text('Return home'));
     await tester.pump(const Duration(milliseconds: 400));

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../app/app_controller.dart';
 import '../../../app/auth_feature_flags.dart';
 import '../../../core/design_system/design_system.dart';
@@ -1733,6 +1734,7 @@ Future<void> openBookingForm(
       booking,
       quote is Map<String, dynamic> ? quote : null,
       resolvedMethod,
+      api: controller.api,
       paidNote: paidNote,
       onReturnHome: onReturnHome,
     );
@@ -1905,6 +1907,7 @@ Future<void> showBookingSuccess(
   Map<String, dynamic> booking,
   Map<String, dynamic>? quote,
   String paymentMethod, {
+  required ApiClient api,
   String? paidNote,
   VoidCallback? onReturnHome,
 }) async {
@@ -1955,7 +1958,7 @@ Future<void> showBookingSuccess(
               ),
             ),
             Text(
-              'Booking submitted',
+              'Booking confirmed',
               textAlign: TextAlign.center,
               style: Theme.of(sheetContext).textTheme.titleLarge,
             ),
@@ -2129,6 +2132,32 @@ Future<void> showBookingSuccess(
                       builder: (_) => BookingDetailsScreen(booking: tracked),
                     ),
                   );
+                },
+              ),
+            if (tracked != null) const SizedBox(height: AppSpace.sm),
+            if (tracked != null)
+              SecondaryButton(
+                label: 'Share tracking link',
+                icon: Icons.share_outlined,
+                onPressed: () async {
+                  try {
+                    final trackingUrl =
+                        await api.bookingTrackingLink(tracked.id);
+                    await SharePlus.instance.share(
+                      ShareParams(
+                        text:
+                            'Track Urban Tanker booking ${tracked.reference}: $trackingUrl',
+                      ),
+                    );
+                  } catch (error) {
+                    if (sheetContext.mounted) {
+                      showAppSnack(
+                        sheetContext,
+                        friendlyError(error),
+                        variant: AppSnackVariant.error,
+                      );
+                    }
+                  }
                 },
               ),
             if (tracked != null) const SizedBox(height: AppSpace.sm),

@@ -37,6 +37,27 @@ Map<String, dynamic> _booking(String id) => {
     };
 
 void main() {
+  test('booking tracking link uses the customer endpoint and returns its URL',
+      () async {
+    late http.Request captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        jsonEncode(
+            {'trackingUrl': 'https://urban-tanker.test/track/${'a' * 43}'}),
+        200,
+      );
+    });
+
+    final trackingUrl = await _SignedInApiClient(client: client)
+        .bookingTrackingLink('booking-1');
+
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/api/customer/orders/booking-1/tracking-link');
+    expect(
+        trackingUrl.toString(), 'https://urban-tanker.test/track/${'a' * 43}');
+  });
+
   test('phone OTP sign-in accepts the existing-account response', () async {
     late http.Request captured;
     final client = MockClient((request) async {
