@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app/providers.dart';
 import '../core/design_system/design_system.dart';
 import '../models/account.dart';
-import '../services/masking.dart';
 import '../services/secure_screen.dart';
 import '../services/friendly_error.dart';
 import 'home/shell/appearance.dart';
@@ -587,9 +586,10 @@ class _ProfileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final contact = [maskEmail(profile.email), maskPhone(profile.phone)]
-        .where((value) => value.isNotEmpty)
-        .join('\n');
+    final contact = [
+      if (profile.email.isNotEmpty) 'Email: ${profile.email}',
+      if (profile.phone.isNotEmpty) 'Phone: ${profile.phone}',
+    ].join('\n');
     return SurfaceCard(
       child: Row(
         children: [

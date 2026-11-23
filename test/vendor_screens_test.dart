@@ -71,6 +71,7 @@ void main() {
       ProviderScope(
         overrides: [
           appControllerProvider.overrideWith((ref) => controller),
+          profileSelfieProvider.overrideWith((ref) async => null),
           customerProfileProvider
               .overrideWith((ref) => pending('profile', profile)),
           customerUsageProvider.overrideWith((ref) => pending('usage', usage)),
@@ -115,6 +116,15 @@ void main() {
       }),
     );
     expect(find.byType(SkeletonBox), findsWidgets);
+
+    profile.complete(const CustomerProfile(
+      name: 'Taylor User',
+      email: 'taylor@example.com',
+      phone: '+911234567890',
+    ));
+    await tester.pump();
+    expect(find.textContaining('Email: taylor@example.com'), findsOneWidget);
+    expect(find.textContaining('Phone: +911234567890'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();

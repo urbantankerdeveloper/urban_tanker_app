@@ -204,6 +204,20 @@ class _ProfileHeader extends StatelessWidget {
                     ),
                     Text(maskUsername(username),
                         style: theme.textTheme.bodyMedium),
+                    if (email?.isNotEmpty == true)
+                      Text(
+                        'Email: $email',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    if (phone?.isNotEmpty == true)
+                      Text(
+                        'Phone: $phone',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
                     const SizedBox(height: AppSpace.sm),
                     Align(
                       alignment: AlignmentDirectional.centerStart,
