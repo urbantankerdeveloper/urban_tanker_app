@@ -7,8 +7,7 @@
       "type": "dart",
       "flutterMode": "debug",
       "toolArgs": [
-        "--dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api",
-        "--dart-define=SOCKET_URL=https://urban-tanker-backend.onrender.com",
+        "--dart-define=API_BASE_URL=https://api.urbantanker.in/api",
         "--dart-define=ONESIGNAL_APP_ID=",
         "--dart-define=GOOGLE_MAPS_API_KEY=${env:GOOGLE_MAPS_API_KEY}"
       ]
@@ -19,8 +18,7 @@
       "type": "dart",
       "flutterMode": "profile",
       "toolArgs": [
-        "--dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api",
-        "--dart-define=SOCKET_URL=https://urban-tanker-backend.onrender.com",
+        "--dart-define=API_BASE_URL=https://api.urbantanker.in/api",
         "--dart-define=ONESIGNAL_APP_ID=",
         "--dart-define=GOOGLE_MAPS_API_KEY=${env:GOOGLE_MAPS_API_KEY}"
       ]
@@ -33,8 +31,7 @@
       "toolArgs": [
         "--obfuscate",
         "--split-debug-info=build/symbols/android",
-        "--dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api",
-        "--dart-define=SOCKET_URL=https://urban-tanker-backend.onrender.com",
+        "--dart-define=API_BASE_URL=https://api.urbantanker.in/api",
         "--dart-define=ONESIGNAL_APP_ID=",
         "--dart-define=GOOGLE_MAPS_API_KEY=${env:GOOGLE_MAPS_API_KEY}"
       ]

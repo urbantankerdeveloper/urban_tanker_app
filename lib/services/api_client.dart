@@ -20,6 +20,7 @@ import 'api/auth_api.dart';
 import 'api/customer_api.dart';
 import 'api/notification_api.dart';
 import 'api/vendor_api.dart';
+import 'api_base.dart';
 
 export 'api/api_types.dart';
 
@@ -48,12 +49,8 @@ class ApiClient implements ApiTransport {
     aOptions: AndroidOptions(resetOnError: true, migrateWithBackup: false),
   );
 
-  static String _resolveBaseUrl(String? value) => (value ??
-          const String.fromEnvironment(
-            'API_BASE_URL',
-            defaultValue: 'https://urban-tanker-backend.onrender.com/api',
-          ))
-      .replaceFirst(RegExp(r'/$'), '');
+  static String _resolveBaseUrl(String? value) =>
+      (value ?? apiBaseUrl).replaceFirst(RegExp(r'/$'), '');
 
   late final ApiCore _core;
   late final AuthApi _auth = AuthApi(this);
