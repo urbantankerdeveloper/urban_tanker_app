@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'auth_feature_flags.dart';
 import '../models/session.dart';
+import '../services/api_base.dart';
 import '../services/api_client.dart';
 import '../services/biometric_auth_service.dart';
 import '../services/email_rules.dart';
@@ -491,11 +492,8 @@ class AppController extends ChangeNotifier {
     realtime?.dispose();
     realtime = null;
     if (userId != null) {
-      final socketUrl = const String.fromEnvironment('SOCKET_URL');
       realtime = RealtimeService(
-        socketUrl: socketUrl.isNotEmpty
-            ? socketUrl
-            : api.baseUrl.replaceFirst(RegExp(r'/api$'), ''),
+        socketUrl: apiSocketUrl,
         readToken: api.readAccessToken,
       )..connect((_, __) {});
     }

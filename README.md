@@ -29,9 +29,10 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000/api --dart-define=GO
 ```
 
 For a physical device, replace `10.0.2.2` with a host address reachable from
-the device. The Socket.IO URL is derived from `API_BASE_URL` by removing the
-`/api` suffix; override it with `--dart-define=SOCKET_URL=...` when the API and
-realtime server use different origins.
+the device. The production API defaults to
+`https://api.urbantanker.in/api`; Socket.IO derives its origin from
+`API_BASE_URL`. To roll back to Render, pass
+`--dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api`.
 
 The multi-service order experience is opt-in in both the backend and mobile
 build. Enable the backend `MULTI_SERVICE_ORDERS_ENABLED` setting and build the
@@ -135,9 +136,9 @@ key configured in the Android or iOS native project. Inject it from the
 environment or CI secret; without it, the app uses the OpenStreetMap fallback.
 
 ```bash
-flutter build apk --release --obfuscate --split-debug-info=build/symbols/android --dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api
-flutter build appbundle --release --obfuscate --split-debug-info=build/symbols/android --dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api
-flutter build ipa --release --obfuscate --split-debug-info=build/symbols/ios --dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api
+flutter build apk --release --obfuscate --split-debug-info=build/symbols/android --dart-define=API_BASE_URL=https://api.urbantanker.in/api
+flutter build appbundle --release --obfuscate --split-debug-info=build/symbols/android --dart-define=API_BASE_URL=https://api.urbantanker.in/api
+flutter build ipa --release --obfuscate --split-debug-info=build/symbols/ios --dart-define=API_BASE_URL=https://api.urbantanker.in/api
 ```
 
 The `ipa` command requires macOS and Xcode.
