@@ -181,8 +181,8 @@ void main() {
     expect(find.byType(SegmentedTabs), findsNothing);
     expect(find.text('New here? Create an account'), findsOneWidget);
     expect(_chip('Phone'), findsOneWidget);
-    expect(_chip('Email'), findsOneWidget);
-    expect(_chip('Username'), findsOneWidget);
+    expect(_chip('Email or username'), findsOneWidget);
+    expect(_chip('Username'), findsNothing);
     expect(find.text('10-digit mobile number'), findsOneWidget);
     expect(find.text('Send verification code'), findsOneWidget);
     expect(find.text('Password'), findsNothing);
@@ -223,7 +223,7 @@ void main() {
       (tester) async {
     api.loginError = 'Invalid credentials';
     await showAuthScreen(tester);
-    await tester.tap(_chip('Username'));
+    await tester.tap(_chip('Email or username'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextFormField).first,
@@ -368,7 +368,7 @@ void main() {
       (tester) async {
     api.loginError = 'Incorrect email or password.';
     await showAuthScreen(tester);
-    await tester.tap(_chip('Email'));
+    await tester.tap(_chip('Email or username'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextFormField).first,
@@ -385,7 +385,7 @@ void main() {
 
   testWidgets('forgot password opens the reset sheet', (tester) async {
     await showAuthScreen(tester);
-    await tester.tap(_chip('Email'));
+    await tester.tap(_chip('Email or username'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Forgot password?'));
     await tester.pumpAndSettle();
@@ -398,7 +398,7 @@ void main() {
       skip: !AuthFeatureFlags.emailOtp, (tester) async {
     api.emailVerifyError = ApiException('The code is incorrect.', 400);
     await showAuthScreen(tester);
-    await tester.tap(_chip('Email'));
+    await tester.tap(_chip('Email or username'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Email me a code'));
     await tester.pumpAndSettle();
@@ -422,7 +422,7 @@ void main() {
       skip: !AuthFeatureFlags.emailOtp, (tester) async {
     api.emailRequestError = ApiException('Not found', 404);
     await showAuthScreen(tester);
-    await tester.tap(_chip('Email'));
+    await tester.tap(_chip('Email or username'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Email me a code'));
     await tester.pumpAndSettle();

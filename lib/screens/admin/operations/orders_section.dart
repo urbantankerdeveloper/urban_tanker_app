@@ -7,6 +7,7 @@ import '../../../core/design_system/design_system.dart';
 import '../../../models/account.dart';
 import '../../../models/vendor.dart';
 import '../../../services/friendly_error.dart';
+import '../../../services/record_details.dart';
 import 'admin_common.dart';
 
 const _orderStatuses = <(String, String?)>[
@@ -158,10 +159,7 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
     showDetailSheet<void>(
       context,
       title: (row['reference'] ?? 'Booking').toString(),
-      message: _details(row)
-          .entries
-          .map((entry) => '${entry.key}: ${entry.value}')
-          .join('\n'),
+      message: formatRecordDetails(_details(row), includeIdentifiers: true),
       actions: [
         if (!isMultiService)
           SecondaryButton(

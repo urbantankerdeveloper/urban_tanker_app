@@ -25,6 +25,10 @@ class _ApprovalApiClient extends ApiClient {
           'id': 'vendor-approved',
           'business_name': 'Approved Vendor',
           'verification': 'approved',
+          'full_name': 'Asha Kumar',
+          'mobile_e164': '+919876543210',
+          'is_active': true,
+          'from': 'Chennai',
         }),
       ];
 
@@ -48,6 +52,10 @@ class _ApprovalApiClient extends ApiClient {
           capacityLitres: 10000,
           active: true,
           verification: 'approved',
+          data: {
+            'registration_number': 'APPROVED 1',
+            'chassis_number': 'CH-123',
+          },
         ),
       ];
 
@@ -68,6 +76,11 @@ class _ApprovalApiClient extends ApiClient {
           mobile: '+919876543211',
           active: true,
           verification: 'approved',
+          data: {
+            'name': 'Approved Driver',
+            'mobile_e164': '+919876543211',
+            'licence_number': 'DL-1234567',
+          },
         ),
       ];
 }
@@ -89,7 +102,7 @@ void main() {
           adminHealthProvider.overrideWith(
             (ref) async => {
               'ok': true,
-              'realtime': {'connected': false},
+              'realtime': {'configured': true, 'connected': 0},
               'storage': {'configured': true},
               'configuration': {'sms': true, 'payments': false},
               'migrations': [
@@ -107,7 +120,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Healthy'), findsOneWidget);
-    expect(find.text('Unavailable'), findsOneWidget);
+    expect(find.text('Available'), findsNWidgets(2));
+    expect(find.text('Not configured'), findsNothing);
     expect(find.text('Configured'), findsOneWidget);
     expect(find.text('1 to review'), findsOneWidget);
     expect(find.text('bookings'), findsOneWidget);
@@ -182,7 +196,22 @@ void main() {
     await selectStatus('Approved');
     expect(find.text('Waiting Vendor'), findsNothing);
     expect(find.text('Approved Vendor'), findsOneWidget);
-    expect(find.byType(PopupMenuButton<String>), findsNothing);
+    expect(find.byType(PopupMenuButton<String>), findsOneWidget);
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    expect(find.text('Approve'), findsNothing);
+    expect(find.text('Suspend'), findsOneWidget);
+    expect(find.text('Reject'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Approved Vendor'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Name: Asha Kumar'), findsOneWidget);
+    expect(find.textContaining('Phone: +919876543210'), findsOneWidget);
+    expect(find.textContaining('Active: Yes'), findsOneWidget);
+    expect(find.textContaining('From: Chennai'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
 
     await tester.tap(
       find.descendant(
@@ -198,7 +227,18 @@ void main() {
     await selectStatus('Approved');
     expect(find.text('WAIT 1'), findsNothing);
     expect(find.text('APPROVED 1'), findsOneWidget);
-    expect(find.byType(PopupMenuButton<(String, bool)>), findsNothing);
+    expect(find.byType(PopupMenuButton<(String, bool)>), findsOneWidget);
+    await tester.tap(find.byType(PopupMenuButton<(String, bool)>));
+    await tester.pumpAndSettle();
+    expect(find.text('Approve and activate'), findsNothing);
+    expect(find.text('Suspend and deactivate'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('APPROVED 1'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Chassis number: CH-123'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
 
     await tester.tap(
       find.descendant(
@@ -214,7 +254,16 @@ void main() {
     await selectStatus('Approved');
     expect(find.text('Waiting Driver'), findsNothing);
     expect(find.text('Approved Driver'), findsOneWidget);
-    expect(find.byType(PopupMenuButton<(String, bool)>), findsNothing);
+    expect(find.byType(PopupMenuButton<(String, bool)>), findsOneWidget);
+    await tester.tap(find.byType(PopupMenuButton<(String, bool)>));
+    await tester.pumpAndSettle();
+    expect(find.text('Approve and activate'), findsNothing);
+    expect(find.text('Suspend and deactivate'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Approved Driver'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Licence number: DL-1234567'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

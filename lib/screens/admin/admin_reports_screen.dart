@@ -260,7 +260,7 @@ String _registeredVendorName(AccountRecord vendor) {
     final value = vendor.data[key]?.toString().trim();
     if (value != null && value.isNotEmpty) return value;
   }
-  return vendor.id.isEmpty ? 'Unnamed vendor' : 'Vendor ${vendor.id}';
+  return 'Unnamed vendor';
 }
 
 String _registeredVendorDetails(AccountRecord vendor) {

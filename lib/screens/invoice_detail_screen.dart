@@ -9,11 +9,11 @@ import 'package:share_plus/share_plus.dart';
 import '../app/providers.dart';
 import '../core/design_system/design_system.dart';
 import '../models/account.dart';
+import '../services/record_details.dart';
 import '../services/secure_screen.dart';
 
 /// Invoice fields that may leave the device through the share sheet.
 const _shareableInvoiceFields = [
-  'id',
   'number',
   'service',
   'amount',
@@ -62,8 +62,11 @@ class _InvoiceBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final entries =
-        invoice.data.entries.where((entry) => entry.value != null).toList();
+    final entries = invoice.data.entries
+        .where(
+          (entry) => entry.value != null && !isRecordIdentifierKey(entry.key),
+        )
+        .toList();
     final lines = [
       for (final entry in entries)
         if (!_isTotalLine(entry.key)) entry,
@@ -85,10 +88,7 @@ class _InvoiceBody extends StatelessWidget {
             children: [
               Text('RECEIPT', style: theme.textTheme.labelSmall),
               const SizedBox(height: AppSpace.xs),
-              Text(
-                'Invoice ${invoice.data['number'] ?? invoice.id}',
-                style: theme.textTheme.titleLarge,
-              ),
+              Text(_invoiceTitle, style: theme.textTheme.titleLarge),
               const SizedBox(height: AppSpace.lg),
               for (final entry in lines) _LineItem(entry: entry),
               if (totals.isNotEmpty) ...[
@@ -130,8 +130,29 @@ class _InvoiceBody extends StatelessWidget {
     );
   }
 
-  String get _content =>
-      const JsonEncoder.withIndent('  ').convert(invoice.data);
+  String get _content {
+    final fields = <String, dynamic>{
+      for (final entry in invoice.data.entries)
+        if (!isRecordIdentifierKey(entry.key)) entry.key: entry.value,
+    };
+    return const JsonEncoder.withIndent('  ').convert(fields);
+  }
+
+  String get _invoiceTitle {
+    final number = invoice.data['number']?.toString().trim();
+    return number == null || number.isEmpty
+        ? 'Invoice receipt'
+        : 'Invoice $number';
+  }
+
+  String get _fileName {
+    final number = invoice.data['number']?.toString().trim();
+    if (number == null || number.isEmpty) {
+      return 'urban-tanker-invoice-${DateTime.now().millisecondsSinceEpoch}.json';
+    }
+    final safeNumber = number.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '-');
+    return 'invoice-$safeNumber.json';
+  }
 
   /// Only the allow-listed fields are shared. Other fields stay on the device.
   String get _shareContent {
@@ -146,7 +167,7 @@ class _InvoiceBody extends StatelessWidget {
     try {
       final file = XFile.fromData(
         utf8.encode(_shareContent),
-        name: 'invoice-${invoice.id}.json',
+        name: _fileName,
         mimeType: 'application/json',
       );
       await SharePlus.instance.share(
@@ -166,7 +187,7 @@ class _InvoiceBody extends StatelessWidget {
   Future<void> _save(BuildContext context) async {
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/invoice-${invoice.id}.json');
+      final file = File('${directory.path}/$_fileName');
       await file.writeAsString(_content);
       if (context.mounted) {
         showAppSnack(

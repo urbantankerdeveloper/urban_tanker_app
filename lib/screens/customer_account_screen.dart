@@ -6,6 +6,7 @@ import '../core/design_system/design_system.dart';
 import '../models/account.dart';
 import '../services/secure_screen.dart';
 import '../services/friendly_error.dart';
+import '../services/record_details.dart';
 import 'home/shell/appearance.dart';
 import 'invoice_detail_screen.dart';
 import 'security_settings_screen.dart';
@@ -257,12 +258,11 @@ class CustomerAccountScreen extends ConsumerWidget {
   }
 
   void _showRecord(BuildContext context, AccountRecord item) {
-    final details = item.data.entries
-        .where((entry) => entry.key != 'id' && entry.value != null)
-        .map(
-          (entry) => '${_label(entry.key)}: ${_displayValue(entry.value)}',
-        )
-        .join('\n');
+    final details = formatRecordDetails(
+      item.data,
+      excludeKeys: const {'id'},
+      skipNullValues: true,
+    );
     showDialog<void>(
       context: context,
       builder: (context) => AppDialog(
@@ -278,23 +278,6 @@ class CustomerAccountScreen extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  String _label(String key) {
-    return key
-        .replaceAll('_', ' ')
-        .split(' ')
-        .map(
-          (part) => part.isEmpty
-              ? part
-              : '${part[0].toUpperCase()}${part.substring(1)}',
-        )
-        .join(' ');
-  }
-
-  String _displayValue(Object? value) {
-    if (value is Map || value is List) return value.toString();
-    return value.toString();
   }
 
   Future<void> _addAddress(BuildContext context, WidgetRef ref) async {

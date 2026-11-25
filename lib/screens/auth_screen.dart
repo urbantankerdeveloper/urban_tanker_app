@@ -11,8 +11,8 @@ import 'auth/sign_up_code_view.dart';
 
 enum _AuthMode { register, login }
 
-/// How the user signs in. Username is for existing accounts only.
-enum _AuthMethod { phone, email, username }
+/// How the user signs in.
+enum _AuthMethod { phone, email }
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({required this.controller, super.key});
@@ -30,29 +30,23 @@ class _AuthScreenState extends State<AuthScreen> {
   final _phone = TextEditingController();
   final _otp = TextEditingController();
   final _name = TextEditingController();
-  final _username = TextEditingController();
-  final _password = TextEditingController();
 
   _AuthMode _mode = _AuthMode.register;
   _AuthMethod _method = _AuthMethod.phone;
-  bool _obscurePassword = true;
   String _prefillEmail = '';
   final _resendCooldown = ResendCooldown();
   String? _lastChallengeId;
 
   bool get _otpRequested => widget.controller.phoneOtpChallengeId != null;
   bool get _isRegistration => _mode == _AuthMode.register;
-  bool get _usesPhone => _method == _AuthMethod.phone;
   bool get _usesEmail => _method == _AuthMethod.email;
   bool get _isMpinRecovery => widget.controller.pendingMpinReset;
 
-  /// Customers can create an account by phone or email. Username is for
-  /// existing accounts only.
+  /// Customers can register by phone or email; sign-in accepts either email
+  /// or username in the same identifier field.
   List<_AuthMethod> get _methods => _isMpinRecovery
       ? const [_AuthMethod.phone]
-      : _isRegistration
-          ? const [_AuthMethod.phone, _AuthMethod.email]
-          : const [_AuthMethod.phone, _AuthMethod.email, _AuthMethod.username];
+      : const [_AuthMethod.phone, _AuthMethod.email];
 
   @override
   void initState() {
@@ -78,14 +72,13 @@ class _AuthScreenState extends State<AuthScreen> {
   static _AuthMethod? _methodFromName(String? name) => switch (name) {
         'phone' => _AuthMethod.phone,
         'email' => _AuthMethod.email,
-        'username' => _AuthMethod.username,
+        'username' => _AuthMethod.email,
         _ => null,
       };
 
-  static String _methodLabel(_AuthMethod method) => switch (method) {
+  String _methodLabel(_AuthMethod method) => switch (method) {
         _AuthMethod.phone => 'Phone',
-        _AuthMethod.email => 'Email',
-        _AuthMethod.username => 'Username',
+        _AuthMethod.email => _isRegistration ? 'Email' : 'Email or username',
       };
 
   void _onControllerChanged() {
@@ -104,17 +97,11 @@ class _AuthScreenState extends State<AuthScreen> {
     _phone.dispose();
     _otp.dispose();
     _name.dispose();
-    _username.dispose();
-    _password.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_usesPhone) {
-      await widget.controller.signIn(_username.text, _password.text);
-      return;
-    }
     if (_otpRequested) {
       await widget.controller.signInWithPhoneAuthOtp(
         phone: _phone.text,
@@ -199,11 +186,6 @@ class _AuthScreenState extends State<AuthScreen> {
     return null;
   }
 
-  String? _validateRequired(String? value, String field) {
-    if (value == null || value.trim().isEmpty) return 'Enter your $field.';
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -223,9 +205,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ? 'Verify your number.'
                     : _isRegistration
                         ? 'Create your account.'
-                        : _usesPhone
-                            ? 'Welcome back.'
-                            : 'Sign in.';
+                        : 'Welcome back.';
     final subtitle = pendingEmail != null
         ? 'One step left to finish.'
         : _isMpinRecovery
@@ -234,15 +214,13 @@ class _AuthScreenState extends State<AuthScreen> {
                 ? _isRegistration
                     ? 'Create a customer account with your email and a password, '
                         'or with a one-time code.'
-                    : 'Sign in with your email and password, or with a one-time '
-                        'code.'
+                    : 'Sign in with your email or username and password. '
+                        'Email one-time codes are also available.'
                 : _otpRequested
                     ? 'Enter the verification code below.'
                     : _isRegistration
                         ? 'Create a customer account with your mobile number and a one-time code.'
-                        : _usesPhone
-                            ? 'Sign in with a one-time code sent to your mobile number.'
-                            : 'Use your registered username and password.';
+                        : 'Sign in with a one-time code sent to your mobile number.';
 
     return Scaffold(
       body: BrandBackdrop(
@@ -325,9 +303,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                       )
                                     : EmailSignInForm(
                                         controller: controller,
-                                        initialEmail: _prefillEmail,
+                                        initialIdentifier: _prefillEmail,
                                       )
-                                : _phoneOrUsernameForm(context),
+                                : _phoneForm(context),
                           ),
                         ),
                       ),
@@ -360,135 +338,96 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  /// The phone and username forms. They keep their behaviour from before the
-  /// email option was added.
-  Widget _phoneOrUsernameForm(BuildContext context) {
+  Widget _phoneForm(BuildContext context) {
     final controller = widget.controller;
     final colors = context.colors;
     final theme = Theme.of(context);
-    final usePhone = _usesPhone;
 
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (usePhone) ...[
-            AppTextField(
-              controller: _phone,
-              enabled: !_otpRequested && !controller.busy,
-              label: '10-digit mobile number',
-              prefix: const Icon(Icons.phone_outlined),
-              prefixText: '+91 ',
-              keyboardType: TextInputType.phone,
-              textInputAction:
-                  _otpRequested ? TextInputAction.next : TextInputAction.done,
-              suffix: _otpRequested
-                  ? IconButton(
-                      tooltip: 'Change mobile number',
-                      onPressed: controller.busy ? null : _changeNumber,
-                      icon: const Icon(Icons.edit_outlined),
-                    )
-                  : null,
-              validator: _validatePhone,
-            ),
-            if (_otpRequested) ...[
-              const SizedBox(height: AppSpace.md),
-              if (controller.phoneOtpChannel != null)
-                Row(
-                  children: [
-                    Icon(
-                      controller.phoneOtpChannel == PhoneOtpChannel.whatsapp
-                          ? Icons.chat_outlined
-                          : Icons.sms_outlined,
-                      color: controller.phoneOtpChannel ==
-                              PhoneOtpChannel.whatsapp
-                          ? const Color(0xFF25D366)
-                          : colors.primary,
-                    ),
-                    const SizedBox(width: AppSpace.sm),
-                    Expanded(
-                      child: Text(
-                        'We sent a code via ${controller.phoneOtpChannel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS'} to +91 ${maskPhone(_phone.text)}.',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              const SizedBox(height: AppSpace.md),
-              FormField<String>(
-                validator: (_) => _validateOtp(_otp.text),
-                builder: (field) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Verification code',
-                        style: theme.textTheme.labelLarge),
-                    const SizedBox(height: AppSpace.sm),
-                    IgnorePointer(
-                      ignoring: controller.busy,
-                      child: OtpField(
-                        controller: _otp,
-                        autofillOneTimeCode:
-                            controller.phoneOtpChannel == PhoneOtpChannel.sms,
-                        onChanged: (_) => field.didChange(_otp.text),
-                      ),
-                    ),
-                    if (field.hasError) ...[
-                      const SizedBox(height: AppSpace.xs),
-                      Text(
-                        field.errorText!,
-                        style: TextStyle(color: colors.danger.fg),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (_isRegistration) ...[
-                const SizedBox(height: AppSpace.md),
-                AppTextField(
-                  controller: _name,
-                  enabled: !controller.busy,
-                  label: 'Full name',
-                  prefix: const Icon(Icons.person_outline),
-                  textCapitalization: TextCapitalization.words,
-                  textInputAction: TextInputAction.done,
-                  validator: _validateName,
-                ),
-              ],
-            ],
-          ] else ...[
-            AppTextField(
-              controller: _username,
-              enabled: !controller.busy,
-              label: 'Username',
-              prefix: const Icon(Icons.person_outline),
-              keyboardType: TextInputType.text,
-              textInputAction: TextInputAction.next,
-              autofillHints: const [AutofillHints.username],
-              validator: (value) => _validateRequired(value, 'username'),
-            ),
+          AppTextField(
+            controller: _phone,
+            enabled: !_otpRequested && !controller.busy,
+            label: '10-digit mobile number',
+            prefix: const Icon(Icons.phone_outlined),
+            prefixText: '+91 ',
+            keyboardType: TextInputType.phone,
+            textInputAction:
+                _otpRequested ? TextInputAction.next : TextInputAction.done,
+            suffix: _otpRequested
+                ? IconButton(
+                    tooltip: 'Change mobile number',
+                    onPressed: controller.busy ? null : _changeNumber,
+                    icon: const Icon(Icons.edit_outlined),
+                  )
+                : null,
+            validator: _validatePhone,
+          ),
+          if (_otpRequested) ...[
             const SizedBox(height: AppSpace.md),
-            AppTextField(
-              controller: _password,
-              enabled: !controller.busy,
-              label: 'Password',
-              prefix: const Icon(Icons.lock_outline),
-              obscureText: _obscurePassword,
-              textInputAction: TextInputAction.done,
-              autofillHints: const [AutofillHints.password],
-              suffix: IconButton(
-                tooltip: _obscurePassword ? 'Show password' : 'Hide password',
-                onPressed: () => setState(
-                  () => _obscurePassword = !_obscurePassword,
-                ),
-                icon: Icon(
-                  _obscurePassword
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
-                ),
+            if (controller.phoneOtpChannel != null)
+              Row(
+                children: [
+                  Icon(
+                    controller.phoneOtpChannel == PhoneOtpChannel.whatsapp
+                        ? Icons.chat_outlined
+                        : Icons.sms_outlined,
+                    color:
+                        controller.phoneOtpChannel == PhoneOtpChannel.whatsapp
+                            ? const Color(0xFF25D366)
+                            : colors.primary,
+                  ),
+                  const SizedBox(width: AppSpace.sm),
+                  Expanded(
+                    child: Text(
+                      'We sent a code via ${controller.phoneOtpChannel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS'} to +91 ${maskPhone(_phone.text)}.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
               ),
-              validator: (value) => _validateRequired(value, 'password'),
+            const SizedBox(height: AppSpace.md),
+            FormField<String>(
+              validator: (_) => _validateOtp(_otp.text),
+              builder: (field) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Verification code', style: theme.textTheme.labelLarge),
+                  const SizedBox(height: AppSpace.sm),
+                  IgnorePointer(
+                    ignoring: controller.busy,
+                    child: OtpField(
+                      controller: _otp,
+                      autofillOneTimeCode:
+                          controller.phoneOtpChannel == PhoneOtpChannel.sms,
+                      onChanged: (_) => field.didChange(_otp.text),
+                    ),
+                  ),
+                  if (field.hasError) ...[
+                    const SizedBox(height: AppSpace.xs),
+                    Text(
+                      field.errorText!,
+                      style: TextStyle(color: colors.danger.fg),
+                    ),
+                  ],
+                ],
+              ),
             ),
+            if (_isRegistration) ...[
+              const SizedBox(height: AppSpace.md),
+              AppTextField(
+                controller: _name,
+                enabled: !controller.busy,
+                label: 'Full name',
+                prefix: const Icon(Icons.person_outline),
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.done,
+                validator: _validateName,
+              ),
+            ],
           ],
           if (controller.errorMessage != null) ...[
             const SizedBox(height: AppSpace.md),
@@ -506,17 +445,15 @@ class _AuthScreenState extends State<AuthScreen> {
           ],
           const SizedBox(height: AppSpace.xl),
           PrimaryButton(
-            label: !usePhone
-                ? 'Sign in'
-                : _otpRequested
-                    ? _isRegistration
-                        ? 'Verify code and create account'
-                        : 'Verify code and sign in'
-                    : 'Send verification code',
+            label: _otpRequested
+                ? _isRegistration
+                    ? 'Verify code and create account'
+                    : 'Verify code and sign in'
+                : 'Send verification code',
             loading: controller.busy,
             onPressed: controller.busy ? null : _submit,
           ),
-          if (usePhone && _otpRequested)
+          if (_otpRequested)
             ListenableBuilder(
               listenable: _resendCooldown,
               builder: (context, _) => GhostButton(

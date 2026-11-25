@@ -274,6 +274,7 @@ class AdminFleetVehicle {
     required this.capacityLitres,
     required this.active,
     required this.verification,
+    this.data = const {},
   });
 
   final String id;
@@ -282,6 +283,7 @@ class AdminFleetVehicle {
   final int capacityLitres;
   final bool active;
   final String verification;
+  final Map<String, dynamic> data;
 
   bool get eligible => active && verification.toLowerCase() == 'approved';
 
@@ -298,6 +300,7 @@ class AdminFleetVehicle {
                 0,
         active: json['is_active'] == true || json['isActive'] == true,
         verification: (json['verification'] ?? 'pending').toString(),
+        data: Map<String, dynamic>.from(json),
       );
 }
 
@@ -311,6 +314,7 @@ class AdminFleetDriver {
     required this.verification,
     this.latitude,
     this.longitude,
+    this.data = const {},
   });
 
   final String id;
@@ -321,6 +325,7 @@ class AdminFleetDriver {
   final String verification;
   final double? latitude;
   final double? longitude;
+  final Map<String, dynamic> data;
 
   bool get eligible => active && verification.toLowerCase() == 'approved';
 
@@ -337,6 +342,7 @@ class AdminFleetDriver {
         verification: (json['verification'] ?? 'pending').toString(),
         latitude: (json['latitude'] as num?)?.toDouble(),
         longitude: (json['longitude'] as num?)?.toDouble(),
+        data: Map<String, dynamic>.from(json),
       );
 }
 

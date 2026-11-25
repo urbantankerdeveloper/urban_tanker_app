@@ -22,7 +22,8 @@ class AdminPulseScreen extends ConsumerWidget {
       ),
       data: (health) {
         final ok = health['ok'] == true;
-        final realtime = (health['realtime'] as Map?)?['connected'] == true;
+        final realtimeConfigured =
+            (health['realtime'] as Map?)?['configured'] == true;
         final storage = (health['storage'] as Map?)?['configured'] == true;
         final configWarnings = (health['configuration'] as Map?)
                 ?.values
@@ -58,8 +59,8 @@ class AdminPulseScreen extends ConsumerWidget {
                   ),
                   _HealthTile(
                     label: 'Realtime',
-                    value: realtime ? 'Connected' : 'Unavailable',
-                    healthy: realtime,
+                    value: realtimeConfigured ? 'Available' : 'Not configured',
+                    healthy: realtimeConfigured,
                   ),
                   _HealthTile(
                     label: 'Storage',

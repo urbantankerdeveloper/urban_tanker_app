@@ -162,16 +162,28 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
                 StatusChip.statusLabel(_vendorVerification(vendor)),
                 style: Theme.of(context).textTheme.labelLarge,
               ),
-              if (_vendorVerification(vendor).toLowerCase() != 'approved')
-                PopupMenuButton<String>(
-                  tooltip: 'Update vendor status',
-                  onSelected: (status) => _setVendorStatus(vendor, status),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'approved', child: Text('Approve')),
-                    PopupMenuItem(value: 'suspended', child: Text('Suspend')),
-                    PopupMenuItem(value: 'rejected', child: Text('Reject')),
-                  ],
-                ),
+              PopupMenuButton<String>(
+                tooltip: 'Update vendor status',
+                onSelected: (status) => _setVendorStatus(vendor, status),
+                itemBuilder: (_) {
+                  final verification =
+                      _vendorVerification(vendor).toLowerCase();
+                  return [
+                    if (verification != 'approved')
+                      PopupMenuItem(
+                        value: 'approved',
+                        child: Text('Approve'),
+                      ),
+                    if (verification != 'suspended')
+                      PopupMenuItem(
+                        value: 'suspended',
+                        child: Text('Suspend'),
+                      ),
+                    if (verification != 'rejected')
+                      PopupMenuItem(value: 'rejected', child: Text('Reject')),
+                  ];
+                },
+              ),
             ],
           ),
         ),
@@ -203,17 +215,20 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
             title: vehicle.registrationNumber,
             subtitle: '${vehicle.capacityLitres} L • ${vehicle.verification} • '
                 '${vehicle.active ? 'Active' : 'Inactive'}',
-            trailing: vehicle.verification.toLowerCase() == 'approved'
-                ? null
-                : _fleetStatusMenu(
-                    vehicle.verification,
-                    vehicle.active,
-                    (verification, isActive) => _updateVehicleStatus(
-                      vehicle.id,
-                      verification,
-                      isActive,
-                    ),
-                  ),
+            trailing: _fleetStatusMenu(
+              vehicle.verification,
+              vehicle.active,
+              (verification, isActive) => _updateVehicleStatus(
+                vehicle.id,
+                verification,
+                isActive,
+              ),
+            ),
+            onTap: () => showAdminRecordDataSheet(
+              context,
+              title: vehicle.registrationNumber,
+              data: vehicle.data,
+            ),
           ),
         ),
       );
@@ -233,17 +248,20 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
             title: driver.name,
             subtitle: '${driver.mobile} • ${driver.verification} • '
                 '${driver.active ? 'Active' : 'Inactive'}',
-            trailing: driver.verification.toLowerCase() == 'approved'
-                ? null
-                : _fleetStatusMenu(
-                    driver.verification,
-                    driver.active,
-                    (verification, isActive) => _updateDriverStatus(
-                      driver.id,
-                      verification,
-                      isActive,
-                    ),
-                  ),
+            trailing: _fleetStatusMenu(
+              driver.verification,
+              driver.active,
+              (verification, isActive) => _updateDriverStatus(
+                driver.id,
+                verification,
+                isActive,
+              ),
+            ),
+            onTap: () => showAdminRecordDataSheet(
+              context,
+              title: driver.name,
+              data: driver.data,
+            ),
           ),
         ),
       );
@@ -282,43 +300,50 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
     String verification,
     bool active,
     Future<void> Function(String verification, bool isActive) onSelected,
-  ) =>
-      PopupMenuButton<(String, bool)>(
-        tooltip: 'Update fleet status',
-        onSelected: (value) async {
-          try {
-            await onSelected(value.$1, value.$2);
-            if (mounted) {
-              setState(_reload);
-              showAppSnack(
-                context,
-                'Fleet status updated.',
-                variant: AppSnackVariant.success,
-              );
-            }
-          } catch (error) {
-            if (mounted) {
-              showAppSnack(
-                context,
-                'Fleet status update failed: $error',
-                variant: AppSnackVariant.error,
-              );
-            }
+  ) {
+    final isApproved = verification.toLowerCase() == 'approved';
+    return PopupMenuButton<(String, bool)>(
+      tooltip: 'Update fleet status',
+      onSelected: (value) async {
+        try {
+          await onSelected(value.$1, value.$2);
+          if (mounted) {
+            setState(_reload);
+            showAppSnack(
+              context,
+              'Fleet status updated.',
+              variant: AppSnackVariant.success,
+            );
           }
-        },
-        itemBuilder: (_) => [
-          if (!active || verification.toLowerCase() != 'approved')
-            const PopupMenuItem(
-              value: ('approved', true),
-              child: Text('Approve and activate'),
-            ),
-          if (active || verification.toLowerCase() != 'suspended')
-            const PopupMenuItem(
-              value: ('suspended', false),
-              child: Text('Suspend and deactivate'),
-            ),
-        ],
-      );
+        } catch (error) {
+          if (mounted) {
+            showAppSnack(
+              context,
+              'Fleet status update failed: $error',
+              variant: AppSnackVariant.error,
+            );
+          }
+        }
+      },
+      itemBuilder: (_) => [
+        if (!isApproved)
+          const PopupMenuItem(
+            value: ('approved', true),
+            child: Text('Approve and activate'),
+          ),
+        if (isApproved && !active)
+          const PopupMenuItem(
+            value: ('approved', true),
+            child: Text('Activate'),
+          ),
+        if (active)
+          const PopupMenuItem(
+            value: ('suspended', false),
+            child: Text('Suspend and deactivate'),
+          ),
+      ],
+    );
+  }
 
   Future<void> _updateVehicleStatus(
     String id,

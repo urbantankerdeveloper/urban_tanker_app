@@ -5,6 +5,7 @@ import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/account.dart';
 import '../../models/dispatcher.dart';
+import '../../services/record_details.dart';
 
 /// Actions for one dispatch order, in a sheet.
 Future<void> showDispatchActions(
@@ -74,9 +75,7 @@ void showOrderDetails(BuildContext context, Map<String, dynamic> order) {
     context: context,
     builder: (dialogContext) => AppDialog(
       title: 'Dispatch order details',
-      message: details.entries
-          .map((entry) => '${entry.key}: ${entry.value}')
-          .join('\n'),
+      message: formatRecordDetails(details, includeIdentifiers: true),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),

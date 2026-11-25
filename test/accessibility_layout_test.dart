@@ -96,7 +96,7 @@ void main() {
           adminHealthProvider.overrideWith(
             (ref) async => {
               'ok': false,
-              'realtime': {'connected': false},
+              'realtime': {'configured': false, 'connected': 0},
               'storage': {'configured': false},
               'configuration': {'sms': false},
               'migrations': [
@@ -121,7 +121,7 @@ void main() {
           adminHealthProvider.overrideWith(
             (ref) async => {
               'ok': true,
-              'realtime': {'connected': true},
+              'realtime': {'configured': true, 'connected': 0},
               'storage': {'configured': true},
               'configuration': {'sms': true},
               'migrations': [

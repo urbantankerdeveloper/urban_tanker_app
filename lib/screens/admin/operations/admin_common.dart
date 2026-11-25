@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/account.dart';
 import '../../../services/friendly_error.dart';
+import '../../../services/record_details.dart';
 
 /// A record from the admin lists. Tapping it opens the details sheet.
 class AdminRecordRow extends StatelessWidget {
@@ -40,12 +41,21 @@ Future<void> showAdminRecordSheet(
   BuildContext context,
   AccountRecord record,
 ) =>
-    showDetailSheet(
+    showAdminRecordDataSheet(
       context,
       title: record.title,
-      message: record.data.entries
-          .map((entry) => '${entry.key}: ${entry.value}')
-          .join('\n'),
+      data: record.data,
+    );
+
+Future<void> showAdminRecordDataSheet(
+  BuildContext context, {
+  required String title,
+  required Map<String, dynamic> data,
+}) =>
+    showDetailSheet(
+      context,
+      title: title,
+      message: formatRecordDetails(data),
     );
 
 /// A titled block of text in a bottom sheet, with optional actions below.

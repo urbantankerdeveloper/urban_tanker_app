@@ -49,7 +49,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Username'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Email or username'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     }

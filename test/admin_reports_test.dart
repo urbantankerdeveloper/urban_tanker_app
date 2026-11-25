@@ -20,6 +20,7 @@ void main() {
         'companyName': 'South Water',
         'phone': '9876543210',
       }),
+      const AccountRecord({'id': 'vendor-secret'}),
     ];
 
     await tester.pumpWidget(
@@ -34,13 +35,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Registered vendors (2)'), findsOneWidget);
-    await tester.tap(find.text('Registered vendors (2)'));
+    expect(find.text('Registered vendors (3)'), findsOneWidget);
+    await tester.tap(find.text('Registered vendors (3)'));
     await tester.pumpAndSettle();
 
     expect(find.text('North Tankers'), findsOneWidget);
     expect(find.text('north@example.com • verified'), findsOneWidget);
     expect(find.text('South Water'), findsOneWidget);
     expect(find.text('9876543210'), findsOneWidget);
+    expect(find.text('Unnamed vendor'), findsOneWidget);
+    expect(find.text('vendor-secret'), findsNothing);
   });
 }

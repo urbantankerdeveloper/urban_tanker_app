@@ -5,6 +5,7 @@ import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/account.dart';
 import '../../services/friendly_error.dart';
+import '../../services/record_details.dart';
 
 /// How urgent an alert is. Drives the group it sits in and its colour.
 enum AlertSeverity { danger, warning, info }
@@ -154,9 +155,7 @@ class _DispatcherAlertsScreenState
       context: context,
       builder: (dialogContext) => AppDialog(
         title: item.title,
-        message: item.data.entries
-            .map((entry) => '${entry.key}: ${entry.value}')
-            .join('\n'),
+        message: formatRecordDetails(item.data),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),

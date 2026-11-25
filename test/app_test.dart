@@ -592,8 +592,10 @@ void main() {
     expect(vehicle.registrationNumber, 'TN 38 AB 4120');
     expect(vehicle.capacityLitres, 12000);
     expect(vehicle.active, isTrue);
+    expect(vehicle.data['registrationNumber'], 'TN 38 AB 4120');
     expect(driver.name, 'Arun Kumar');
     expect(driver.mobile, '+919876543210');
+    expect(driver.data['full_name'], 'Arun Kumar');
   });
 
   test('vendor dashboard maps orders, fleet, and drivers', () {

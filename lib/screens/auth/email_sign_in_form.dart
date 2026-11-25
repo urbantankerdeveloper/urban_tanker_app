@@ -7,17 +7,17 @@ import '../../services/email_rules.dart';
 import 'forgot_password_sheet.dart';
 import 'resend_cooldown.dart';
 
-/// Email sign-in. Password mode is the default. Code mode sends a one-time code
-/// to the address, using the same steps as the phone code flow.
+/// Email or username sign-in. Password mode accepts either identifier; code
+/// mode is available for email addresses.
 class EmailSignInForm extends StatefulWidget {
   const EmailSignInForm({
     required this.controller,
-    this.initialEmail = '',
+    this.initialIdentifier = '',
     super.key,
   });
 
   final AppController controller;
-  final String initialEmail;
+  final String initialIdentifier;
 
   @override
   State<EmailSignInForm> createState() => _EmailSignInFormState();
@@ -25,7 +25,8 @@ class EmailSignInForm extends StatefulWidget {
 
 class _EmailSignInFormState extends State<EmailSignInForm> {
   final _formKey = GlobalKey<FormState>();
-  late final _email = TextEditingController(text: widget.initialEmail);
+  late final _identifier =
+      TextEditingController(text: widget.initialIdentifier);
   final _password = TextEditingController();
   final _otp = TextEditingController();
   final _cooldown = ResendCooldown();
@@ -44,7 +45,7 @@ class _EmailSignInFormState extends State<EmailSignInForm> {
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
     _cooldown.dispose();
-    _email.dispose();
+    _identifier.dispose();
     _password.dispose();
     _otp.dispose();
     super.dispose();
@@ -60,8 +61,19 @@ class _EmailSignInFormState extends State<EmailSignInForm> {
     _lastChallengeId = challengeId;
   }
 
-  String? _validateEmail(String? value) =>
-      isValidEmail(value ?? '') ? null : 'Enter a valid email address.';
+  String? _validateIdentifier(String? value) {
+    final identifier = value?.trim() ?? '';
+    if (identifier.isEmpty) return 'Enter your email or username.';
+    if (_useCode && !isValidEmail(identifier)) {
+      return 'Enter a valid email address to receive a code.';
+    }
+    return null;
+  }
+
+  String get _normalizedIdentifier {
+    final identifier = _identifier.text.trim();
+    return isValidEmail(identifier) ? normalizeEmail(identifier) : identifier;
+  }
 
   String? _validateOtp(String value) =>
       RegExp(r'^\d{6}$').hasMatch(value.trim())
@@ -70,24 +82,26 @@ class _EmailSignInFormState extends State<EmailSignInForm> {
 
   Future<void> _signInWithPassword() async {
     if (!_formKey.currentState!.validate()) return;
-    await widget.controller.signIn(normalizeEmail(_email.text), _password.text);
+    await widget.controller.signIn(_normalizedIdentifier, _password.text);
   }
 
   Future<void> _sendCode() async {
     if (!_formKey.currentState!.validate()) return;
     _otp.clear();
-    await widget.controller.requestEmailAuthOtp(normalizeEmail(_email.text));
+    await widget.controller.requestEmailAuthOtp(
+      normalizeEmail(_identifier.text),
+    );
   }
 
   Future<void> _verifyCode() async {
     if (!_formKey.currentState!.validate()) return;
     await widget.controller.signInWithEmailAuthOtp(
-      email: normalizeEmail(_email.text),
+      email: normalizeEmail(_identifier.text),
       otp: _otp.text,
     );
   }
 
-  void _changeEmail() {
+  void _changeIdentifier() {
     _otp.clear();
     _cooldown.cancel();
     widget.controller.emailOtpChallengeId = null;
@@ -104,7 +118,7 @@ class _EmailSignInFormState extends State<EmailSignInForm> {
       context,
       builder: (_) => ForgotPasswordSheet(
         controller: widget.controller,
-        initialEmail: _email.text,
+        initialEmail: isValidEmail(_identifier.text) ? _identifier.text : '',
       ),
     );
   }
@@ -137,19 +151,22 @@ class _EmailSignInFormState extends State<EmailSignInForm> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 AppTextField(
-                  controller: _email,
+                  controller: _identifier,
                   enabled: !busy && !codeRequested,
-                  label: 'Email',
+                  label: 'Email or username',
                   prefix: const Icon(Icons.mail_outline),
                   keyboardType: TextInputType.emailAddress,
                   textInputAction:
                       showCode ? TextInputAction.done : TextInputAction.next,
-                  autofillHints: const [AutofillHints.email],
-                  validator: _validateEmail,
+                  autofillHints: const [
+                    AutofillHints.email,
+                    AutofillHints.username,
+                  ],
+                  validator: _validateIdentifier,
                   suffix: codeRequested
                       ? IconButton(
-                          tooltip: 'Change email',
-                          onPressed: busy ? null : _changeEmail,
+                          tooltip: 'Change email or username',
+                          onPressed: busy ? null : _changeIdentifier,
                           icon: const Icon(Icons.edit_outlined),
                         )
                       : null,
