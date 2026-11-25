@@ -6,10 +6,18 @@ import '../../../services/service_area.dart';
 import '../../common/live_fleet_map.dart';
 
 class MapLocationPicker extends StatefulWidget {
-  const MapLocationPicker({super.key, this.latitude, this.longitude});
+  const MapLocationPicker({
+    super.key,
+    this.latitude,
+    this.longitude,
+    this.title = 'Choose delivery location',
+    this.restrictToChennai = true,
+  });
 
   final double? latitude;
   final double? longitude;
+  final String title;
+  final bool restrictToChennai;
 
   @override
   State<MapLocationPicker> createState() => _MapLocationPickerState();
@@ -32,9 +40,11 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
 
   @override
   Widget build(BuildContext context) => AppDialog(
-        title: 'Choose delivery location',
+        title: widget.title,
         content: Semantics(
-          label: 'Map to choose the delivery location',
+          label: widget.restrictToChennai
+              ? 'Map to choose the delivery location'
+              : 'Map to choose the registered location',
           child: SizedBox(
             width: double.maxFinite,
             height: 360,
@@ -64,10 +74,11 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       );
 
   void _selectLocation(LatLng point) {
-    if (!isChennaiLocation(
-      latitude: point.latitude,
-      longitude: point.longitude,
-    )) {
+    if (widget.restrictToChennai &&
+        !isChennaiLocation(
+          latitude: point.latitude,
+          longitude: point.longitude,
+        )) {
       showAppSnack(context, 'Choose a location inside Chennai.');
       return;
     }

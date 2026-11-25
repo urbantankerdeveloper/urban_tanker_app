@@ -8,6 +8,7 @@ import '../../../models/vendor.dart';
 import '../../../services/api_client.dart';
 import '../../../services/friendly_error.dart';
 import '../../../services/location_coordinates.dart';
+import '../../common/coordinate_picker_field.dart';
 import 'admin_common.dart';
 
 const _peopleTabs = ['Vendors', 'Customers', 'Vehicles', 'Drivers'];
@@ -360,10 +361,12 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
         ('10-digit phone', phone),
         ('Business name', business),
         ('Service zone', zone),
-        ('Latitude (optional)', latitude),
-        ('Longitude (optional)', longitude),
       ],
-      optionalFields: const {'Latitude (optional)', 'Longitude (optional)'},
+      afterFields: CoordinatePickerField(
+        latitude: latitude,
+        longitude: longitude,
+        label: 'Vendor location (optional)',
+      ),
       submit: () async {
         final coordinates =
             parseOptionalCoordinates(latitude.text, longitude.text);
@@ -665,22 +668,10 @@ class _FleetFormSheetState extends ConsumerState<_FleetFormSheet> {
                         : null,
                   ),
                   const SizedBox(height: AppSpace.md),
-                  AppTextField(
-                    controller: _latitude,
-                    label: 'Latitude (optional)',
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                      signed: true,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpace.md),
-                  AppTextField(
-                    controller: _longitude,
-                    label: 'Longitude (optional)',
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                      signed: true,
-                    ),
+                  CoordinatePickerField(
+                    latitude: _latitude,
+                    longitude: _longitude,
+                    label: 'Driver location (optional)',
                   ),
                 ],
                 if (_error != null) ...[

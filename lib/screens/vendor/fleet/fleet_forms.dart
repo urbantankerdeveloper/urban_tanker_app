@@ -6,6 +6,7 @@ import '../../../core/design_system/design_system.dart';
 import '../../../models/vendor.dart';
 import '../../../services/friendly_error.dart';
 import '../../../services/location_coordinates.dart';
+import '../../common/coordinate_picker_field.dart';
 
 /// Shows an add or edit form in a bottom sheet. Resolves to true once the
 /// record is saved. When [requireAll] is set, every field must have text.
@@ -15,6 +16,7 @@ Future<bool> showRecordSheet(
   required List<(String, TextEditingController)> fields,
   required Future<void> Function() submit,
   Widget? extra,
+  Widget? afterFields,
   bool requireAll = false,
 }) async {
   final saved = await showAppBottomSheet<bool>(
@@ -24,6 +26,7 @@ Future<bool> showRecordSheet(
       fields: fields,
       submit: submit,
       extra: extra,
+      afterFields: afterFields,
       requireAll: requireAll,
     ),
   );
@@ -37,12 +40,14 @@ class _RecordSheet extends StatefulWidget {
     required this.submit,
     required this.requireAll,
     this.extra,
+    this.afterFields,
   });
 
   final String title;
   final List<(String, TextEditingController)> fields;
   final Future<void> Function() submit;
   final Widget? extra;
+  final Widget? afterFields;
   final bool requireAll;
 
   @override
@@ -109,6 +114,10 @@ class _RecordSheetState extends State<_RecordSheet> {
                       )
                     : null,
               ),
+              const SizedBox(height: AppSpace.md),
+            ],
+            if (widget.afterFields != null) ...[
+              widget.afterFields!,
               const SizedBox(height: AppSpace.md),
             ],
             if (_error != null)
@@ -254,9 +263,12 @@ Future<void> addDriver(BuildContext context, WidgetRef ref) async {
       ('Name', name),
       ('10-digit mobile', mobile),
       ('Licence number', licence),
-      ('Latitude (optional)', latitude),
-      ('Longitude (optional)', longitude),
     ],
+    afterFields: CoordinatePickerField(
+      latitude: latitude,
+      longitude: longitude,
+      label: 'Driver location (optional)',
+    ),
     submit: () async {
       if (!RegExp(r'^\d{10}$').hasMatch(mobile.text.trim())) {
         throw const FormatException('Enter a valid 10-digit mobile number.');
@@ -332,9 +344,12 @@ Future<void> editDriver(
       ('Name', name),
       ('10-digit mobile', mobile),
       ('Licence number (optional)', licence),
-      ('Latitude (optional)', latitude),
-      ('Longitude (optional)', longitude),
     ],
+    afterFields: CoordinatePickerField(
+      latitude: latitude,
+      longitude: longitude,
+      label: 'Driver location (optional)',
+    ),
     submit: () async {
       if (!RegExp(r'^\d{10}$').hasMatch(mobile.text.trim())) {
         throw const FormatException('Enter a valid 10-digit mobile number.');

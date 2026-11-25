@@ -151,6 +151,7 @@ Future<void> adminForm(
   required List<(String, TextEditingController)> fields,
   required Future<void> Function() submit,
   Set<String> optionalFields = const {},
+  Widget? afterFields,
 }) async {
   final saved = await showAppBottomSheet<bool>(
     context,
@@ -159,6 +160,7 @@ Future<void> adminForm(
       fields: fields,
       submit: submit,
       optionalFields: optionalFields,
+      afterFields: afterFields,
     ),
   );
   if (saved == true && context.mounted) {
@@ -176,12 +178,14 @@ class _AdminFormSheet extends StatefulWidget {
     required this.fields,
     required this.submit,
     required this.optionalFields,
+    this.afterFields,
   });
 
   final String title;
   final List<(String, TextEditingController)> fields;
   final Future<void> Function() submit;
   final Set<String> optionalFields;
+  final Widget? afterFields;
 
   @override
   State<_AdminFormSheet> createState() => _AdminFormSheetState();
@@ -252,6 +256,10 @@ class _AdminFormSheetState extends State<_AdminFormSheet> {
                           : 'Enter ${field.$1.toLowerCase()}.';
                     },
                   ),
+                  const SizedBox(height: AppSpace.md),
+                ],
+                if (widget.afterFields != null) ...[
+                  widget.afterFields!,
                   const SizedBox(height: AppSpace.md),
                 ],
                 if (_error != null)
