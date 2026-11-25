@@ -7,9 +7,11 @@ import '../../../models/account.dart';
 import '../../../models/vendor.dart';
 import '../../../services/api_client.dart';
 import '../../../services/friendly_error.dart';
+import '../../../services/location_coordinates.dart';
 import 'admin_common.dart';
 
 const _peopleTabs = ['Vendors', 'Customers', 'Vehicles', 'Drivers'];
+const _approvalTabs = ['Waiting for approval', 'Approved'];
 
 /// Admin people and fleet: vendors, customers, vehicles and drivers. Each list
 /// has search, and vendors and fleet items have status actions.
@@ -23,6 +25,7 @@ class AdminPeopleSection extends ConsumerStatefulWidget {
 class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
   final _search = TextEditingController();
   int _tab = 0;
+  int _approvalTab = 0;
   String _query = '';
   late Future<List<AccountRecord>> _vendors;
   late Future<List<AccountRecord>> _customers;
@@ -69,11 +72,22 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
           selectedIndex: _tab,
           onChanged: (index) => setState(() {
             _tab = index;
+            _approvalTab = 0;
             _query = '';
             _search.clear();
           }),
         ),
         const SizedBox(height: AppSpace.md),
+        if (_tab != 1) ...[
+          SegmentedTabs(
+            labels: _approvalTabs,
+            selectedIndex: _approvalTab,
+            onChanged: (index) => setState(() {
+              _approvalTab = index;
+            }),
+          ),
+          const SizedBox(height: AppSpace.md),
+        ],
         Row(
           children: [
             Expanded(
@@ -132,17 +146,31 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
   Widget _vendorList() => _ListBody<AccountRecord>(
         future: _vendors,
         onRetry: () => setState(_reload),
-        emptyText: 'No vendors found.',
-        filter: (vendor) => _matches(vendor.title, vendor.detail),
+        emptyText: _approvalTab == 0
+            ? 'No vendors waiting for approval.'
+            : 'No approved vendors found.',
+        filter: (vendor) =>
+            _inApprovalTab(_vendorVerification(vendor)) &&
+            _matches(vendor.title, vendor.detail),
         row: (vendor) => AdminRecordRow(
           record: vendor,
-          trailing: PopupMenuButton<String>(
-            tooltip: 'Update vendor status',
-            onSelected: (status) => _setVendorStatus(vendor, status),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'approved', child: Text('Approve')),
-              PopupMenuItem(value: 'suspended', child: Text('Suspend')),
-              PopupMenuItem(value: 'rejected', child: Text('Reject')),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                StatusChip.statusLabel(_vendorVerification(vendor)),
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              if (_vendorVerification(vendor).toLowerCase() != 'approved')
+                PopupMenuButton<String>(
+                  tooltip: 'Update vendor status',
+                  onSelected: (status) => _setVendorStatus(vendor, status),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'approved', child: Text('Approve')),
+                    PopupMenuItem(value: 'suspended', child: Text('Suspend')),
+                    PopupMenuItem(value: 'rejected', child: Text('Reject')),
+                  ],
+                ),
             ],
           ),
         ),
@@ -159,26 +187,32 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
   Widget _vehicleList() => _ListBody<AdminFleetVehicle>(
         future: _vehicles,
         onRetry: () => setState(_reload),
-        emptyText: 'No vehicles found.',
-        filter: (vehicle) => _matches(
-          vehicle.registrationNumber,
-          vehicle.verification,
-        ),
+        emptyText: _approvalTab == 0
+            ? 'No vehicles waiting for approval.'
+            : 'No approved vehicles found.',
+        filter: (vehicle) =>
+            _matches(
+              vehicle.registrationNumber,
+              vehicle.verification,
+            ) &&
+            _inApprovalTab(vehicle.verification),
         row: (vehicle) => SurfaceCard(
           padding: EdgeInsets.zero,
           child: AppListRow(
             title: vehicle.registrationNumber,
             subtitle: '${vehicle.capacityLitres} L • ${vehicle.verification} • '
                 '${vehicle.active ? 'Active' : 'Inactive'}',
-            trailing: _fleetStatusMenu(
-              vehicle.verification,
-              vehicle.active,
-              (verification, isActive) => _updateVehicleStatus(
-                vehicle.id,
-                verification,
-                isActive,
-              ),
-            ),
+            trailing: vehicle.verification.toLowerCase() == 'approved'
+                ? null
+                : _fleetStatusMenu(
+                    vehicle.verification,
+                    vehicle.active,
+                    (verification, isActive) => _updateVehicleStatus(
+                      vehicle.id,
+                      verification,
+                      isActive,
+                    ),
+                  ),
           ),
         ),
       );
@@ -186,26 +220,38 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
   Widget _driverList() => _ListBody<AdminFleetDriver>(
         future: _drivers,
         onRetry: () => setState(_reload),
-        emptyText: 'No drivers found.',
-        filter: (driver) => _matches(driver.name, driver.mobile),
+        emptyText: _approvalTab == 0
+            ? 'No drivers waiting for approval.'
+            : 'No approved drivers found.',
+        filter: (driver) =>
+            _inApprovalTab(driver.verification) &&
+            _matches(driver.name, driver.mobile),
         row: (driver) => SurfaceCard(
           padding: EdgeInsets.zero,
           child: AppListRow(
             title: driver.name,
             subtitle: '${driver.mobile} • ${driver.verification} • '
                 '${driver.active ? 'Active' : 'Inactive'}',
-            trailing: _fleetStatusMenu(
-              driver.verification,
-              driver.active,
-              (verification, isActive) => _updateDriverStatus(
-                driver.id,
-                verification,
-                isActive,
-              ),
-            ),
+            trailing: driver.verification.toLowerCase() == 'approved'
+                ? null
+                : _fleetStatusMenu(
+                    driver.verification,
+                    driver.active,
+                    (verification, isActive) => _updateDriverStatus(
+                      driver.id,
+                      verification,
+                      isActive,
+                    ),
+                  ),
           ),
         ),
       );
+
+  bool _inApprovalTab(String verification) =>
+      (verification.toLowerCase() == 'approved') == (_approvalTab == 1);
+
+  String _vendorVerification(AccountRecord vendor) =>
+      (vendor.data['verification'] ?? vendor.data['status'] ?? '').toString();
 
   Future<void> _setVendorStatus(AccountRecord vendor, String status) async {
     try {
@@ -302,6 +348,8 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
     final phone = TextEditingController();
     final business = TextEditingController();
     final zone = TextEditingController();
+    final latitude = TextEditingController();
+    final longitude = TextEditingController();
     await adminForm(
       context,
       title: 'Create vendor',
@@ -312,17 +360,34 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
         ('10-digit phone', phone),
         ('Business name', business),
         ('Service zone', zone),
+        ('Latitude (optional)', latitude),
+        ('Longitude (optional)', longitude),
       ],
-      submit: () => ref.read(appControllerProvider).api.createAdminVendor({
-        'email': email.text.trim(),
-        'password': password.text,
-        'name': name.text.trim(),
-        'phone': phone.text.trim(),
-        'businessName': business.text.trim(),
-        'serviceZone': zone.text.trim(),
-      }),
+      optionalFields: const {'Latitude (optional)', 'Longitude (optional)'},
+      submit: () async {
+        final coordinates =
+            parseOptionalCoordinates(latitude.text, longitude.text);
+        await ref.read(appControllerProvider).api.createAdminVendor({
+          'email': email.text.trim(),
+          'password': password.text,
+          'name': name.text.trim(),
+          'phone': phone.text.trim(),
+          'businessName': business.text.trim(),
+          'serviceZone': zone.text.trim(),
+          ...coordinates,
+        });
+      },
     );
-    for (final controller in [email, password, name, phone, business, zone]) {
+    for (final controller in [
+      email,
+      password,
+      name,
+      phone,
+      business,
+      zone,
+      latitude,
+      longitude,
+    ]) {
       controller.dispose();
     }
     if (mounted) setState(_reload);
@@ -467,6 +532,8 @@ class _FleetFormSheetState extends ConsumerState<_FleetFormSheet> {
   final _mobile = TextEditingController();
   final _licence = TextEditingController();
   final _capacity = TextEditingController();
+  final _latitude = TextEditingController();
+  final _longitude = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   late String _vendor = widget.vendors.first.id;
   bool _saving = false;
@@ -478,6 +545,8 @@ class _FleetFormSheetState extends ConsumerState<_FleetFormSheet> {
     _mobile.dispose();
     _licence.dispose();
     _capacity.dispose();
+    _latitude.dispose();
+    _longitude.dispose();
     super.dispose();
   }
 
@@ -496,11 +565,15 @@ class _FleetFormSheetState extends ConsumerState<_FleetFormSheet> {
           capacityLitres: int.parse(_capacity.text.trim()),
         );
       } else {
+        final coordinates =
+            parseOptionalCoordinates(_latitude.text, _longitude.text);
         await api.createAdminDriver(
           vendorId: _vendor,
           name: _name.text.trim(),
           mobile: _mobile.text.trim(),
           licenceNumber: _licence.text.trim(),
+          latitude: coordinates['latitude'],
+          longitude: coordinates['longitude'],
         );
       }
       if (mounted) Navigator.pop(context, true);
@@ -590,6 +663,24 @@ class _FleetFormSheetState extends ConsumerState<_FleetFormSheet> {
                     validator: (value) => (value?.trim().length ?? 0) < 3
                         ? 'Enter a valid licence number.'
                         : null,
+                  ),
+                  const SizedBox(height: AppSpace.md),
+                  AppTextField(
+                    controller: _latitude,
+                    label: 'Latitude (optional)',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: true,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpace.md),
+                  AppTextField(
+                    controller: _longitude,
+                    label: 'Longitude (optional)',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: true,
+                    ),
                   ),
                 ],
                 if (_error != null) ...[

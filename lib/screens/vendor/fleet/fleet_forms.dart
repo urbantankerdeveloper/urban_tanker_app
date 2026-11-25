@@ -5,6 +5,7 @@ import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/vendor.dart';
 import '../../../services/friendly_error.dart';
+import '../../../services/location_coordinates.dart';
 
 /// Shows an add or edit form in a bottom sheet. Resolves to true once the
 /// record is saved. When [requireAll] is set, every field must have text.
@@ -100,6 +101,13 @@ class _RecordSheetState extends State<_RecordSheet> {
                 controller: field.$2,
                 label: field.$1,
                 maxLines: field.$1 == 'Message' ? 4 : 1,
+                keyboardType: field.$1.startsWith('Latitude') ||
+                        field.$1.startsWith('Longitude')
+                    ? const TextInputType.numberWithOptions(
+                        decimal: true,
+                        signed: true,
+                      )
+                    : null,
               ),
               const SizedBox(height: AppSpace.md),
             ],
@@ -237,6 +245,8 @@ Future<void> addDriver(BuildContext context, WidgetRef ref) async {
   final name = TextEditingController();
   final mobile = TextEditingController();
   final licence = TextEditingController();
+  final latitude = TextEditingController();
+  final longitude = TextEditingController();
   final saved = await showRecordSheet(
     context,
     title: 'Add driver',
@@ -244,21 +254,29 @@ Future<void> addDriver(BuildContext context, WidgetRef ref) async {
       ('Name', name),
       ('10-digit mobile', mobile),
       ('Licence number', licence),
+      ('Latitude (optional)', latitude),
+      ('Longitude (optional)', longitude),
     ],
     submit: () async {
       if (!RegExp(r'^\d{10}$').hasMatch(mobile.text.trim())) {
         throw const FormatException('Enter a valid 10-digit mobile number.');
       }
+      final coordinates =
+          parseOptionalCoordinates(latitude.text, longitude.text);
       await ref.read(appControllerProvider).api.createVendorDriver(
             name: name.text.trim(),
             mobile: mobile.text.trim(),
             licenceNumber: licence.text.trim(),
+            latitude: coordinates['latitude'],
+            longitude: coordinates['longitude'],
           );
     },
   );
   name.dispose();
   mobile.dispose();
   licence.dispose();
+  latitude.dispose();
+  longitude.dispose();
   if (saved && context.mounted) invalidateVendorFleet(ref);
 }
 
@@ -301,6 +319,12 @@ Future<void> editDriver(
   final name = TextEditingController(text: driver.name);
   final mobile = TextEditingController(text: driver.mobile);
   final licence = TextEditingController();
+  final latitude = TextEditingController(
+    text: driver.latitude?.toString() ?? '',
+  );
+  final longitude = TextEditingController(
+    text: driver.longitude?.toString() ?? '',
+  );
   final saved = await showRecordSheet(
     context,
     title: 'Edit driver',
@@ -308,22 +332,30 @@ Future<void> editDriver(
       ('Name', name),
       ('10-digit mobile', mobile),
       ('Licence number (optional)', licence),
+      ('Latitude (optional)', latitude),
+      ('Longitude (optional)', longitude),
     ],
     submit: () async {
       if (!RegExp(r'^\d{10}$').hasMatch(mobile.text.trim())) {
         throw const FormatException('Enter a valid 10-digit mobile number.');
       }
+      final coordinates =
+          parseOptionalCoordinates(latitude.text, longitude.text);
       await ref.read(appControllerProvider).api.updateVendorDriver(
             driver.id,
             name: name.text.trim(),
             mobile: mobile.text.trim(),
             licenceNumber:
                 licence.text.trim().isEmpty ? null : licence.text.trim(),
+            latitude: coordinates['latitude'],
+            longitude: coordinates['longitude'],
           );
     },
   );
   name.dispose();
   mobile.dispose();
   licence.dispose();
+  latitude.dispose();
+  longitude.dispose();
   if (saved && context.mounted) invalidateVendorFleet(ref);
 }

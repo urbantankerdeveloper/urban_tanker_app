@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:urban_tanker_app/app/app_controller.dart';
 import 'package:urban_tanker_app/core/design_system/design_system.dart';
+import 'package:urban_tanker_app/models/session.dart';
 import 'package:urban_tanker_app/screens/app_lock_screen.dart';
 import 'package:urban_tanker_app/screens/home/shell/unlock_offer.dart';
 import 'package:urban_tanker_app/screens/unlock_setup_screen.dart';
@@ -87,6 +88,45 @@ void main() {
     await _enter(tester, '1234');
 
     expect(controller.sessionLocked, isFalse);
+  });
+
+  test('brief app switching does not lock the session', () async {
+    final controller = await _lockedController();
+    controller.user = const SessionUser(
+      id: 'user-1',
+      name: 'Test User',
+      username: 'test',
+      role: WorkspaceRole.customer,
+    );
+    controller.unlockSession();
+    final leftAt = DateTime(2026, 1, 1);
+
+    controller.recordAppPaused(at: leftAt);
+    controller.recordAppResumed(
+      at: leftAt.add(const Duration(minutes: 4, seconds: 59)),
+    );
+
+    expect(controller.sessionLocked, isFalse);
+  });
+
+  test('leaving the app for five minutes locks the session on return',
+      () async {
+    final controller = await _lockedController();
+    controller.user = const SessionUser(
+      id: 'user-1',
+      name: 'Test User',
+      username: 'test',
+      role: WorkspaceRole.customer,
+    );
+    controller.unlockSession();
+    final leftAt = DateTime(2026, 1, 1);
+
+    controller.recordAppPaused(at: leftAt);
+    controller.recordAppResumed(
+      at: leftAt.add(AppController.quickUnlockBackgroundTimeout),
+    );
+
+    expect(controller.sessionLocked, isTrue);
   });
 
   testWidgets('the MPIN reset screen explains and labels the reset flow',

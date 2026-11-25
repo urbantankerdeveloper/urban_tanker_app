@@ -24,11 +24,22 @@ void _refreshVendorFleet(WidgetRef ref) {
 
 /// Vendor fleet tab: vehicles and drivers as cards, then availability,
 /// complaints, documents and attendance.
-class VendorFleetScreen extends ConsumerWidget {
+class VendorFleetScreen extends ConsumerStatefulWidget {
   const VendorFleetScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<VendorFleetScreen> createState() => _VendorFleetScreenState();
+}
+
+class _VendorFleetScreenState extends ConsumerState<VendorFleetScreen> {
+  static const _approvalTabs = ['Waiting for approval', 'Approved'];
+
+  int _vehicleApprovalTab = 0;
+  int _driverApprovalTab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = this.ref;
     ref
       ..watch(vendorServicesProvider)
       ..watch(vendorAttendanceProvider(DateUtils.dateOnly(DateTime.now())))
@@ -46,6 +57,24 @@ class VendorFleetScreen extends ConsumerWidget {
             value.vehicles.where((vehicle) => vehicle.assignable).length;
         final availableDrivers =
             value.drivers.where((driver) => driver.assignable).length;
+        final waitingVehicles = value.vehicles
+            .where(
+                (vehicle) => vehicle.verification.toLowerCase() != 'approved')
+            .toList(growable: false);
+        final approvedVehicles = value.vehicles
+            .where(
+                (vehicle) => vehicle.verification.toLowerCase() == 'approved')
+            .toList(growable: false);
+        final waitingDrivers = value.drivers
+            .where((driver) => driver.verification.toLowerCase() != 'approved')
+            .toList(growable: false);
+        final approvedDrivers = value.drivers
+            .where((driver) => driver.verification.toLowerCase() == 'approved')
+            .toList(growable: false);
+        final shownVehicles =
+            _vehicleApprovalTab == 0 ? waitingVehicles : approvedVehicles;
+        final shownDrivers =
+            _driverApprovalTab == 0 ? waitingDrivers : approvedDrivers;
         // Each entry builds one fixed widget or one vehicle or driver row, so
         // the rows are only created when they scroll into view.
         final entries = <Widget Function()>[
@@ -74,9 +103,22 @@ class VendorFleetScreen extends ConsumerWidget {
                 actionLabel: 'Add',
                 onAction: () => addVehicle(context, ref),
               ),
-          if (value.vehicles.isEmpty)
-            () => const AppListRow(title: 'No vehicles added yet.'),
-          for (final vehicle in value.vehicles)
+          () => SegmentedTabs(
+                labels: _approvalTabs,
+                selectedIndex: _vehicleApprovalTab,
+                onChanged: (index) =>
+                    setState(() => _vehicleApprovalTab = index),
+              ),
+          () => const SizedBox(height: AppSpace.md),
+          if (shownVehicles.isEmpty)
+            () => AppListRow(
+                  title: value.vehicles.isEmpty
+                      ? 'No vehicles added yet.'
+                      : _vehicleApprovalTab == 0
+                          ? 'No vehicles waiting for approval.'
+                          : 'No approved vehicles yet.',
+                ),
+          for (final vehicle in shownVehicles)
             () => Padding(
                   padding: const EdgeInsets.only(bottom: AppSpace.md),
                   child: VehicleTile(vehicle: vehicle),
@@ -87,9 +129,22 @@ class VendorFleetScreen extends ConsumerWidget {
                 actionLabel: 'Add',
                 onAction: () => addDriver(context, ref),
               ),
-          if (value.drivers.isEmpty)
-            () => const AppListRow(title: 'No drivers added yet.'),
-          for (final driver in value.drivers)
+          () => SegmentedTabs(
+                labels: _approvalTabs,
+                selectedIndex: _driverApprovalTab,
+                onChanged: (index) =>
+                    setState(() => _driverApprovalTab = index),
+              ),
+          () => const SizedBox(height: AppSpace.md),
+          if (shownDrivers.isEmpty)
+            () => AppListRow(
+                  title: value.drivers.isEmpty
+                      ? 'No drivers added yet.'
+                      : _driverApprovalTab == 0
+                          ? 'No drivers waiting for approval.'
+                          : 'No approved drivers yet.',
+                ),
+          for (final driver in shownDrivers)
             () => Padding(
                   padding: const EdgeInsets.only(bottom: AppSpace.md),
                   child: DriverTile(driver: driver),

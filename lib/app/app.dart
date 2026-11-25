@@ -63,9 +63,10 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final controller = ref.read(appControllerProvider);
     if (state == AppLifecycleState.paused) {
-      controller.lockSession();
+      controller.recordAppPaused();
       controller.realtime?.pause();
     } else if (state == AppLifecycleState.resumed) {
+      controller.recordAppResumed();
       controller.realtime?.resume();
     }
   }

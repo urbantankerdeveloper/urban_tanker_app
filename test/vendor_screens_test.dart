@@ -12,6 +12,7 @@ import 'package:urban_tanker_app/models/vendor.dart';
 import 'package:urban_tanker_app/screens/customer_account_screen.dart';
 import 'package:urban_tanker_app/screens/vendor/operations/vendor_operations_screen.dart';
 import 'package:urban_tanker_app/screens/vendor/fleet/vendor_fleet_screen.dart';
+import 'package:urban_tanker_app/screens/vendor/fleet/fleet_rows.dart';
 import 'package:urban_tanker_app/screens/vendor/vendor_earnings_screen.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
 
@@ -224,6 +225,93 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
+  });
+
+  testWidgets(
+      'vendor fleet separates waiting and approved vehicles and drivers',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final dashboard = VendorDashboard(
+      orders: const [],
+      vehicles: const [
+        VendorVehicle(
+          id: 'vehicle-waiting',
+          registrationNumber: 'WAIT 1',
+          capacityLitres: 10000,
+          active: false,
+          verification: 'pending',
+        ),
+        VendorVehicle(
+          id: 'vehicle-approved',
+          registrationNumber: 'APPROVED 1',
+          capacityLitres: 10000,
+          active: true,
+          verification: 'approved',
+        ),
+      ],
+      drivers: const [
+        VendorDriver(
+          id: 'driver-waiting',
+          name: 'Waiting Driver',
+          mobile: '+919876543210',
+          active: false,
+          verification: 'pending',
+        ),
+        VendorDriver(
+          id: 'driver-approved',
+          name: 'Approved Driver',
+          mobile: '+919876543211',
+          active: true,
+          verification: 'approved',
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          vendorDashboardProvider.overrideWith((ref) async => dashboard),
+          vendorServicesProvider.overrideWith((ref) async => <VendorService>[]),
+          vendorAttendanceProvider.overrideWith(
+            (ref, date) async => <Map<String, dynamic>>[],
+          ),
+          vendorComplaintsProvider
+              .overrideWith((ref) async => <Map<String, dynamic>>[]),
+          vendorDocumentsProvider
+              .overrideWith((ref) async => <Map<String, dynamic>>[]),
+        ],
+        child: MaterialApp(
+          theme: buildLightTheme(),
+          home: const Scaffold(body: VendorFleetScreen()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(VehicleTile, 'WAIT 1'), findsOneWidget);
+    expect(find.widgetWithText(VehicleTile, 'APPROVED 1'), findsNothing);
+    expect(find.widgetWithText(DriverTile, 'Waiting Driver'), findsOneWidget);
+    expect(find.widgetWithText(DriverTile, 'Approved Driver'), findsNothing);
+
+    Future<void> selectStatus(int index) async {
+      final tabs = find.byType(SegmentedTabs).at(index);
+      await tester
+          .tap(find.descendant(of: tabs, matching: find.text('Approved')));
+      await tester.pumpAndSettle();
+    }
+
+    await selectStatus(0);
+    expect(find.widgetWithText(VehicleTile, 'WAIT 1'), findsNothing);
+    expect(find.widgetWithText(VehicleTile, 'APPROVED 1'), findsOneWidget);
+
+    await selectStatus(1);
+    expect(find.widgetWithText(DriverTile, 'Waiting Driver'), findsNothing);
+    expect(find.widgetWithText(DriverTile, 'Approved Driver'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 15));
   });
 
   testWidgets('earnings total follows the period filter', (tester) async {

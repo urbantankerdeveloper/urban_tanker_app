@@ -150,6 +150,7 @@ Future<void> adminForm(
   required String title,
   required List<(String, TextEditingController)> fields,
   required Future<void> Function() submit,
+  Set<String> optionalFields = const {},
 }) async {
   final saved = await showAppBottomSheet<bool>(
     context,
@@ -157,6 +158,7 @@ Future<void> adminForm(
       title: title,
       fields: fields,
       submit: submit,
+      optionalFields: optionalFields,
     ),
   );
   if (saved == true && context.mounted) {
@@ -173,11 +175,13 @@ class _AdminFormSheet extends StatefulWidget {
     required this.title,
     required this.fields,
     required this.submit,
+    required this.optionalFields,
   });
 
   final String title;
   final List<(String, TextEditingController)> fields;
   final Future<void> Function() submit;
+  final Set<String> optionalFields;
 
   @override
   State<_AdminFormSheet> createState() => _AdminFormSheetState();
@@ -228,12 +232,25 @@ class _AdminFormSheetState extends State<_AdminFormSheet> {
                     controller: field.$2,
                     label: field.$1,
                     obscureText: isPasswordLabel(field.$1),
+                    keyboardType: widget.optionalFields.contains(field.$1)
+                        ? const TextInputType.numberWithOptions(
+                            decimal: true,
+                            signed: true,
+                          )
+                        : null,
                     // Password fields are never suggested or autocorrected.
                     enableSuggestions: !isPasswordLabel(field.$1),
                     autocorrect: !isPasswordLabel(field.$1),
-                    validator: (value) => value?.trim().isNotEmpty == true
-                        ? null
-                        : 'Enter ${field.$1.toLowerCase()}.',
+                    validator: (value) {
+                      final text = value?.trim() ?? '';
+                      if (widget.optionalFields.contains(field.$1) &&
+                          text.isEmpty) {
+                        return null;
+                      }
+                      return text.isNotEmpty
+                          ? null
+                          : 'Enter ${field.$1.toLowerCase()}.';
+                    },
                   ),
                   const SizedBox(height: AppSpace.md),
                 ],

@@ -302,6 +302,7 @@ class _Sheet extends StatelessWidget {
     final theme = Theme.of(context);
     final location = tracking.lastLocation;
     final hasVehicleLocation = _MapArea._location(tracking) != null;
+    final isRegisteredLocation = location?.source == 'registered';
     final events = tracking.events;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -364,10 +365,14 @@ class _Sheet extends StatelessWidget {
                         : Icons.location_off_outlined,
                   ),
                   title: hasVehicleLocation
-                      ? 'Vehicle location shared'
+                      ? isRegisteredLocation
+                          ? 'Registered driver location'
+                          : 'Vehicle location shared'
                       : 'Location not available yet',
                   subtitle: !hasVehicleLocation || location?.recordedAt == null
-                      ? 'The latest vehicle location will appear here when shared.'
+                      ? isRegisteredLocation
+                          ? 'This is an approximate fixed pin, not live GPS. Live location appears when shared.'
+                          : 'The latest vehicle location will appear here when shared.'
                       : 'Updated ${_formatDateTime(location!.recordedAt)}',
                 ),
               ],

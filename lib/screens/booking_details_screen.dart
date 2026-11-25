@@ -1303,12 +1303,16 @@ class _TrackingCard extends StatelessWidget {
               : Icons.location_searching_outlined,
           color: tone.fg,
         ),
-        title: snapshot.trackingAvailable
-            ? 'Vendor location available'
-            : 'Waiting for vendor location',
+        title: snapshot.locationSource == 'registered'
+            ? 'Registered driver location'
+            : snapshot.trackingAvailable
+                ? 'Vendor location available'
+                : 'Waiting for vendor location',
         subtitle: [
           if (snapshot.driver != null) 'Driver: ${snapshot.driver}',
           if (snapshot.vehicle != null) 'Vehicle: ${snapshot.vehicle}',
+          if (snapshot.locationSource == 'registered')
+            'This is a fixed pin, not live GPS. Live location appears when shared.',
           if (snapshot.latitude != null && snapshot.longitude != null)
             'Location: ${snapshot.latitude!.toStringAsFixed(5)}, '
                 '${snapshot.longitude!.toStringAsFixed(5)}',

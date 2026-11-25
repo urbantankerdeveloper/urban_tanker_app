@@ -17,6 +17,8 @@ import '../services/realtime_service.dart';
 import '../services/push_notification_service.dart';
 
 class AppController extends ChangeNotifier {
+  static const quickUnlockBackgroundTimeout = Duration(minutes: 5);
+
   AppController({
     required this.api,
     required SharedPreferences preferences,
@@ -40,6 +42,7 @@ class AppController extends ChangeNotifier {
   bool biometricPromptOffered = false;
   bool pendingUnlockSetup = false;
   bool pendingMpinReset = false;
+  DateTime? _backgroundedAt;
   String? phoneOtpChallengeId;
   PhoneOtpChannel? phoneOtpChannel;
   String? emailOtpChallengeId;
@@ -236,6 +239,21 @@ class AppController extends ChangeNotifier {
     if (user == null || !quickUnlockEnabled || sessionLocked) return;
     sessionLocked = true;
     notifyListeners();
+  }
+
+  void recordAppPaused({DateTime? at}) {
+    _backgroundedAt ??= at ?? DateTime.now();
+  }
+
+  void recordAppResumed({DateTime? at}) {
+    final backgroundedAt = _backgroundedAt;
+    _backgroundedAt = null;
+    if (backgroundedAt == null) return;
+
+    final awayFor = (at ?? DateTime.now()).difference(backgroundedAt);
+    if (!awayFor.isNegative && awayFor >= quickUnlockBackgroundTimeout) {
+      lockSession();
+    }
   }
 
   /// Fingerprint or MPIN can unlock the session.

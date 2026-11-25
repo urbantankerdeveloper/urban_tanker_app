@@ -273,6 +273,7 @@ class TrackingSnapshot {
     this.vehicle,
     this.driver,
     this.recordedAt,
+    this.locationSource,
   });
 
   final String orderId;
@@ -284,6 +285,7 @@ class TrackingSnapshot {
   final String? vehicle;
   final String? driver;
   final DateTime? recordedAt;
+  final String? locationSource;
 
   factory TrackingSnapshot.fromJson(Map<String, dynamic> json) {
     return TrackingSnapshot(
@@ -298,6 +300,7 @@ class TrackingSnapshot {
       recordedAt: DateTime.tryParse(
         (json['recorded_at'] ?? '').toString(),
       ),
+      locationSource: json['locationSource']?.toString(),
     );
   }
 }
@@ -351,12 +354,14 @@ class TrackingLocation {
     required this.longitude,
     required this.accuracy,
     required this.recordedAt,
+    this.source,
   });
 
   final double? latitude;
   final double? longitude;
   final double? accuracy;
   final DateTime? recordedAt;
+  final String? source;
 
   factory TrackingLocation.fromJson(Map<String, dynamic> json) =>
       TrackingLocation(
@@ -364,6 +369,7 @@ class TrackingLocation {
         longitude: (json['longitude'] as num?)?.toDouble(),
         accuracy: (json['accuracy'] as num?)?.toDouble(),
         recordedAt: DateTime.tryParse((json['recordedAt'] ?? '').toString()),
+        source: json['source']?.toString(),
       );
 }
 

@@ -75,6 +75,31 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('registered driver pin is labeled as a fixed location',
+      (tester) async {
+    await tester.pumpWidget(
+      _screen(
+        _TrackingApi(
+          _snapshot(
+            location: const TrackingLocation(
+              latitude: 13.0827,
+              longitude: 80.2707,
+              accuracy: null,
+              recordedAt: null,
+              source: 'registered',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Registered driver location'), findsOneWidget);
+    expect(find.textContaining('fixed pin, not live GPS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('invalid vehicle coordinates show the waiting placeholder',
       (tester) async {
     await tester.pumpWidget(

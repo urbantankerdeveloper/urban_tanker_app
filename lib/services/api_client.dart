@@ -649,12 +649,16 @@ class ApiClient implements ApiTransport {
     required String mobile,
     required String licenceNumber,
     bool isActive = true,
+    double? latitude,
+    double? longitude,
   }) =>
       _vendor.createVendorDriver(
         name: name,
         mobile: mobile,
         licenceNumber: licenceNumber,
         isActive: isActive,
+        latitude: latitude,
+        longitude: longitude,
       );
 
   Future<VendorDriver> updateVendorDriver(
@@ -663,6 +667,8 @@ class ApiClient implements ApiTransport {
     String? mobile,
     String? licenceNumber,
     bool? isActive,
+    double? latitude,
+    double? longitude,
   }) =>
       _vendor.updateVendorDriver(
         id,
@@ -670,6 +676,8 @@ class ApiClient implements ApiTransport {
         mobile: mobile,
         licenceNumber: licenceNumber,
         isActive: isActive,
+        latitude: latitude,
+        longitude: longitude,
       );
 
   Future<VendorPayout> requestVendorPayout({
@@ -869,12 +877,16 @@ class ApiClient implements ApiTransport {
     required String name,
     required String mobile,
     required String licenceNumber,
+    double? latitude,
+    double? longitude,
   }) =>
       _admin.createAdminDriver(
         vendorId: vendorId,
         name: name,
         mobile: mobile,
         licenceNumber: licenceNumber,
+        latitude: latitude,
+        longitude: longitude,
       );
 
   Future<void> updateAdminVehicleStatus(

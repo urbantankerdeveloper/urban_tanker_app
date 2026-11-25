@@ -56,12 +56,16 @@ class AdminApi {
     required String name,
     required String mobile,
     required String licenceNumber,
+    double? latitude,
+    double? longitude,
   }) async {
     final response = await _api.request('POST', '/admin/drivers', body: {
       'vendorId': vendorId,
       'name': name,
       'mobileE164': normalizeIndianPhone(mobile),
       'licenceNumber': licenceNumber,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
     });
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {

@@ -177,12 +177,16 @@ class VendorApi {
     required String mobile,
     required String licenceNumber,
     bool isActive = true,
+    double? latitude,
+    double? longitude,
   }) async {
     final response = await _api.request('POST', '/vendor/drivers', body: {
       'name': name,
       'mobileE164': mobile,
       'licenceNumber': licenceNumber,
       'isActive': isActive,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
     });
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
@@ -197,12 +201,16 @@ class VendorApi {
     String? mobile,
     String? licenceNumber,
     bool? isActive,
+    double? latitude,
+    double? longitude,
   }) async {
     final response = await _api.request('PATCH', '/vendor/drivers/$id', body: {
       if (name != null) 'name': name,
       if (mobile != null) 'mobileE164': mobile,
       if (licenceNumber != null) 'licenceNumber': licenceNumber,
       if (isActive != null) 'isActive': isActive,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
     });
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {

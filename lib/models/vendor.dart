@@ -238,6 +238,8 @@ class VendorDriver {
     required this.mobile,
     required this.active,
     required this.verification,
+    this.latitude,
+    this.longitude,
   });
 
   final String id;
@@ -245,6 +247,8 @@ class VendorDriver {
   final String mobile;
   final bool active;
   final String verification;
+  final double? latitude;
+  final double? longitude;
 
   factory VendorDriver.fromJson(Map<String, dynamic> json) => VendorDriver(
         id: (json['id'] ?? '').toString(),
@@ -255,6 +259,8 @@ class VendorDriver {
                 .toString(),
         active: json['is_active'] == true || json['isActive'] == true,
         verification: (json['verification'] ?? 'pending').toString(),
+        latitude: (json['latitude'] as num?)?.toDouble(),
+        longitude: (json['longitude'] as num?)?.toDouble(),
       );
 
   bool get assignable => active && verification.toLowerCase() == 'approved';
@@ -303,6 +309,8 @@ class AdminFleetDriver {
     required this.mobile,
     required this.active,
     required this.verification,
+    this.latitude,
+    this.longitude,
   });
 
   final String id;
@@ -311,6 +319,8 @@ class AdminFleetDriver {
   final String mobile;
   final bool active;
   final String verification;
+  final double? latitude;
+  final double? longitude;
 
   bool get eligible => active && verification.toLowerCase() == 'approved';
 
@@ -325,6 +335,8 @@ class AdminFleetDriver {
                 .toString(),
         active: json['is_active'] == true || json['isActive'] == true,
         verification: (json['verification'] ?? 'pending').toString(),
+        latitude: (json['latitude'] as num?)?.toDouble(),
+        longitude: (json['longitude'] as num?)?.toDouble(),
       );
 }
 
