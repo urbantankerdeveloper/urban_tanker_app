@@ -60,9 +60,18 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
         detail.toLowerCase().contains(query);
   }
 
+  void _selectTab(int index) {
+    setState(() {
+      _tab = index;
+      _approvalTab = 0;
+      _query = '';
+      _search.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListView(
+    final content = ListView(
       padding: AppPageInsets.withSafeAreaBottom(
         context,
         AppPageInsets.standard,
@@ -71,12 +80,7 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
         SegmentedTabs(
           labels: _peopleTabs,
           selectedIndex: _tab,
-          onChanged: (index) => setState(() {
-            _tab = index;
-            _approvalTab = 0;
-            _query = '';
-            _search.clear();
-          }),
+          onChanged: _selectTab,
         ),
         const SizedBox(height: AppSpace.md),
         if (_tab != 1) ...[
@@ -121,6 +125,12 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
           _ => _driverList(),
         },
       ],
+    );
+    return SwipeNavigationArea(
+      onSwipeLeft:
+          _tab < _peopleTabs.length - 1 ? () => _selectTab(_tab + 1) : null,
+      onSwipeRight: _tab > 0 ? () => _selectTab(_tab - 1) : null,
+      child: content,
     );
   }
 

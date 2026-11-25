@@ -40,6 +40,14 @@ void main() {
     focus.value = const OperationsFocus(OperationsSection.finance);
     await tester.pump();
     expect(shownSection(), 2);
+
+    focus.value = const OperationsFocus(OperationsSection.orders);
+    await tester.pump();
+    expect(shownSection(), 0);
+
+    await tester.drag(find.byType(AdminOperationsScreen), const Offset(-100, 0));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(shownSection(), 1);
     expect(tester.takeException(), isNull);
 
     // The sections start real requests, which leave timers behind. Dispose the

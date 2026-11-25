@@ -152,6 +152,81 @@ void main() {
     expect(picked, 1);
   });
 
+  testWidgets('SegmentedTabs selects the next segment on left swipe',
+      (tester) async {
+    int? picked;
+    await tester.pumpWidget(
+      _host(
+        SegmentedTabs(
+          labels: const ['Active', 'Past'],
+          selectedIndex: 0,
+          onChanged: (index) => picked = index,
+        ),
+      ),
+    );
+
+    await tester.drag(find.byType(SegmentedTabs), const Offset(-100, 0));
+    expect(picked, 1);
+  });
+
+  testWidgets('SwipeNavigationArea dispatches left and right swipes',
+      (tester) async {
+    var left = 0;
+    var right = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 300,
+              height: 300,
+              child: SwipeNavigationArea(
+                onSwipeLeft: () => left++,
+                onSwipeRight: () => right++,
+                child: const ColoredBox(color: Colors.white),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(find.byType(SwipeNavigationArea), const Offset(-100, 0));
+    expect(left, 1);
+    await tester.drag(find.byType(SwipeNavigationArea), const Offset(100, 0));
+    expect(right, 1);
+  });
+
+  testWidgets('SwipeNavigationArea falls back to its parent at tab edges',
+      (tester) async {
+    var parent = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 300,
+              height: 300,
+              child: SwipeNavigationArea(
+                onSwipeLeft: () => parent++,
+                child: SwipeNavigationArea(
+                  onSwipeRight: () {},
+                  child: const ColoredBox(color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(
+      find.byType(SwipeNavigationArea).last,
+      const Offset(-100, 0),
+    );
+    expect(parent, 1);
+  });
+
   testWidgets('slide-to-confirm activates after the drag reaches the end',
       (tester) async {
     var confirmed = false;

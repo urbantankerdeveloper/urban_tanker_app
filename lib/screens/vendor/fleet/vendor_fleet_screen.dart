@@ -75,6 +75,18 @@ class _VendorFleetScreenState extends ConsumerState<VendorFleetScreen> {
             _vehicleApprovalTab == 0 ? waitingVehicles : approvedVehicles;
         final shownDrivers =
             _driverApprovalTab == 0 ? waitingDrivers : approvedDrivers;
+
+        Widget withApprovalSwipe(
+          int selectedIndex,
+          ValueChanged<int> onChanged,
+          Widget child,
+        ) =>
+            SwipeNavigationArea(
+              onSwipeLeft: selectedIndex == 0 ? () => onChanged(1) : null,
+              onSwipeRight: selectedIndex == 1 ? () => onChanged(0) : null,
+              child: child,
+            );
+
         // Each entry builds one fixed widget or one vehicle or driver row, so
         // the rows are only created when they scroll into view.
         final entries = <Widget Function()>[
@@ -98,56 +110,96 @@ class _VendorFleetScreenState extends ConsumerState<VendorFleetScreen> {
                 ],
               ),
           () => const SizedBox(height: AppSpace.xl),
-          () => SectionHeader(
-                title: 'Vehicles',
-                actionLabel: 'Add',
-                onAction: () => addVehicle(context, ref),
+          () => withApprovalSwipe(
+                _vehicleApprovalTab,
+                (index) => setState(() => _vehicleApprovalTab = index),
+                SectionHeader(
+                  title: 'Vehicles',
+                  actionLabel: 'Add',
+                  onAction: () => addVehicle(context, ref),
+                ),
               ),
-          () => SegmentedTabs(
-                labels: _approvalTabs,
-                selectedIndex: _vehicleApprovalTab,
-                onChanged: (index) =>
-                    setState(() => _vehicleApprovalTab = index),
+          () => withApprovalSwipe(
+                _vehicleApprovalTab,
+                (index) => setState(() => _vehicleApprovalTab = index),
+                SegmentedTabs(
+                  labels: _approvalTabs,
+                  selectedIndex: _vehicleApprovalTab,
+                  onChanged: (index) =>
+                      setState(() => _vehicleApprovalTab = index),
+                ),
               ),
-          () => const SizedBox(height: AppSpace.md),
+          () => withApprovalSwipe(
+                _vehicleApprovalTab,
+                (index) => setState(() => _vehicleApprovalTab = index),
+                const SizedBox(height: AppSpace.md),
+              ),
           if (shownVehicles.isEmpty)
-            () => AppListRow(
-                  title: value.vehicles.isEmpty
-                      ? 'No vehicles added yet.'
-                      : _vehicleApprovalTab == 0
-                          ? 'No vehicles waiting for approval.'
-                          : 'No approved vehicles yet.',
+            () => withApprovalSwipe(
+                  _vehicleApprovalTab,
+                  (index) => setState(() => _vehicleApprovalTab = index),
+                  AppListRow(
+                    title: value.vehicles.isEmpty
+                        ? 'No vehicles added yet.'
+                        : _vehicleApprovalTab == 0
+                            ? 'No vehicles waiting for approval.'
+                            : 'No approved vehicles yet.',
+                  ),
                 ),
           for (final vehicle in shownVehicles)
-            () => Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpace.md),
-                  child: VehicleTile(vehicle: vehicle),
+            () => withApprovalSwipe(
+                  _vehicleApprovalTab,
+                  (index) => setState(() => _vehicleApprovalTab = index),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpace.md),
+                    child: VehicleTile(vehicle: vehicle),
+                  ),
                 ),
           () => const SizedBox(height: AppSpace.xl),
-          () => SectionHeader(
-                title: 'Drivers',
-                actionLabel: 'Add',
-                onAction: () => addDriver(context, ref),
+          () => withApprovalSwipe(
+                _driverApprovalTab,
+                (index) => setState(() => _driverApprovalTab = index),
+                SectionHeader(
+                  title: 'Drivers',
+                  actionLabel: 'Add',
+                  onAction: () => addDriver(context, ref),
+                ),
               ),
-          () => SegmentedTabs(
-                labels: _approvalTabs,
-                selectedIndex: _driverApprovalTab,
-                onChanged: (index) =>
-                    setState(() => _driverApprovalTab = index),
+          () => withApprovalSwipe(
+                _driverApprovalTab,
+                (index) => setState(() => _driverApprovalTab = index),
+                SegmentedTabs(
+                  labels: _approvalTabs,
+                  selectedIndex: _driverApprovalTab,
+                  onChanged: (index) =>
+                      setState(() => _driverApprovalTab = index),
+                ),
               ),
-          () => const SizedBox(height: AppSpace.md),
+          () => withApprovalSwipe(
+                _driverApprovalTab,
+                (index) => setState(() => _driverApprovalTab = index),
+                const SizedBox(height: AppSpace.md),
+              ),
           if (shownDrivers.isEmpty)
-            () => AppListRow(
-                  title: value.drivers.isEmpty
-                      ? 'No drivers added yet.'
-                      : _driverApprovalTab == 0
-                          ? 'No drivers waiting for approval.'
-                          : 'No approved drivers yet.',
+            () => withApprovalSwipe(
+                  _driverApprovalTab,
+                  (index) => setState(() => _driverApprovalTab = index),
+                  AppListRow(
+                    title: value.drivers.isEmpty
+                        ? 'No drivers added yet.'
+                        : _driverApprovalTab == 0
+                            ? 'No drivers waiting for approval.'
+                            : 'No approved drivers yet.',
+                  ),
                 ),
           for (final driver in shownDrivers)
-            () => Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpace.md),
-                  child: DriverTile(driver: driver),
+            () => withApprovalSwipe(
+                  _driverApprovalTab,
+                  (index) => setState(() => _driverApprovalTab = index),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpace.md),
+                    child: DriverTile(driver: driver),
+                  ),
                 ),
           () => const SizedBox(height: AppSpace.xl),
           () => const ServiceAvailabilityCard(),

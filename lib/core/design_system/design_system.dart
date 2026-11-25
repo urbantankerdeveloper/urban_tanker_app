@@ -31,5 +31,6 @@ export 'widgets/status_dot.dart';
 export 'widgets/status_banners.dart';
 export 'widgets/status_chip.dart';
 export 'widgets/slide_to_confirm.dart';
+export 'widgets/swipe_navigation_area.dart';
 export 'widgets/surfaces.dart';
 export 'widgets/timeline.dart';

@@ -46,6 +46,14 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
     _partners = api.adminPartnerApplications();
   }
 
+  void _selectTab(int index) {
+    setState(() {
+      _tab = index;
+      _query = '';
+      _search.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final future = switch (_tab) {
@@ -53,7 +61,7 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
       1 => _payouts,
       _ => _partners,
     };
-    return ListView(
+    final content = ListView(
       padding: AppPageInsets.withSafeAreaBottom(
         context,
         AppPageInsets.standard,
@@ -62,11 +70,7 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
         SegmentedTabs(
           labels: _financeTabs,
           selectedIndex: _tab,
-          onChanged: (index) => setState(() {
-            _tab = index;
-            _query = '';
-            _search.clear();
-          }),
+          onChanged: _selectTab,
         ),
         const SizedBox(height: AppSpace.md),
         Row(
@@ -150,6 +154,12 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
           },
         ),
       ],
+    );
+    return SwipeNavigationArea(
+      onSwipeLeft:
+          _tab < _financeTabs.length - 1 ? () => _selectTab(_tab + 1) : null,
+      onSwipeRight: _tab > 0 ? () => _selectTab(_tab - 1) : null,
+      child: content,
     );
   }
 

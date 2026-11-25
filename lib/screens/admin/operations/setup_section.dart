@@ -53,9 +53,11 @@ class _AdminSetupSectionState extends ConsumerState<AdminSetupSection> {
         );
   }
 
+  void _selectTab(int index) => setState(() => _tab = index);
+
   @override
   Widget build(BuildContext context) {
-    return ListView(
+    final content = ListView(
       padding: AppPageInsets.withSafeAreaBottom(
         context,
         AppPageInsets.standard,
@@ -64,7 +66,7 @@ class _AdminSetupSectionState extends ConsumerState<AdminSetupSection> {
         SegmentedTabs(
           labels: _setupTabs,
           selectedIndex: _tab,
-          onChanged: (index) => setState(() => _tab = index),
+          onChanged: _selectTab,
         ),
         const SizedBox(height: AppSpace.lg),
         switch (_tab) {
@@ -74,6 +76,12 @@ class _AdminSetupSectionState extends ConsumerState<AdminSetupSection> {
           _ => const _AuditPanel(),
         },
       ],
+    );
+    return SwipeNavigationArea(
+      onSwipeLeft:
+          _tab < _setupTabs.length - 1 ? () => _selectTab(_tab + 1) : null,
+      onSwipeRight: _tab > 0 ? () => _selectTab(_tab - 1) : null,
+      child: content,
     );
   }
 

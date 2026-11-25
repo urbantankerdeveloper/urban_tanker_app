@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_colors.dart';
 import '../motion.dart';
 import '../tokens.dart';
+import 'swipe_navigation_area.dart';
 
 /// Animated pill selector. The active pill slides between segments.
 /// Each segment is a button with a selected state for screen readers.
@@ -25,7 +26,7 @@ class SegmentedTabs extends StatelessWidget {
     final colors = context.colors;
     final theme = Theme.of(context);
     final count = labels.length;
-    return Container(
+    final content = Container(
       height: AppSize.minTouchTarget + AppSpace.sm,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -90,6 +91,15 @@ class SegmentedTabs extends StatelessWidget {
           ),
         ],
       ),
+    );
+    return SwipeNavigationArea(
+      onSwipeLeft: onChanged == null || selectedIndex >= count - 1
+          ? null
+          : () => onChanged!(selectedIndex + 1),
+      onSwipeRight: onChanged == null || selectedIndex <= 0
+          ? null
+          : () => onChanged!(selectedIndex - 1),
+      child: content,
     );
   }
 

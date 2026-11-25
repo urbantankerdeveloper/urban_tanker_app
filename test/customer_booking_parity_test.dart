@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:urban_tanker_app/app/app_controller.dart';
 import 'package:urban_tanker_app/app/providers.dart';
+import 'package:urban_tanker_app/core/design_system/widgets/swipe_navigation_area.dart';
 import 'package:urban_tanker_app/models/account.dart';
 import 'package:urban_tanker_app/models/booking.dart';
 import 'package:urban_tanker_app/models/booking_service_details.dart';
@@ -320,6 +321,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Book again'), findsNothing);
+    expect(find.text(_booking.reference), findsOneWidget);
+    await tester.drag(find.byType(BookingsScreen), const Offset(-100, 0));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('No past bookings'), findsOneWidget);
+    await tester.drag(find.byType(BookingsScreen), const Offset(100, 0));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text(_booking.reference), findsOneWidget);
     await tester.tap(find.text(_booking.reference));
     await tester.pumpAndSettle();
 
@@ -654,6 +662,19 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(FloatingActionButton), findsOneWidget);
+    final swipeArea = find.byType(SwipeNavigationArea).first;
+    final swipeStart = tester.getTopLeft(swipeArea) + const Offset(100, 100);
+    final mainTabs = find.byType(IndexedStack);
+    expect(tester.widget<IndexedStack>(mainTabs).index, 0);
+    await tester.dragFrom(swipeStart, const Offset(-100, 0));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<IndexedStack>(mainTabs).index, 1);
+    final bookingsSwipeStart =
+        tester.getTopLeft(swipeArea) + const Offset(100, 250);
+    await tester.dragFrom(bookingsSwipeStart, const Offset(100, 0));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<IndexedStack>(mainTabs).index, 0);
     navigatorKey.currentState!.push(
       MaterialPageRoute<void>(
         builder: (_) => ProviderScope(

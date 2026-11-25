@@ -78,14 +78,21 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
           ),
         ),
         Expanded(
-          child: IndexedStack(
-            index: _section,
-            children: const [
-              AdminOrdersSection(),
-              AdminPeopleSection(),
-              AdminFinanceSection(),
-              AdminSetupSection(),
-            ],
+          child: SwipeNavigationArea(
+            onSwipeLeft: _section < _sections.length - 1
+                ? () => setState(() => _section++)
+                : null,
+            onSwipeRight:
+                _section > 0 ? () => setState(() => _section--) : null,
+            child: IndexedStack(
+              index: _section,
+              children: const [
+                AdminOrdersSection(),
+                AdminPeopleSection(),
+                AdminFinanceSection(),
+                AdminSetupSection(),
+              ],
+            ),
           ),
         ),
       ],

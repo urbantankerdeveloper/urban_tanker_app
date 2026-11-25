@@ -31,7 +31,7 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
   @override
   Widget build(BuildContext context) {
     final payouts = ref.watch(vendorPayoutsProvider);
-    return payouts.when(
+    final content = payouts.when(
       loading: () => const LoadingState(message: 'Loading your earnings...'),
       error: (error, _) => VendorError(
         message: friendlyError(error),
@@ -139,6 +139,14 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
           ),
         );
       },
+    );
+    return SwipeNavigationArea(
+      onSwipeLeft: _periodIndex < _periods.length - 1
+          ? () => setState(() => _periodIndex++)
+          : null,
+      onSwipeRight:
+          _periodIndex > 0 ? () => setState(() => _periodIndex--) : null,
+      child: content,
     );
   }
 

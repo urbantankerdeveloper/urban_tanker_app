@@ -287,9 +287,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       body: RealtimeNoticeListener(
         events: widget.controller.realtime?.events,
         role: role,
-        child: IndexedStack(
-          index: _index,
-          children: [for (final tab in tabs) _pageFor(tab.page, user)],
+        child: SwipeNavigationArea(
+          onSwipeLeft:
+              _index < tabs.length - 1 ? () => setState(() => _index++) : null,
+          onSwipeRight: _index > 0 ? () => setState(() => _index--) : null,
+          child: IndexedStack(
+            index: _index,
+            children: [for (final tab in tabs) _pageFor(tab.page, user)],
+          ),
         ),
       ),
       floatingActionButton: isCustomer && _index == 0

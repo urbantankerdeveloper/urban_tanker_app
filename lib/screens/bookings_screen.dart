@@ -67,7 +67,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
           for (final booking in page.items)
             if (isActiveBooking(booking) == (_filter == 0)) booking,
         ];
-        return Column(
+        final content = Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
@@ -132,6 +132,11 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                     ),
             ),
           ],
+        );
+        return SwipeNavigationArea(
+          onSwipeLeft: _filter == 0 ? () => setState(() => _filter = 1) : null,
+          onSwipeRight: _filter == 1 ? () => setState(() => _filter = 0) : null,
+          child: content,
         );
       },
     );
