@@ -217,9 +217,14 @@ class VendorVehicle {
 
   factory VendorVehicle.fromJson(Map<String, dynamic> json) => VendorVehicle(
         id: (json['id'] ?? '').toString(),
-        registrationNumber: (json['registration_number'] ?? '').toString(),
-        capacityLitres: (json['capacity_litres'] as num?)?.toInt() ?? 0,
-        active: json['is_active'] == true,
+        registrationNumber:
+            (json['registration_number'] ?? json['registrationNumber'] ?? '')
+                .toString(),
+        capacityLitres:
+            ((json['capacity_litres'] ?? json['capacityLitres']) as num?)
+                    ?.toInt() ??
+                0,
+        active: json['is_active'] == true || json['isActive'] == true,
         verification: (json['verification'] ?? 'pending').toString(),
       );
 
@@ -243,9 +248,12 @@ class VendorDriver {
 
   factory VendorDriver.fromJson(Map<String, dynamic> json) => VendorDriver(
         id: (json['id'] ?? '').toString(),
-        name: (json['name'] ?? '').toString(),
-        mobile: (json['mobile_e164'] ?? json['mobile'] ?? '').toString(),
-        active: json['is_active'] == true,
+        name: (json['name'] ?? json['full_name'] ?? json['fullName'] ?? '')
+            .toString(),
+        mobile:
+            (json['mobile_e164'] ?? json['mobileE164'] ?? json['mobile'] ?? '')
+                .toString(),
+        active: json['is_active'] == true || json['isActive'] == true,
         verification: (json['verification'] ?? 'pending').toString(),
       );
 
@@ -275,9 +283,14 @@ class AdminFleetVehicle {
       AdminFleetVehicle(
         id: (json['id'] ?? '').toString(),
         vendorId: (json['vendor_id'] ?? json['vendorId'] ?? '').toString(),
-        registrationNumber: (json['registration_number'] ?? '').toString(),
-        capacityLitres: (json['capacity_litres'] as num?)?.toInt() ?? 0,
-        active: json['is_active'] == true,
+        registrationNumber:
+            (json['registration_number'] ?? json['registrationNumber'] ?? '')
+                .toString(),
+        capacityLitres:
+            ((json['capacity_litres'] ?? json['capacityLitres']) as num?)
+                    ?.toInt() ??
+                0,
+        active: json['is_active'] == true || json['isActive'] == true,
         verification: (json['verification'] ?? 'pending').toString(),
       );
 }
@@ -305,9 +318,12 @@ class AdminFleetDriver {
       AdminFleetDriver(
         id: (json['id'] ?? '').toString(),
         vendorId: (json['vendor_id'] ?? json['vendorId'] ?? '').toString(),
-        name: (json['name'] ?? '').toString(),
-        mobile: (json['mobile_e164'] ?? json['mobile'] ?? '').toString(),
-        active: json['is_active'] == true,
+        name: (json['name'] ?? json['full_name'] ?? json['fullName'] ?? '')
+            .toString(),
+        mobile:
+            (json['mobile_e164'] ?? json['mobileE164'] ?? json['mobile'] ?? '')
+                .toString(),
+        active: json['is_active'] == true || json['isActive'] == true,
         verification: (json['verification'] ?? 'pending').toString(),
       );
 }

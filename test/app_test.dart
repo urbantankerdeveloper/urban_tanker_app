@@ -466,6 +466,16 @@ void main() {
     expect(record.status, 'open');
   });
 
+  test('vendor records use their business name as the display title', () {
+    final vendor = AccountRecord({
+      'id': 'vendor-1',
+      'business_name': 'City Tankers',
+      'name': 'Vendor contact',
+    });
+
+    expect(vendor.title, 'City Tankers');
+  });
+
   test('account record exposes identifiers for scoped mutations', () {
     final record = AccountRecord({
       'id': 'address-1',
@@ -559,6 +569,31 @@ void main() {
 
     expect(vehicle.assignable, isTrue);
     expect(driver.assignable, isFalse);
+  });
+
+  test('fleet records display names from snake and camel case API fields', () {
+    final vehicle = AdminFleetVehicle.fromJson({
+      'id': 'vehicle-1',
+      'vendorId': 'vendor-1',
+      'registrationNumber': 'TN 38 AB 4120',
+      'capacityLitres': 12000,
+      'isActive': true,
+      'verification': 'approved',
+    });
+    final driver = AdminFleetDriver.fromJson({
+      'id': 'driver-1',
+      'vendor_id': 'vendor-1',
+      'full_name': 'Arun Kumar',
+      'mobile_e164': '+919876543210',
+      'is_active': true,
+      'verification': 'approved',
+    });
+
+    expect(vehicle.registrationNumber, 'TN 38 AB 4120');
+    expect(vehicle.capacityLitres, 12000);
+    expect(vehicle.active, isTrue);
+    expect(driver.name, 'Arun Kumar');
+    expect(driver.mobile, '+919876543210');
   });
 
   test('vendor dashboard maps orders, fleet, and drivers', () {
