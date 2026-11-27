@@ -1,5 +1,12 @@
 /// Switches for auth features that depend on backend endpoints.
 abstract final class AuthFeatureFlags {
+  /// Enables the phased visual redesign while the legacy interface remains
+  /// available by default. Turn on with `--dart-define=NEW_UI_ENABLED=true`.
+  static const newUiEnabled = bool.fromEnvironment(
+    'NEW_UI_ENABLED',
+    defaultValue: false,
+  );
+
   /// Sign-in and sign-up with a one-time code sent by email. If the server
   /// answers 404 or 501 for the code endpoints, the app switches the option off
   /// at runtime and keeps password sign-in working.

@@ -22,6 +22,7 @@ import '../admin/admin_reports_screen.dart';
 import '../bookings_screen.dart';
 import '../customer_account_screen.dart';
 import '../dispatcher/alerts_screen.dart';
+import '../dispatcher/dispatch_home_screen.dart';
 import '../dispatcher/dispatch_screen.dart';
 import '../dispatcher/live_screen.dart';
 import '../auth/phone_verify_dialog.dart';
@@ -31,6 +32,7 @@ import '../vendor/vendor_earnings_screen.dart';
 import '../vendor/fleet/vendor_fleet_screen.dart';
 import '../vendor/operations/vendor_operations_screen.dart';
 import 'booking/booking_form_sheet.dart';
+import 'customer/active_order_widget.dart';
 import 'customer/customer_overview.dart';
 import 'shell/menu_screen.dart';
 import 'shell/notification_routing.dart';
@@ -63,7 +65,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   void initState() {
     super.initState();
-    _notifications = role == WorkspaceRole.customer ||
+    _notifications =
+        role == WorkspaceRole.customer ||
             role == WorkspaceRole.vendor ||
             role == WorkspaceRole.admin
         ? widget.controller.api.notifications(role.name)
@@ -96,9 +99,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_promptPhoneVerification().then((_) {
-        if (mounted) offerUnlockSetup(context, widget.controller);
-      }));
+      unawaited(
+        _promptPhoneVerification().then((_) {
+          if (mounted) offerUnlockSetup(context, widget.controller);
+        }),
+      );
     });
   }
 
@@ -113,8 +118,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       if (!refreshed) {
         final message = widget.controller.errorMessage;
         if (message != null) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(message)));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
         }
         return;
       }
@@ -141,7 +147,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       email: user.email,
       phone: user.phone,
       profilePhotoUrl: ref.read(profileSelfieProvider.future),
-      initialProfilePhotoUrl: ref.read(profileSelfieProvider).when(
+      initialProfilePhotoUrl: ref
+          .read(profileSelfieProvider)
+          .when(
             data: (url) => url,
             loading: () => null,
             error: (_, __) => null,
@@ -288,8 +296,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         events: widget.controller.realtime?.events,
         role: role,
         child: SwipeNavigationArea(
-          onSwipeLeft:
-              _index < tabs.length - 1 ? () => setState(() => _index++) : null,
+          onSwipeLeft: _index < tabs.length - 1
+              ? () => setState(() => _index++)
+              : null,
           onSwipeRight: _index > 0 ? () => setState(() => _index--) : null,
           child: IndexedStack(
             index: _index,
@@ -301,76 +310,87 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ? FloatingActionButton.extended(
               onPressed:
                   _loadingServices || _services.isEmpty || _bookingFormOpening
-                      ? null
-                      : _createBooking,
+                  ? null
+                  : _createBooking,
               icon: const Icon(Icons.local_shipping_outlined),
               label: const Text('Book service'),
             )
           : null,
-      bottomNavigationBar: AppBottomNav(
-        items: [
-          for (final tab in tabs)
-            AppNavItem(
-              label: tab.label,
-              icon: tab.icon,
-              selectedIcon: tab.selectedIcon,
-            ),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isCustomer && AuthFeatureFlags.newUiEnabled)
+            const ActiveOrderWidget(),
+          AppBottomNav(
+            items: [
+              for (final tab in tabs)
+                AppNavItem(
+                  label: tab.label,
+                  icon: tab.icon,
+                  selectedIcon: tab.selectedIcon,
+                ),
+            ],
+            selectedIndex: _index,
+            onSelected: (index) => setState(() => _index = index),
+          ),
         ],
-        selectedIndex: _index,
-        onSelected: (index) => setState(() => _index = index),
       ),
     );
   }
 
   Widget _notificationBell() => FutureBuilder<List<NotificationItem>>(
-        future: _notifications,
-        builder: (context, snapshot) {
-          final unread = snapshot.data?.where((item) => !item.read).length ?? 0;
-          return IconButton(
-            tooltip: 'Notifications',
-            onPressed: _openNotificationInbox,
-            icon: Badge(
-              isLabelVisible: unread > 0,
-              label: Text(unread > 99 ? '99+' : '$unread'),
-              child: const Icon(Icons.notifications_none_outlined),
-            ),
-          );
-        },
+    future: _notifications,
+    builder: (context, snapshot) {
+      final unread = snapshot.data?.where((item) => !item.read).length ?? 0;
+      return IconButton(
+        tooltip: 'Notifications',
+        onPressed: _openNotificationInbox,
+        icon: Badge(
+          isLabelVisible: unread > 0,
+          label: Text(unread > 99 ? '99+' : '$unread'),
+          child: const Icon(Icons.notifications_none_outlined),
+        ),
       );
+    },
+  );
 
   Widget _pageFor(ShellPage page, SessionUser user) => switch (page) {
-        ShellPage.overview => CustomerOverview(
-            user: user,
-            services: _services,
-            loading: _loadingServices,
-            error: _serviceError,
-            onRetry: () => _loadServices(bypassCache: true),
-            onBook: _services.isEmpty ? null : _createBooking,
-            onOpenBookings: () => _selectPage(ShellPage.bookings),
-            onOpenAccount: () => _selectPage(ShellPage.account),
-            onViewProfile: _showCustomerProfile,
-          ),
-        ShellPage.bookings => BookingsScreen(
-            onBookAgain: (booking) => _createBooking(previousBooking: booking),
-          ),
-        ShellPage.account => const CustomerAccountScreen(),
-        ShellPage.vendorOperations => const VendorOperationsScreen(),
-        ShellPage.vendorFleet => const VendorFleetScreen(),
-        ShellPage.vendorEarnings => const VendorEarningsScreen(),
-        ShellPage.dispatchDispatch => const DispatcherDispatchScreen(),
-        ShellPage.dispatchLive => const DispatcherLiveScreen(),
-        ShellPage.dispatchAlerts => const DispatcherAlertsScreen(),
-        ShellPage.adminPulse => const AdminPulseScreen(),
-        ShellPage.adminOperations => AdminOperationsScreen(
-            focus: _operationsFocus,
-          ),
-        ShellPage.adminReports => const AdminReportsScreen(),
-        ShellPage.menu => MenuScreen(
-            controller: widget.controller,
-            role: role,
-            notifications: _notifications,
-            onDestination: _openDestination,
-            onNotifications: _openNotificationInbox,
-          ),
-      };
+    ShellPage.overview => CustomerOverview(
+      user: user,
+      services: _services,
+      loading: _loadingServices,
+      error: _serviceError,
+      onRetry: () => _loadServices(bypassCache: true),
+      onBook: _services.isEmpty ? null : _createBooking,
+      onOpenBookings: () => _selectPage(ShellPage.bookings),
+      onOpenAccount: () => _selectPage(ShellPage.account),
+      onViewProfile: _showCustomerProfile,
+    ),
+    ShellPage.bookings => BookingsScreen(
+      onBookAgain: (booking) => _createBooking(previousBooking: booking),
+      onBook: _services.isEmpty ? null : _createBooking,
+    ),
+    ShellPage.account => const CustomerAccountScreen(),
+    ShellPage.vendorOperations => const VendorOperationsScreen(),
+    ShellPage.vendorFleet => const VendorFleetScreen(),
+    ShellPage.vendorEarnings => const VendorEarningsScreen(),
+    ShellPage.dispatchHome => DispatcherHomeScreen(
+      onOpenOrders: () => _selectPage(ShellPage.dispatchDispatch),
+      onOpenLive: () => _selectPage(ShellPage.dispatchLive),
+      onOpenAlerts: () => _selectPage(ShellPage.dispatchAlerts),
+    ),
+    ShellPage.dispatchDispatch => const DispatcherDispatchScreen(),
+    ShellPage.dispatchLive => const DispatcherLiveScreen(),
+    ShellPage.dispatchAlerts => const DispatcherAlertsScreen(),
+    ShellPage.adminPulse => const AdminPulseScreen(),
+    ShellPage.adminOperations => AdminOperationsScreen(focus: _operationsFocus),
+    ShellPage.adminReports => const AdminReportsScreen(),
+    ShellPage.menu => MenuScreen(
+      controller: widget.controller,
+      role: role,
+      notifications: _notifications,
+      onDestination: _openDestination,
+      onNotifications: _openNotificationInbox,
+    ),
+  };
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/auth_feature_flags.dart';
 import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/booking.dart';
@@ -39,11 +40,12 @@ class CustomerOverview extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profilePhotoUrl = ref.watch(profileSelfieProvider).when(
-          data: (url) => url,
-          loading: () => null,
-          error: (_, __) => null,
-        );
+    if (AuthFeatureFlags.newUiEnabled && loading && services.isEmpty) {
+      return const HomeLoadingState();
+    }
+    final profilePhotoUrl = ref
+        .watch(profileSelfieProvider)
+        .when(data: (url) => url, loading: () => null, error: (_, __) => null);
     final bookings = ref.watch(bookingsProvider);
     final items = bookings.value?.items ?? const <Booking>[];
     Booking? active;
@@ -147,10 +149,7 @@ class _HeroCard extends StatelessWidget {
           children: [
             Text('BOOK A TANKER', style: theme.textTheme.labelSmall),
             const SizedBox(height: AppSpace.sm),
-            Text(
-              'Water when you need it.',
-              style: theme.textTheme.titleLarge,
-            ),
+            Text('Water when you need it.', style: theme.textTheme.titleLarge),
             const SizedBox(height: AppSpace.lg),
             FilledButton.icon(
               style: FilledButton.styleFrom(
@@ -253,10 +252,7 @@ class _ServiceGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const _Pairs(
-        count: 4,
-        builder: _skeletonTile,
-      );
+      return const _Pairs(count: 4, builder: _skeletonTile);
     }
     final message = error;
     if (message != null) {
@@ -274,10 +270,8 @@ class _ServiceGrid extends StatelessWidget {
     }
     return _Pairs(
       count: services.length,
-      builder: (context, index) => _ServiceTile(
-        service: services[index],
-        onTap: onBook,
-      ),
+      builder: (context, index) =>
+          _ServiceTile(service: services[index], onTap: onBook),
     );
   }
 }
@@ -388,10 +382,7 @@ class _RecentBookings extends StatelessWidget {
           ],
         ),
       ),
-      error: (error, _) => AppStateInline.error(
-        error: error,
-        onRetry: onRetry,
-      ),
+      error: (error, _) => AppStateInline.error(error: error, onRetry: onRetry),
       data: (state) {
         final items = state.items.take(5).toList();
         if (items.isEmpty) return const SizedBox.shrink();

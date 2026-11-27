@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
+import '../app/auth_feature_flags.dart';
 import '../core/design_system/design_system.dart';
 import '../services/masking.dart';
 import '../services/api/api_types.dart';
@@ -8,6 +9,7 @@ import 'auth/email_sign_in_form.dart';
 import 'auth/email_sign_up_form.dart';
 import 'auth/resend_cooldown.dart';
 import 'auth/sign_up_code_view.dart';
+import 'partner_application_screen.dart';
 
 enum _AuthMode { register, login }
 
@@ -56,7 +58,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _method = _isMpinRecovery
         ? _AuthMethod.phone
         : _methodFromName(widget.controller.lastAuthMethod) ??
-            _AuthMethod.phone;
+              _AuthMethod.phone;
     if (!_methods.contains(_method)) _method = _AuthMethod.phone;
   }
 
@@ -70,16 +72,16 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   static _AuthMethod? _methodFromName(String? name) => switch (name) {
-        'phone' => _AuthMethod.phone,
-        'email' => _AuthMethod.email,
-        'username' => _AuthMethod.email,
-        _ => null,
-      };
+    'phone' => _AuthMethod.phone,
+    'email' => _AuthMethod.email,
+    'username' => _AuthMethod.email,
+    _ => null,
+  };
 
   String _methodLabel(_AuthMethod method) => switch (method) {
-        _AuthMethod.phone => 'Phone',
-        _AuthMethod.email => _isRegistration ? 'Email' : 'Email or username',
-      };
+    _AuthMethod.phone => 'Phone',
+    _AuthMethod.email => _isRegistration ? 'Email' : 'Email or username',
+  };
 
   void _onControllerChanged() {
     final challengeId = widget.controller.phoneOtpChallengeId;
@@ -108,6 +110,23 @@ class _AuthScreenState extends State<AuthScreen> {
         otp: _otp.text,
         name: _isRegistration ? _name.text : null,
       );
+      final statusCode = widget.controller.errorStatusCode;
+      if (mounted &&
+          AuthFeatureFlags.newUiEnabled &&
+          (statusCode == 400 || statusCode == 401 || statusCode == 422)) {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (screenContext) => FailureStateScreen(
+              kind: FailureScreenKind.wrongOtp,
+              onPrimary: () => Navigator.of(screenContext).pop(),
+              onSecondary: () {
+                Navigator.of(screenContext).pop();
+                _changeNumber();
+              },
+            ),
+          ),
+        );
+      }
     } else {
       await widget.controller.requestPhoneAuthOtp(_phone.text);
     }
@@ -196,31 +215,31 @@ class _AuthScreenState extends State<AuthScreen> {
     final title = pendingEmail != null
         ? 'Check your inbox.'
         : _isMpinRecovery
-            ? 'Recover your account.'
-            : _usesEmail
-                ? _isRegistration
-                    ? 'Create your account.'
-                    : 'Welcome back.'
-                : _otpRequested
-                    ? 'Verify your number.'
-                    : _isRegistration
-                        ? 'Create your account.'
-                        : 'Welcome back.';
+        ? 'Recover your account.'
+        : _usesEmail
+        ? _isRegistration
+              ? 'Create your account.'
+              : 'Welcome back.'
+        : _otpRequested
+        ? 'Verify your number.'
+        : _isRegistration
+        ? 'Create your account.'
+        : 'Welcome back.';
     final subtitle = pendingEmail != null
         ? 'One step left to finish.'
         : _isMpinRecovery
-            ? 'Verify your phone number with a one-time code to reset your MPIN.'
-            : _usesEmail
-                ? _isRegistration
-                    ? 'Create a customer account with your email and a password, '
-                        'or with a one-time code.'
-                    : 'Sign in with your email or username and password. '
-                        'Email one-time codes are also available.'
-                : _otpRequested
-                    ? 'Enter the verification code below.'
-                    : _isRegistration
-                        ? 'Create a customer account with your mobile number and a one-time code.'
-                        : 'Sign in with a one-time code sent to your mobile number.';
+        ? 'Verify your phone number with a one-time code to reset your MPIN.'
+        : _usesEmail
+        ? _isRegistration
+              ? 'Create a customer account with your email and a password, '
+                    'or with a one-time code.'
+              : 'Sign in with your email or username and password. '
+                    'Email one-time codes are also available.'
+        : _otpRequested
+        ? 'Enter the verification code below.'
+        : _isRegistration
+        ? 'Create a customer account with your mobile number and a one-time code.'
+        : 'Sign in with a one-time code sent to your mobile number.';
 
     return Scaffold(
       body: BrandBackdrop(
@@ -297,14 +316,14 @@ class _AuthScreenState extends State<AuthScreen> {
                             key: ValueKey('${_mode.name}-${_method.name}'),
                             child: _usesEmail
                                 ? _isRegistration
-                                    ? EmailSignUpForm(
-                                        controller: controller,
-                                        onAccountExists: _switchToSignIn,
-                                      )
-                                    : EmailSignInForm(
-                                        controller: controller,
-                                        initialIdentifier: _prefillEmail,
-                                      )
+                                      ? EmailSignUpForm(
+                                          controller: controller,
+                                          onAccountExists: _switchToSignIn,
+                                        )
+                                      : EmailSignInForm(
+                                          controller: controller,
+                                          initialIdentifier: _prefillEmail,
+                                        )
                                 : _phoneForm(context),
                           ),
                         ),
@@ -316,16 +335,32 @@ class _AuthScreenState extends State<AuthScreen> {
                             onPressed: controller.busy
                                 ? null
                                 : () => _selectMode(
-                                      _isRegistration
-                                          ? _AuthMode.login
-                                          : _AuthMode.register,
-                                    ),
+                                    _isRegistration
+                                        ? _AuthMode.login
+                                        : _AuthMode.register,
+                                  ),
                             child: Text(
                               _isRegistration
                                   ? 'Already have an account? Sign in'
                                   : 'New here? Create an account',
                             ),
                           ),
+                        ),
+                      if (AuthFeatureFlags.newUiEnabled &&
+                          !_isMpinRecovery &&
+                          !_otpRequested)
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => PartnerApplicationScreen(
+                                  api: controller.api,
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.local_shipping_outlined),
+                          label: const Text('Become a partner'),
                         ),
                     ],
                   ],
@@ -355,8 +390,9 @@ class _AuthScreenState extends State<AuthScreen> {
             prefix: const Icon(Icons.phone_outlined),
             prefixText: '+91 ',
             keyboardType: TextInputType.phone,
-            textInputAction:
-                _otpRequested ? TextInputAction.next : TextInputAction.done,
+            textInputAction: _otpRequested
+                ? TextInputAction.next
+                : TextInputAction.done,
             suffix: _otpRequested
                 ? IconButton(
                     tooltip: 'Change mobile number',
@@ -377,8 +413,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         : Icons.sms_outlined,
                     color:
                         controller.phoneOtpChannel == PhoneOtpChannel.whatsapp
-                            ? const Color(0xFF25D366)
-                            : colors.primary,
+                        ? const Color(0xFF25D366)
+                        : colors.primary,
                   ),
                   const SizedBox(width: AppSpace.sm),
                   Expanded(
@@ -447,8 +483,8 @@ class _AuthScreenState extends State<AuthScreen> {
           PrimaryButton(
             label: _otpRequested
                 ? _isRegistration
-                    ? 'Verify code and create account'
-                    : 'Verify code and sign in'
+                      ? 'Verify code and create account'
+                      : 'Verify code and sign in'
                 : 'Send verification code',
             loading: controller.busy,
             onPressed: controller.busy ? null : _submit,

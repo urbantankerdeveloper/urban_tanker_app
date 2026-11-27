@@ -21,6 +21,23 @@ NotificationItem _item({String? bookingId, String? invoiceId}) =>
 
 void main() {
   group('tabs', () {
+    test('dispatcher new UI adds the overview tab without changing legacy', () {
+      expect(
+        tabsForRole(
+          WorkspaceRole.dispatcher,
+          newUiEnabled: false,
+        ).map((tab) => tab.label),
+        ['Dispatch', 'Live', 'Alerts', 'Menu'],
+      );
+      expect(
+        tabsForRole(
+          WorkspaceRole.dispatcher,
+          newUiEnabled: true,
+        ).map((tab) => tab.label),
+        ['Home', 'Orders', 'Live', 'Alerts', 'Menu'],
+      );
+    });
+
     test('customer has three tabs and no Menu', () {
       final tabs = tabsForRole(WorkspaceRole.customer);
       expect(tabs.map((tab) => tab.label), ['Home', 'Bookings', 'Account']);
@@ -32,7 +49,7 @@ void main() {
         WorkspaceRole.dispatcher,
         WorkspaceRole.admin,
       ]) {
-        final tabs = tabsForRole(role);
+        final tabs = tabsForRole(role, newUiEnabled: false);
         expect(tabs, hasLength(4), reason: role.name);
         expect(tabs.last.page, ShellPage.menu, reason: role.name);
         expect(tabs.last.label, 'Menu', reason: role.name);
@@ -86,9 +103,16 @@ void main() {
     test('dispatcher: booking goes to Live, anything else to Alerts', () {
       expect(
         notificationTabIndex(WorkspaceRole.dispatcher, _item(bookingId: 'b')),
-        1,
+        tabsForRole(
+          WorkspaceRole.dispatcher,
+        ).indexWhere((tab) => tab.page == ShellPage.dispatchLive),
       );
-      expect(notificationTabIndex(WorkspaceRole.dispatcher, _item()), 2);
+      expect(
+        notificationTabIndex(WorkspaceRole.dispatcher, _item()),
+        tabsForRole(
+          WorkspaceRole.dispatcher,
+        ).indexWhere((tab) => tab.page == ShellPage.dispatchAlerts),
+      );
     });
 
     test('admin: booking goes to Operations, anything else to Reports', () {

@@ -6,7 +6,7 @@ the REST and Socket.IO contracts.
 
 ## Requirements
 
-- Flutter stable with Dart 3.4 or newer
+- Flutter stable with Dart 3.9 or newer
 - Android SDK with API 30 installed for the Android target
 - macOS/Xcode for iOS builds (the iOS deployment target is 15.0)
 
@@ -57,6 +57,11 @@ State is coordinated with Riverpod, using the existing `ChangeNotifier`
 controller as the single session/theme source. FlexColorScheme provides the
 open-source Material 3 theme foundation while preserving the Urban Tanker
 palette and semantic light/dark surfaces.
+
+The phased UI redesign is opt-in with
+`--dart-define=NEW_UI_ENABLED=true`. Phase 1 applies the new design tokens and
+light/dark theme, and shows the branded splash during local app initialization.
+Without the flag, the existing theme and routes remain in use.
 
 Native authentication uses the `/api/auth/mobile-refresh` endpoint. Access and
 rotated refresh tokens are stored separately in secure platform storage. The

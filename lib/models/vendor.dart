@@ -409,6 +409,31 @@ class VendorDashboard {
       );
 }
 
+class VendorBusinessProfile {
+  const VendorBusinessProfile({
+    required this.id,
+    required this.businessName,
+    required this.serviceZone,
+    required this.verification,
+    required this.isOnline,
+  });
+
+  final String id;
+  final String businessName;
+  final String serviceZone;
+  final String verification;
+  final bool isOnline;
+
+  factory VendorBusinessProfile.fromJson(Map<String, dynamic> json) =>
+      VendorBusinessProfile(
+        id: (json['id'] ?? '').toString(),
+        businessName: (json['business_name'] ?? '').toString(),
+        serviceZone: (json['service_zone'] ?? '').toString(),
+        verification: (json['verification'] ?? 'pending').toString(),
+        isOnline: json['is_online'] == true,
+      );
+}
+
 List<T> _records<T>(
   dynamic value,
   T Function(Map<String, dynamic>) parse,

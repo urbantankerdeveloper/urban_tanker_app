@@ -28,21 +28,41 @@ class VendorApi {
     return parseList(response, VendorOrder.fromJson, 'vendor orders');
   }
 
+  Future<VendorBusinessProfile> vendorProfile() async {
+    final response = await _api.request('GET', '/vendor/profile');
+    final decoded = await mapResponse(response, 'vendor profile');
+    return VendorBusinessProfile.fromJson(decoded);
+  }
+
+  Future<Map<String, dynamic>> vendorSalesReport(String period) async {
+    final response = await _api.request(
+      'GET',
+      '/vendor/reports/sales?period=${Uri.encodeQueryComponent(period)}',
+    );
+    return mapResponse(response, 'vendor sales report');
+  }
+
   Future<List<VendorOrder>> multiServiceOrders() async {
-    final offersResponse =
-        await _api.request('GET', '/vendor/multi-service-orders/offers');
+    final offersResponse = await _api.request(
+      'GET',
+      '/vendor/multi-service-orders/offers',
+    );
     final offersDecoded = await decodeBodyAsync(offersResponse);
-    final fulfilmentsResponse =
-        await _api.request('GET', '/vendor/multi-service-fulfilments');
+    final fulfilmentsResponse = await _api.request(
+      'GET',
+      '/vendor/multi-service-fulfilments',
+    );
     final fulfilmentsDecoded = await decodeBodyAsync(fulfilmentsResponse);
     if (offersDecoded is! List || fulfilmentsDecoded is! List) {
       throw const FormatException(
-          'The multi-service vendor orders were invalid.');
+        'The multi-service vendor orders were invalid.',
+      );
     }
     final offers = offersDecoded.whereType<Map<String, dynamic>>().map((offer) {
       final order = offer['order'];
-      final orderRecord =
-          order is Map<String, dynamic> ? order : <String, dynamic>{};
+      final orderRecord = order is Map<String, dynamic>
+          ? order
+          : <String, dynamic>{};
       return VendorOrder.fromJson({
         ...offer,
         'id': offer['id'],
@@ -53,22 +73,23 @@ class VendorApi {
         'items': offer['items'],
       });
     });
-    final assigned = fulfilmentsDecoded
-        .whereType<Map<String, dynamic>>()
-        .map((fulfilment) => VendorOrder.fromJson({
-              ...fulfilment,
-              'id': fulfilment['id'],
-              'reference': fulfilment['reference'],
-              'fulfilment_id': fulfilment['id'],
-              'order_id': fulfilment['order_id'],
-              'items': (fulfilment['order_fulfilment_items'] is List
-                      ? fulfilment['order_fulfilment_items'] as List
-                      : const [])
-                  .whereType<Map<String, dynamic>>()
-                  .map((link) => link['order_items'])
-                  .whereType<Map<String, dynamic>>()
-                  .toList(),
-            }));
+    final assigned = fulfilmentsDecoded.whereType<Map<String, dynamic>>().map(
+      (fulfilment) => VendorOrder.fromJson({
+        ...fulfilment,
+        'id': fulfilment['id'],
+        'reference': fulfilment['reference'],
+        'fulfilment_id': fulfilment['id'],
+        'order_id': fulfilment['order_id'],
+        'items':
+            (fulfilment['order_fulfilment_items'] is List
+                    ? fulfilment['order_fulfilment_items'] as List
+                    : const [])
+                .whereType<Map<String, dynamic>>()
+                .map((link) => link['order_items'])
+                .whereType<Map<String, dynamic>>()
+                .toList(),
+      }),
+    );
     return [...offers, ...assigned];
   }
 
@@ -142,11 +163,15 @@ class VendorApi {
     required int capacityLitres,
     bool isActive = true,
   }) async {
-    final response = await _api.request('POST', '/vendor/vehicles', body: {
-      'registrationNumber': registrationNumber,
-      'capacityLitres': capacityLitres,
-      'isActive': isActive,
-    });
+    final response = await _api.request(
+      'POST',
+      '/vendor/vehicles',
+      body: {
+        'registrationNumber': registrationNumber,
+        'capacityLitres': capacityLitres,
+        'isActive': isActive,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The vehicle response was invalid.');
@@ -160,11 +185,16 @@ class VendorApi {
     int? capacityLitres,
     bool? isActive,
   }) async {
-    final response = await _api.request('PATCH', '/vendor/vehicles/$id', body: {
-      if (registrationNumber != null) 'registrationNumber': registrationNumber,
-      if (capacityLitres != null) 'capacityLitres': capacityLitres,
-      if (isActive != null) 'isActive': isActive,
-    });
+    final response = await _api.request(
+      'PATCH',
+      '/vendor/vehicles/$id',
+      body: {
+        if (registrationNumber != null)
+          'registrationNumber': registrationNumber,
+        if (capacityLitres != null) 'capacityLitres': capacityLitres,
+        if (isActive != null) 'isActive': isActive,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The vehicle update was invalid.');
@@ -180,14 +210,18 @@ class VendorApi {
     double? latitude,
     double? longitude,
   }) async {
-    final response = await _api.request('POST', '/vendor/drivers', body: {
-      'name': name,
-      'mobileE164': mobile,
-      'licenceNumber': licenceNumber,
-      'isActive': isActive,
-      if (latitude != null) 'latitude': latitude,
-      if (longitude != null) 'longitude': longitude,
-    });
+    final response = await _api.request(
+      'POST',
+      '/vendor/drivers',
+      body: {
+        'name': name,
+        'mobileE164': mobile,
+        'licenceNumber': licenceNumber,
+        'isActive': isActive,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The driver response was invalid.');
@@ -204,14 +238,18 @@ class VendorApi {
     double? latitude,
     double? longitude,
   }) async {
-    final response = await _api.request('PATCH', '/vendor/drivers/$id', body: {
-      if (name != null) 'name': name,
-      if (mobile != null) 'mobileE164': mobile,
-      if (licenceNumber != null) 'licenceNumber': licenceNumber,
-      if (isActive != null) 'isActive': isActive,
-      if (latitude != null) 'latitude': latitude,
-      if (longitude != null) 'longitude': longitude,
-    });
+    final response = await _api.request(
+      'PATCH',
+      '/vendor/drivers/$id',
+      body: {
+        if (name != null) 'name': name,
+        if (mobile != null) 'mobileE164': mobile,
+        if (licenceNumber != null) 'licenceNumber': licenceNumber,
+        if (isActive != null) 'isActive': isActive,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The driver update was invalid.');
@@ -224,14 +262,17 @@ class VendorApi {
     DateTime? periodStart,
     DateTime? periodEnd,
   }) async {
-    final response =
-        await _api.request('POST', '/vendor/payouts/request', body: {
-      'amount': amount,
-      if (periodStart != null)
-        'periodStart': periodStart.toIso8601String().split('T').first,
-      if (periodEnd != null)
-        'periodEnd': periodEnd.toIso8601String().split('T').first,
-    });
+    final response = await _api.request(
+      'POST',
+      '/vendor/payouts/request',
+      body: {
+        'amount': amount,
+        if (periodStart != null)
+          'periodStart': periodStart.toIso8601String().split('T').first,
+        if (periodEnd != null)
+          'periodEnd': periodEnd.toIso8601String().split('T').first,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The payout request response was invalid.');
@@ -256,7 +297,8 @@ class VendorApi {
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException(
-          'The delivery verification response was invalid.');
+        'The delivery verification response was invalid.',
+      );
     }
     return VendorOrder.fromJson(decoded);
   }
@@ -267,12 +309,16 @@ class VendorApi {
     required double longitude,
     double? accuracy,
   }) async {
-    await _api.request('POST', '/vendor/location', body: {
-      'bookingId': bookingId,
-      'latitude': latitude,
-      'longitude': longitude,
-      if (accuracy != null) 'accuracy': accuracy,
-    });
+    await _api.request(
+      'POST',
+      '/vendor/location',
+      body: {
+        'bookingId': bookingId,
+        'latitude': latitude,
+        'longitude': longitude,
+        if (accuracy != null) 'accuracy': accuracy,
+      },
+    );
   }
 
   Future<List<VendorPayout>> vendorPayouts() async {
@@ -290,12 +336,15 @@ class VendorApi {
     required String status,
     String? resolution,
   }) async {
-    final response =
-        await _api.request('PATCH', '/vendor/complaints/$id', body: {
-      'status': status,
-      if (resolution != null && resolution.trim().isNotEmpty)
-        'resolution': resolution.trim(),
-    });
+    final response = await _api.request(
+      'PATCH',
+      '/vendor/complaints/$id',
+      body: {
+        'status': status,
+        if (resolution != null && resolution.trim().isNotEmpty)
+          'resolution': resolution.trim(),
+      },
+    );
     return mapResponse(response, 'vendor complaint update');
   }
 
@@ -304,11 +353,11 @@ class VendorApi {
     required String subject,
     required String message,
   }) async {
-    final response = await _api.request('POST', '/vendor/complaints', body: {
-      'bookingId': bookingId,
-      'subject': subject,
-      'message': message,
-    });
+    final response = await _api.request(
+      'POST',
+      '/vendor/complaints',
+      body: {'bookingId': bookingId, 'subject': subject, 'message': message},
+    );
     return mapResponse(response, 'vendor complaint');
   }
 
@@ -322,11 +371,15 @@ class VendorApi {
     required String objectKey,
     String? expiresOn,
   }) async {
-    final response = await _api.request('POST', '/vendor/documents', body: {
-      'documentType': documentType,
-      'objectKey': objectKey,
-      if (expiresOn != null && expiresOn.isNotEmpty) 'expiresOn': expiresOn,
-    });
+    final response = await _api.request(
+      'POST',
+      '/vendor/documents',
+      body: {
+        'documentType': documentType,
+        'objectKey': objectKey,
+        if (expiresOn != null && expiresOn.isNotEmpty) 'expiresOn': expiresOn,
+      },
+    );
     return mapResponse(response, 'vendor document');
   }
 
@@ -411,12 +464,15 @@ class VendorApi {
     String? documentType,
     String? expiresOn,
   }) async {
-    final response =
-        await _api.request('PATCH', '/vendor/documents/$id', body: {
-      if (objectKey != null) 'objectKey': objectKey,
-      if (documentType != null) 'documentType': documentType,
-      if (expiresOn != null) 'expiresOn': expiresOn,
-    });
+    final response = await _api.request(
+      'PATCH',
+      '/vendor/documents/$id',
+      body: {
+        if (objectKey != null) 'objectKey': objectKey,
+        if (documentType != null) 'documentType': documentType,
+        if (expiresOn != null) 'expiresOn': expiresOn,
+      },
+    );
     return mapResponse(response, 'vendor document update');
   }
 
@@ -426,11 +482,15 @@ class VendorApi {
     DateTime? date,
   }) async {
     final attendanceDate = date ?? DateTime.now();
-    final response = await _api.request('POST', '/vendor/attendance', body: {
-      'driverId': driverId,
-      'status': status,
-      'date': attendanceDate.toIso8601String().split('T').first,
-    });
+    final response = await _api.request(
+      'POST',
+      '/vendor/attendance',
+      body: {
+        'driverId': driverId,
+        'status': status,
+        'date': attendanceDate.toIso8601String().split('T').first,
+      },
+    );
     return mapResponse(response, 'driver attendance');
   }
 
@@ -523,13 +583,16 @@ class VendorApi {
       payload: payload,
     );
     if (duplicate != null) return duplicate;
-    final response =
-        await _api.request('POST', '/vendor/offline-mutations', body: {
-      'mutationType': mutationType,
-      'entityType': entityType,
-      if (entityId != null) 'entityId': entityId,
-      'payload': payload,
-    });
+    final response = await _api.request(
+      'POST',
+      '/vendor/offline-mutations',
+      body: {
+        'mutationType': mutationType,
+        'entityType': entityType,
+        if (entityId != null) 'entityId': entityId,
+        'payload': payload,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The offline mutation response was invalid.');

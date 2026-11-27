@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:urban_tanker_app/app/app_controller.dart';
+import 'package:urban_tanker_app/app/auth_feature_flags.dart';
 import 'package:urban_tanker_app/app/providers.dart';
 import 'package:urban_tanker_app/core/design_system/widgets/swipe_navigation_area.dart';
+import 'package:urban_tanker_app/core/design_system/new_ui_theme.dart';
 import 'package:urban_tanker_app/models/account.dart';
 import 'package:urban_tanker_app/models/booking.dart';
 import 'package:urban_tanker_app/models/booking_service_details.dart';
@@ -18,6 +21,7 @@ import 'package:urban_tanker_app/screens/booking_details_screen.dart';
 import 'package:urban_tanker_app/screens/bookings_screen.dart';
 import 'package:urban_tanker_app/screens/common/booking_format.dart';
 import 'package:urban_tanker_app/screens/home/booking/booking_form_sheet.dart';
+import 'package:urban_tanker_app/screens/home/booking/cancel_booking_flow.dart';
 import 'package:urban_tanker_app/screens/home/home_shell.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
 import 'package:urban_tanker_app/services/realtime_service.dart';
@@ -38,19 +42,19 @@ const _booking = Booking(
 );
 
 Booking _bookingWithStatus(String status) => Booking(
-      id: _booking.id,
-      reference: _booking.reference,
-      status: status,
-      location: _booking.location,
-      capacity: _booking.capacity,
-      deliveryDate: _booking.deliveryDate,
-      createdAt: _booking.createdAt,
-      customerName: _booking.customerName,
-      customerPhone: _booking.customerPhone,
-      customerEmail: _booking.customerEmail,
-      paymentMethod: _booking.paymentMethod,
-      paymentStatus: _booking.paymentStatus,
-    );
+  id: _booking.id,
+  reference: _booking.reference,
+  status: status,
+  location: _booking.location,
+  capacity: _booking.capacity,
+  deliveryDate: _booking.deliveryDate,
+  createdAt: _booking.createdAt,
+  customerName: _booking.customerName,
+  customerPhone: _booking.customerPhone,
+  customerEmail: _booking.customerEmail,
+  paymentMethod: _booking.paymentMethod,
+  paymentStatus: _booking.paymentStatus,
+);
 
 class _ParityApi extends ApiClient {
   _ParityApi() : super(baseUrl: 'https://example.test/api');
@@ -64,12 +68,14 @@ class _ParityApi extends ApiClient {
   int bookingOtpRequests = 0;
   int bookingOtpVerifications = 0;
   String? requestedOtpBookingId;
+  String? cancellationReason;
   Future<Booking> Function()? cancelOperation;
 
   @override
-  Future<BookingPage> bookingsPage(
-          {int offset = 0, int pageSize = 100}) async =>
-      BookingPage(rows: const [_booking]);
+  Future<BookingPage> bookingsPage({
+    int offset = 0,
+    int pageSize = 100,
+  }) async => BookingPage(rows: const [_booking]);
 
   @override
   Future<TrackingSnapshot> bookingTracking(String bookingId) async {
@@ -106,12 +112,14 @@ class _ParityApi extends ApiClient {
 
   @override
   Future<
-      ({
-        String? challengeId,
-        PhoneOtpChannel? channel,
-        String? emailChallengeId,
-        int resendAfterSeconds
-      })> requestBookingOtp({required String phone, String? email}) async {
+    ({
+      String? challengeId,
+      PhoneOtpChannel? channel,
+      String? emailChallengeId,
+      int resendAfterSeconds,
+    })
+  >
+  requestBookingOtp({required String phone, String? email}) async {
     bookingOtpRequests++;
     return (
       challengeId: 'booking-contact-challenge',
@@ -184,8 +192,9 @@ class _ParityApi extends ApiClient {
   }
 
   @override
-  Future<Booking> cancelBooking(String bookingId) {
+  Future<Booking> cancelBooking(String bookingId, {String? reason}) {
     cancellationCalls++;
+    cancellationReason = reason;
     return cancelOperation?.call() ??
         Future.value(_bookingWithStatus('cancelled'));
   }
@@ -211,10 +220,7 @@ class _ParityApi extends ApiClient {
 
 class _TestRealtime extends RealtimeService {
   _TestRealtime()
-      : super(
-          socketUrl: 'https://example.test',
-          readToken: () async => null,
-        );
+    : super(socketUrl: 'https://example.test', readToken: () async => null);
 
   final StreamController<RealtimeEvent> controller =
       StreamController<RealtimeEvent>.broadcast();
@@ -259,6 +265,7 @@ Future<void> _pumpDetails(
   required AppController controller,
   required Booking booking,
   Future<void> Function(Booking booking)? onBookAgain,
+  ThemeData? theme,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -273,10 +280,8 @@ Future<void> _pumpDetails(
         ),
       ],
       child: MaterialApp(
-        home: BookingDetailsScreen(
-          booking: booking,
-          onBookAgain: onBookAgain,
-        ),
+        theme: theme,
+        home: BookingDetailsScreen(booking: booking, onBookAgain: onBookAgain),
       ),
     ),
   );
@@ -284,6 +289,10 @@ Future<void> _pumpDetails(
 }
 
 void main() {
+  setUpAll(() {
+    GoogleFonts.config.allowRuntimeFetching = false;
+  });
+
   test('booking actions and review labels follow web status rules', () {
     expect(canCancelBookingStatus('pending_vendor'), isTrue);
     expect(canCancelBookingStatus('vendor_assigned'), isTrue);
@@ -295,8 +304,9 @@ void main() {
     expect(bookingReviewTitle(2), 'Review combined Summary');
   });
 
-  testWidgets('booking ID opens details and history has no repeat action',
-      (tester) async {
+  testWidgets('booking ID opens details and history has no repeat action', (
+    tester,
+  ) async {
     final api = _ParityApi();
     final controller = await _controller(api);
     await tester.pumpWidget(
@@ -313,9 +323,7 @@ void main() {
             ),
           ),
         ],
-        child: const MaterialApp(
-          home: Scaffold(body: BookingsScreen()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: BookingsScreen())),
       ),
     );
     await tester.pumpAndSettle();
@@ -334,8 +342,9 @@ void main() {
     expect(find.byType(BookingDetailsScreen), findsOneWidget);
   });
 
-  testWidgets('disconnected tracking fallback polls at 30 seconds',
-      (tester) async {
+  testWidgets('disconnected tracking fallback polls at 30 seconds', (
+    tester,
+  ) async {
     final api = _ParityApi();
     final controller = await _controller(api);
     await tester.pumpWidget(
@@ -344,13 +353,11 @@ void main() {
           apiProvider.overrideWithValue(api),
           sessionUserIdProvider.overrideWithValue('customer-1'),
           appControllerProvider.overrideWith((ref) => controller),
-          bookingTrackingProvider(_booking.id).overrideWith(
-            (ref) => api.bookingTracking(_booking.id),
-          ),
+          bookingTrackingProvider(
+            _booking.id,
+          ).overrideWith((ref) => api.bookingTracking(_booking.id)),
         ],
-        child: MaterialApp(
-          home: BookingDetailsScreen(booking: _booking),
-        ),
+        child: MaterialApp(home: BookingDetailsScreen(booking: _booking)),
       ),
     );
     await tester.pump();
@@ -367,8 +374,9 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('details offer repeat booking only after delivery',
-      (tester) async {
+  testWidgets('details offer repeat booking only after delivery', (
+    tester,
+  ) async {
     final api = _ParityApi();
     final controller = await _controller(api);
     var repeatedBooking = false;
@@ -389,16 +397,13 @@ void main() {
     expect(repeatedBooking, isTrue);
   });
 
-  testWidgets('delivery OTP popup shows the code for the selected booking',
-      (tester) async {
+  testWidgets('delivery OTP popup shows the code for the selected booking', (
+    tester,
+  ) async {
     final api = _ParityApi();
     final controller = await _controller(api);
     final booking = _bookingWithStatus('arrived');
-    await _pumpDetails(
-      tester,
-      controller: controller,
-      booking: booking,
-    );
+    await _pumpDetails(tester, controller: controller, booking: booking);
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -1800));
     await tester.pumpAndSettle();
@@ -412,17 +417,15 @@ void main() {
     expect(find.textContaining('SMS was not sent.'), findsOneWidget);
   });
 
-  testWidgets('cancellation shows progress and reports server rejection',
-      (tester) async {
+  testWidgets('cancellation shows progress and reports server rejection', (
+    tester,
+  ) async {
+    if (AuthFeatureFlags.newUiEnabled) return;
     final api = _ParityApi();
     final controller = await _controller(api);
     final cancellation = Completer<Booking>();
     api.cancelOperation = () => cancellation.future;
-    await _pumpDetails(
-      tester,
-      controller: controller,
-      booking: _booking,
-    );
+    await _pumpDetails(tester, controller: controller, booking: _booking);
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -1800));
     await tester.pumpAndSettle();
@@ -443,8 +446,46 @@ void main() {
     );
   });
 
-  testWidgets('booking confirmation contains summary and returns home',
-      (tester) async {
+  testWidgets('new UI cancellation records a reason and shows confirmation', (
+    tester,
+  ) async {
+    if (!AuthFeatureFlags.newUiEnabled) return;
+    for (final theme in [buildNewUiLightTheme(), buildNewUiDarkTheme()]) {
+      final api = _ParityApi();
+      final controller = await _controller(api);
+      await _pumpDetails(
+        tester,
+        controller: controller,
+        booking: _booking,
+        theme: theme,
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(BookingDetailsScreen), findsOneWidget);
+      expect(find.byType(Scaffold), findsOneWidget);
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -1800));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Why are you cancelling?'), findsOneWidget);
+      await tester.tap(find.text('I no longer need this delivery'));
+      await tester.pump();
+      await tester.tap(find.text('Continue cancellation'));
+      await tester.pumpAndSettle();
+
+      expect(api.cancellationCalls, 1);
+      expect(api.cancellationReason, 'I no longer need this delivery');
+      expect(find.byType(OrderCancelledScreen), findsOneWidget);
+      expect(find.text('Booking UT-1001 has been cancelled.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    }
+  });
+
+  testWidgets('booking confirmation contains summary and returns home', (
+    tester,
+  ) async {
     var returnedHome = false;
     await tester.pumpWidget(
       MaterialApp(
@@ -509,8 +550,9 @@ void main() {
     expect(returnedHome, isTrue);
   });
 
-  testWidgets('successful submission closes the draft and returns home',
-      (tester) async {
+  testWidgets('successful submission closes the draft and returns home', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -604,7 +646,9 @@ void main() {
     await tester.drag(
       find.byKey(const Key('slide-to-confirm')),
       Offset(
-          tester.getSize(find.byKey(const Key('slide-to-confirm'))).width, 0),
+        tester.getSize(find.byKey(const Key('slide-to-confirm'))).width,
+        0,
+      ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
@@ -635,8 +679,9 @@ void main() {
     expect(api.bookingOtpRequests, 2);
   });
 
-  testWidgets('accepted booking updates refresh tracking and notify once',
-      (tester) async {
+  testWidgets('accepted booking updates refresh tracking and notify once', (
+    tester,
+  ) async {
     final api = _ParityApi();
     final controller = await _controller(api);
     final realtime = _TestRealtime();
@@ -650,9 +695,7 @@ void main() {
           apiProvider.overrideWithValue(api),
           sessionUserIdProvider.overrideWithValue('customer-1'),
           appControllerProvider.overrideWith((ref) => controller),
-          bookingsProvider.overrideWith(
-            () => _BookingsTestNotifier(),
-          ),
+          bookingsProvider.overrideWith(() => _BookingsTestNotifier()),
         ],
         child: MaterialApp(
           navigatorKey: navigatorKey,
@@ -679,9 +722,9 @@ void main() {
       MaterialPageRoute<void>(
         builder: (_) => ProviderScope(
           overrides: [
-            bookingTrackingProvider(_booking.id).overrideWith(
-              (ref) => api.bookingTracking(_booking.id),
-            ),
+            bookingTrackingProvider(
+              _booking.id,
+            ).overrideWith((ref) => api.bookingTracking(_booking.id)),
           ],
           child: BookingDetailsScreen(booking: _booking),
         ),
@@ -692,27 +735,24 @@ void main() {
     final initialTrackingCalls = api.trackingCalls;
 
     realtime.controller.add(
-      const RealtimeEvent(
-        'booking.updated',
-        {'bookingId': 'booking-1', 'status': 'accepted'},
-      ),
+      const RealtimeEvent('booking.updated', {
+        'bookingId': 'booking-1',
+        'status': 'accepted',
+      }),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     realtime.controller.add(
-      const RealtimeEvent(
-        'booking.updated',
-        {'bookingId': 'booking-1', 'status': 'accepted'},
-      ),
+      const RealtimeEvent('booking.updated', {
+        'bookingId': 'booking-1',
+        'status': 'accepted',
+      }),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(api.trackingCalls, greaterThan(initialTrackingCalls));
-    expect(
-      find.text('Your vendor accepted the booking.'),
-      findsOneWidget,
-    );
+    expect(find.text('Your vendor accepted the booking.'), findsOneWidget);
   });
 }
 

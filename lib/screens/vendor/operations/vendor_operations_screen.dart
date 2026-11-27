@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/auth_feature_flags.dart';
 import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/vendor.dart';
@@ -10,7 +11,9 @@ import '../../../services/friendly_error.dart';
 import '../../../services/realtime_service.dart';
 import '../vendor_shared.dart';
 import 'order_card.dart';
+import 'vendor_status_screen.dart';
 import 'saved_updates_card.dart';
+import 'vendor_status_notice.dart';
 
 const _needsActionStatuses = ['pending_vendor', 'vendor_assigned'];
 const _inProgressStatuses = ['accepted', 'en_route', 'arrived'];
@@ -35,15 +38,18 @@ class _VendorOperationsScreenState
   @override
   void initState() {
     super.initState();
-    _realtimeSubscription =
-        ref.read(appControllerProvider).realtime?.events.listen((event) {
-      // vendor.order.* events are handled by the home shell, which also owns
-      // the visible notice for them.
-      if (event.name != 'booking.updated') return;
-      ref
-        ..invalidate(vendorOrdersProvider)
-        ..invalidate(vendorDashboardProvider);
-    });
+    _realtimeSubscription = ref
+        .read(appControllerProvider)
+        .realtime
+        ?.events
+        .listen((event) {
+          // vendor.order.* events are handled by the home shell, which also owns
+          // the visible notice for them.
+          if (event.name != 'booking.updated') return;
+          ref
+            ..invalidate(vendorOrdersProvider)
+            ..invalidate(vendorDashboardProvider);
+        });
   }
 
   @override
@@ -57,8 +63,13 @@ class _VendorOperationsScreenState
   Widget build(BuildContext context) {
     ref.watch(vendorOfflineMutationsProvider);
     final orders = ref.watch(vendorOrdersProvider);
+    final vendorProfile = AuthFeatureFlags.newUiEnabled
+        ? ref.watch(vendorProfileProvider)
+        : null;
     return orders.when(
-      loading: () => const LoadingState(message: 'Loading your orders...'),
+      loading: () => AuthFeatureFlags.newUiEnabled
+          ? const ListLoadingState()
+          : const LoadingState(message: 'Loading your orders...'),
       error: (error, _) => VendorError(
         message: friendlyError(error),
         retry: () => ref.invalidate(vendorOrdersProvider),
@@ -68,6 +79,22 @@ class _VendorOperationsScreenState
         // Fixed summary, search and filter controls above the order cards, and
         // the saved update records below them. Only the order cards are lazy.
         final header = <Widget>[
+          if (vendorProfile != null)
+            vendorProfile.when(
+              data: (profile) => VendorStatusNotice(
+                profile: profile,
+                onViewStatus: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => VendorStatusScreen(profile: profile),
+                  ),
+                ),
+              ),
+              loading: () => const SizedBox.shrink(),
+              error: (error, _) => ErrorState(
+                error: error,
+                onRetry: () => ref.invalidate(vendorProfileProvider),
+              ),
+            ),
           Row(
             children: [
               Expanded(
@@ -139,8 +166,9 @@ class _VendorOperationsScreenState
         ];
         final footer = <Widget>[const SavedUpdatesCard()];
         // An empty-state message takes the place of the order cards.
-        final rowCount =
-            items.isEmpty || filtered.isEmpty ? 1 : filtered.length;
+        final rowCount = items.isEmpty || filtered.isEmpty
+            ? 1
+            : filtered.length;
         return RefreshIndicator(
           onRefresh: () async {
             ref

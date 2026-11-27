@@ -5,6 +5,8 @@ import '../../../core/design_system/design_system.dart';
 import '../../../models/vendor.dart';
 import '../vendor_shared.dart';
 import 'order_actions_sheet.dart';
+import 'order_accepted_screen.dart';
+import 'vendor_order_detail_screen.dart';
 
 /// Order in the vendor queue. Tapping the card opens the actions sheet. The
 /// details button expands the card in place to show the service lines.
@@ -26,10 +28,27 @@ class _VendorOrderCardState extends State<VendorOrderCard> {
     final theme = Theme.of(context);
     return SurfaceCard(
       padding: EdgeInsets.zero,
-      onTap: () => showAppBottomSheet<void>(
-        context,
-        builder: (_) => OrderActionsSheet(order: order),
-      ),
+      onTap: () async {
+        final result = AuthFeatureFlags.newUiEnabled
+            ? await Navigator.of(context).push<String>(
+                MaterialPageRoute<String>(
+                  builder: (_) => VendorOrderDetailScreen(order: order),
+                ),
+              )
+            : await showAppBottomSheet<String>(
+                context,
+                builder: (_) => OrderActionsSheet(order: order),
+              );
+        if (AuthFeatureFlags.newUiEnabled &&
+            result == 'accepted' &&
+            context.mounted) {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => VendorOrderAcceptedScreen(order: order),
+            ),
+          );
+        }
+      },
       child: Padding(
         padding: AppPageInsets.card,
         child: Column(
@@ -91,8 +110,9 @@ class _VendorOrderCardState extends State<VendorOrderCard> {
               duration: AppMotion.duration(context, AppMotion.base),
               curve: AppMotion.curve,
               alignment: Alignment.topCenter,
-              child:
-                  _expanded ? _Details(order: order) : const SizedBox.shrink(),
+              child: _expanded
+                  ? _Details(order: order)
+                  : const SizedBox.shrink(),
             ),
           ],
         ),

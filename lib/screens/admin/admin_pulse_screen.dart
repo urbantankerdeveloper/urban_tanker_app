@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/auth_feature_flags.dart';
 import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../services/friendly_error.dart';
@@ -14,7 +15,9 @@ class AdminPulseScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final healthState = ref.watch(adminHealthProvider);
     return healthState.when(
-      loading: () => const LoadingState(message: 'Checking the platform...'),
+      loading: () => AuthFeatureFlags.newUiEnabled
+          ? const HomeLoadingState()
+          : const LoadingState(message: 'Checking the platform...'),
       error: (error, _) => ErrorState(
         error: error,
         message: friendlyError(error),
@@ -25,8 +28,8 @@ class AdminPulseScreen extends ConsumerWidget {
         final realtimeConfigured =
             (health['realtime'] as Map?)?['configured'] == true;
         final storage = (health['storage'] as Map?)?['configured'] == true;
-        final configWarnings = (health['configuration'] as Map?)
-                ?.values
+        final configWarnings =
+            (health['configuration'] as Map?)?.values
                 .where((value) => value != true)
                 .length ??
             0;
@@ -77,10 +80,7 @@ class AdminPulseScreen extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: AppSpace.xl),
-              Text(
-                'MIGRATION CHECKS',
-                style: theme.textTheme.labelSmall,
-              ),
+              Text('MIGRATION CHECKS', style: theme.textTheme.labelSmall),
               const SizedBox(height: AppSpace.md),
               if (migrations.isEmpty)
                 const EmptyState(

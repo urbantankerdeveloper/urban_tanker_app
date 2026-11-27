@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../app/auth_feature_flags.dart';
 import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/account.dart';
 import '../../models/dispatcher.dart';
 import '../../services/record_details.dart';
+import 'dispatch_assignment_screen.dart';
 
 /// Actions for one dispatch order, in a sheet.
 Future<void> showDispatchActions(
@@ -13,12 +16,34 @@ Future<void> showDispatchActions(
   WidgetRef ref,
   Map<String, dynamic> order,
 ) async {
+  final dispatchOrder = DispatcherOrder.fromJson(order);
+  final isDelayed =
+      AuthFeatureFlags.newUiEnabled &&
+      dispatchOrder.scheduledFor?.isBefore(DateTime.now()) == true &&
+      !const {
+        'delivered',
+        'cancelled',
+        'canceled',
+        'rejected',
+      }.contains(dispatchOrder.status.toLowerCase());
   final action = await showAppBottomSheet<String>(
     context,
     builder: (sheetContext) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (isDelayed)
+            AppListRow(
+              leading: const Icon(Icons.call_outlined),
+              title: 'Call driver',
+              onTap: () => Navigator.pop(sheetContext, 'call_driver'),
+            ),
+          if (isDelayed)
+            AppListRow(
+              leading: const Icon(Icons.notifications_active_outlined),
+              title: 'Notify customer',
+              onTap: () => Navigator.pop(sheetContext, 'notify_customer'),
+            ),
           AppListRow(
             leading: const Icon(Icons.receipt_long_outlined),
             title: 'View order details',
@@ -48,11 +73,92 @@ Future<void> showDispatchActions(
     case 'details':
       showOrderDetails(context, order);
     case 'assign':
-      await assignOrder(context, ref, order);
+      if (AuthFeatureFlags.newUiEnabled) {
+        openDispatchAssignment(context, order);
+      } else {
+        await assignOrder(context, ref, order);
+      }
     case 'status':
       await updateOrderStatus(context, ref, order);
     case 'cancel':
       await cancelOrder(context, ref, order);
+    case 'call_driver':
+      await callAssignedDriver(context, ref, order);
+    case 'notify_customer':
+      await notifyDelayedCustomer(context, ref, order);
+  }
+}
+
+Future<void> callAssignedDriver(
+  BuildContext context,
+  WidgetRef ref,
+  Map<String, dynamic> order,
+) async {
+  try {
+    final contact = await ref
+        .read(appControllerProvider)
+        .api
+        .dispatcherDriverContact(order['id'].toString());
+    final phone = contact['phone']?.toString().trim() ?? '';
+    if (phone.isEmpty) {
+      throw const FormatException('The assigned driver has no phone number.');
+    }
+    final launched = await launchUrl(
+      Uri(scheme: 'tel', path: phone),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!launched) {
+      throw StateError('The phone dialer could not be opened.');
+    }
+  } catch (error) {
+    if (context.mounted) {
+      showAppSnack(
+        context,
+        'Could not open the driver contact: $error',
+        variant: AppSnackVariant.error,
+      );
+    }
+  }
+}
+
+Future<void> notifyDelayedCustomer(
+  BuildContext context,
+  WidgetRef ref,
+  Map<String, dynamic> order,
+) async {
+  const message =
+      'Your delivery is taking longer than expected. We are working to get an updated arrival time.';
+  final confirmed = await showAppConfirmDialog(
+    context,
+    title: 'Notify customer?',
+    message: message,
+    confirmLabel: 'Send update',
+  );
+  if (!confirmed || !context.mounted) return;
+  try {
+    final notified = await ref
+        .read(appControllerProvider)
+        .api
+        .dispatcherNotifyCustomer(
+          orderId: order['id'].toString(),
+          message: message,
+        );
+    if (!context.mounted) return;
+    showAppSnack(
+      context,
+      notified
+          ? 'Customer was notified.'
+          : 'Customer notifications are disabled; no update was sent.',
+      variant: notified ? AppSnackVariant.success : AppSnackVariant.error,
+    );
+  } catch (error) {
+    if (context.mounted) {
+      showAppSnack(
+        context,
+        'Could not notify the customer: $error',
+        variant: AppSnackVariant.error,
+      );
+    }
   }
 }
 
@@ -94,9 +200,11 @@ Future<void> assignOrder(
 ) async {
   final vendors = await ref.read(dispatcherVendorsProvider.future);
   final eligible = vendors
-      .where((vendor) =>
-          vendor.status == 'approved' ||
-          vendor.data['verification'] == 'approved')
+      .where(
+        (vendor) =>
+            vendor.status == 'approved' ||
+            vendor.data['verification'] == 'approved',
+      )
       .toList();
   if (!context.mounted) return;
   if (eligible.isEmpty) {
@@ -110,10 +218,10 @@ Future<void> assignOrder(
   final vendorId = await pickVendor(context, eligible);
   if (vendorId == null || !context.mounted) return;
   try {
-    await ref.read(appControllerProvider).api.dispatcherAssignOrder(
-          order['id'].toString(),
-          vendorId: vendorId,
-        );
+    await ref
+        .read(appControllerProvider)
+        .api
+        .dispatcherAssignOrder(order['id'].toString(), vendorId: vendorId);
     ref.invalidate(dispatcherOrdersProvider);
     if (context.mounted) {
       showAppSnack(
@@ -157,8 +265,12 @@ class _VendorPickerSheetState extends State<_VendorPickerSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding:
-          const EdgeInsets.fromLTRB(AppSpace.xl, 0, AppSpace.xl, AppSpace.xl),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.xl,
+        0,
+        AppSpace.xl,
+        AppSpace.xl,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -239,10 +351,10 @@ Future<void> updateOrderStatus(
   );
   if (value == null || !context.mounted) return;
   try {
-    await ref.read(appControllerProvider).api.dispatcherUpdateStatus(
-          order['id'].toString(),
-          value,
-        );
+    await ref
+        .read(appControllerProvider)
+        .api
+        .dispatcherUpdateStatus(order['id'].toString(), value);
     ref.invalidate(dispatcherOrdersProvider);
     if (context.mounted) {
       showAppSnack(
@@ -275,10 +387,10 @@ Future<void> cancelOrder(
   );
   if (reason == null || reason.isEmpty || !context.mounted) return;
   try {
-    await ref.read(appControllerProvider).api.dispatcherCancelOrder(
-          order['id'].toString(),
-          reason,
-        );
+    await ref
+        .read(appControllerProvider)
+        .api
+        .dispatcherCancelOrder(order['id'].toString(), reason);
     ref.invalidate(dispatcherOrdersProvider);
     if (context.mounted) {
       showAppSnack(
@@ -319,8 +431,12 @@ class _CancelSheetState extends State<_CancelSheet> {
     final colors = context.colors;
     final theme = Theme.of(context);
     return Padding(
-      padding:
-          const EdgeInsets.fromLTRB(AppSpace.xl, 0, AppSpace.xl, AppSpace.xl),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.xl,
+        0,
+        AppSpace.xl,
+        AppSpace.xl,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

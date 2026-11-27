@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/auth_feature_flags.dart';
 import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/account.dart';
 import '../../../services/friendly_error.dart';
+import '../admin_partner_review_screen.dart';
 import 'admin_common.dart';
 
 const _financeTabs = ['Coupons', 'Payouts', 'Partners'];
@@ -129,19 +131,33 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
                     padding: const EdgeInsets.only(bottom: AppSpace.md),
                     child: AdminRecordRow(
                       record: record,
+                      onTap: _tab == 2 && AuthFeatureFlags.newUiEnabled
+                          ? () => _openPartnerReview(record)
+                          : null,
                       trailing: _tab == 2
                           ? Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
                                   tooltip: 'View application history',
-                                  onPressed: () => _showPartnerHistory(record),
+                                  onPressed: () {
+                                    if (AuthFeatureFlags.newUiEnabled) {
+                                      _openPartnerReview(record, initialTab: 2);
+                                    } else {
+                                      _showPartnerHistory(record);
+                                    }
+                                  },
                                   icon: const Icon(Icons.history),
                                 ),
                                 IconButton(
                                   tooltip: 'Review partner application',
-                                  onPressed: () =>
-                                      _reviewPartnerApplication(record),
+                                  onPressed: () {
+                                    if (AuthFeatureFlags.newUiEnabled) {
+                                      _openPartnerReview(record);
+                                    } else {
+                                      _reviewPartnerApplication(record);
+                                    }
+                                  },
                                   icon: const Icon(Icons.fact_check_outlined),
                                 ),
                               ],
@@ -156,8 +172,9 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
       ],
     );
     return SwipeNavigationArea(
-      onSwipeLeft:
-          _tab < _financeTabs.length - 1 ? () => _selectTab(_tab + 1) : null,
+      onSwipeLeft: _tab < _financeTabs.length - 1
+          ? () => _selectTab(_tab + 1)
+          : null,
       onSwipeRight: _tab > 0 ? () => _selectTab(_tab - 1) : null,
       child: content,
     );
@@ -168,6 +185,21 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
     if (query.isEmpty) return true;
     return record.title.toLowerCase().contains(query) ||
         record.detail.toLowerCase().contains(query);
+  }
+
+  Future<void> _openPartnerReview(
+    AccountRecord record, {
+    int initialTab = 0,
+  }) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminPartnerReviewScreen(
+          application: record,
+          initialTab: initialTab,
+        ),
+      ),
+    );
+    if (mounted) setState(_reload);
   }
 
   Future<void> _showPartnerHistory(AccountRecord record) async {
@@ -186,11 +218,13 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const LoadingState(
-                    message: 'Loading application history...');
+                  message: 'Loading application history...',
+                );
               }
               if (snapshot.hasError) {
                 return Text(
-                    'Application history unavailable: ${friendlyError(snapshot.error!)}');
+                  'Application history unavailable: ${friendlyError(snapshot.error!)}',
+                );
               }
               final entries = snapshot.data ?? const <AccountRecord>[];
               if (entries.isEmpty) {
@@ -236,13 +270,14 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
     final note = TextEditingController(
       text: (record.data['review_note'] ?? '').toString(),
     );
-    var status = const {
-      'submitted',
-      'under_review',
-      'additional_info_required',
-      'approved',
-      'rejected',
-    }.contains(record.status)
+    var status =
+        const {
+          'submitted',
+          'under_review',
+          'additional_info_required',
+          'approved',
+          'rejected',
+        }.contains(record.status)
         ? record.status
         : 'submitted';
     await showModalBottomSheet<void>(
@@ -267,13 +302,18 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
               const SizedBox(height: AppSpace.md),
               DropdownButtonFormField<String>(
                 initialValue: status,
-                decoration:
-                    const InputDecoration(labelText: 'Application status'),
+                decoration: const InputDecoration(
+                  labelText: 'Application status',
+                ),
                 items: const [
                   DropdownMenuItem(
-                      value: 'submitted', child: Text('Submitted')),
+                    value: 'submitted',
+                    child: Text('Submitted'),
+                  ),
                   DropdownMenuItem(
-                      value: 'under_review', child: Text('Under review')),
+                    value: 'under_review',
+                    child: Text('Under review'),
+                  ),
                   DropdownMenuItem(
                     value: 'additional_info_required',
                     child: Text('Additional information required'),

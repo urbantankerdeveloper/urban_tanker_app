@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/auth_feature_flags.dart';
 import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/vendor.dart';
 import '../../services/friendly_error.dart';
+import 'vendor_sales_report.dart';
 import 'vendor_shared.dart';
 
 /// Period filters for the payout list. Null means no date limit.
@@ -50,12 +52,16 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
                     payout,
               ];
         final paidPaise = items
-            .where((item) =>
-                ['paid', 'completed'].contains(item.status.toLowerCase()))
+            .where(
+              (item) =>
+                  ['paid', 'completed'].contains(item.status.toLowerCase()),
+            )
             .fold<int>(0, (total, item) => total + item.amountPaise);
         final pendingPaise = items
-            .where((item) =>
-                ['pending', 'processing'].contains(item.status.toLowerCase()))
+            .where(
+              (item) =>
+                  ['pending', 'processing'].contains(item.status.toLowerCase()),
+            )
             .fold<int>(0, (total, item) => total + item.amountPaise);
         final trend = _trend(items);
         final colors = context.colors;
@@ -63,6 +69,10 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
 
         // Fixed summary above the payout rows; only the rows are built lazily.
         final header = <Widget>[
+          if (AuthFeatureFlags.newUiEnabled) ...[
+            const VendorSalesReportCard(),
+            const SizedBox(height: AppSpace.lg),
+          ],
           GradientCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,8 +154,9 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
       onSwipeLeft: _periodIndex < _periods.length - 1
           ? () => setState(() => _periodIndex++)
           : null,
-      onSwipeRight:
-          _periodIndex > 0 ? () => setState(() => _periodIndex--) : null,
+      onSwipeRight: _periodIndex > 0
+          ? () => setState(() => _periodIndex--)
+          : null,
       child: content,
     );
   }
@@ -169,7 +180,10 @@ class _VendorEarningsScreenState extends ConsumerState<VendorEarningsScreen> {
     if (request == null || !context.mounted) return;
     VendorEarningsScreen._payoutInFlight = true;
     try {
-      await ref.read(appControllerProvider).api.requestVendorPayout(
+      await ref
+          .read(appControllerProvider)
+          .api
+          .requestVendorPayout(
             amount: request.amount,
             periodStart: request.period?.start,
             periodEnd: request.period?.end,
@@ -288,8 +302,9 @@ class _PayoutRequestSheetState extends State<_PayoutRequestSheet> {
               controller: _amount,
               label: 'Amount in rupees',
               prefixText: '₹ ',
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               validator: (value) {
                 final amount = double.tryParse(value ?? '');
                 return amount == null || amount <= 0
@@ -302,7 +317,7 @@ class _PayoutRequestSheetState extends State<_PayoutRequestSheet> {
               label: _period == null
                   ? 'Add earning period (optional)'
                   : '${formatDate(_period!.start)} – '
-                      '${formatDate(_period!.end)}',
+                        '${formatDate(_period!.end)}',
               icon: Icons.date_range_outlined,
               onPressed: () async {
                 final selected = await showDateRangePicker(
@@ -325,10 +340,7 @@ class _PayoutRequestSheetState extends State<_PayoutRequestSheet> {
                 ),
                 const SizedBox(width: AppSpace.md),
                 Expanded(
-                  child: PrimaryButton(
-                    label: 'Submit',
-                    onPressed: _submit,
-                  ),
+                  child: PrimaryButton(label: 'Submit', onPressed: _submit),
                 ),
               ],
             ),

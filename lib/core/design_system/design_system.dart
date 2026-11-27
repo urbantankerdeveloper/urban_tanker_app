@@ -4,6 +4,7 @@ library;
 
 export 'app_colors.dart';
 export 'motion.dart';
+export 'new_ui_theme.dart';
 export 'palette.dart';
 export 'theme.dart';
 export 'tokens.dart';

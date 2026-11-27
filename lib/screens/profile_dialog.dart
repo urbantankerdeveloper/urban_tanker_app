@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../app/auth_feature_flags.dart';
 import '../core/design_system/design_system.dart';
 import '../models/account.dart';
 import '../services/api_client.dart';
@@ -20,21 +21,27 @@ Future<void> showUserProfileDialog({
   required Future<String?> profilePhotoUrl,
   String? initialProfilePhotoUrl,
   required Future<void> Function(CustomerProfile profile) onSaved,
-}) =>
-    showDialog<void>(
-      context: context,
-      builder: (_) => _ProfileDialog(
-        api: api,
-        name: name,
-        role: role,
-        username: username,
-        email: email ?? '',
-        phone: phone ?? '',
-        profilePhotoUrl: profilePhotoUrl,
-        initialProfilePhotoUrl: initialProfilePhotoUrl,
-        onSaved: onSaved,
-      ),
-    );
+}) async {
+  final profile = _ProfileDialog(
+    api: api,
+    name: name,
+    role: role,
+    username: username,
+    email: email ?? '',
+    phone: phone ?? '',
+    profilePhotoUrl: profilePhotoUrl,
+    initialProfilePhotoUrl: initialProfilePhotoUrl,
+    onSaved: onSaved,
+    fullScreen: AuthFeatureFlags.newUiEnabled,
+  );
+  if (AuthFeatureFlags.newUiEnabled) {
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute<void>(builder: (_) => profile));
+    return;
+  }
+  await showDialog<void>(context: context, builder: (_) => profile);
+}
 
 class _ProfileDialog extends StatefulWidget {
   const _ProfileDialog({
@@ -46,6 +53,7 @@ class _ProfileDialog extends StatefulWidget {
     required this.profilePhotoUrl,
     required this.initialProfilePhotoUrl,
     required this.onSaved,
+    required this.fullScreen,
     this.username,
   });
 
@@ -58,6 +66,7 @@ class _ProfileDialog extends StatefulWidget {
   final Future<String?> profilePhotoUrl;
   final String? initialProfilePhotoUrl;
   final Future<void> Function(CustomerProfile profile) onSaved;
+  final bool fullScreen;
 
   @override
   State<_ProfileDialog> createState() => _ProfileDialogState();
@@ -65,15 +74,18 @@ class _ProfileDialog extends StatefulWidget {
 
 class _ProfileDialogState extends State<_ProfileDialog> {
   late Future<String?> _profilePhotoUrl;
-  late final TextEditingController _name =
-      TextEditingController(text: widget.name);
-  late final TextEditingController _email =
-      TextEditingController(text: widget.email);
+  late final TextEditingController _name = TextEditingController(
+    text: widget.name,
+  );
+  late final TextEditingController _email = TextEditingController(
+    text: widget.email,
+  );
   late final TextEditingController _phone = TextEditingController(
     text: widget.phone.replaceAll(RegExp(r'\D'), '').sliceLast10,
   );
-  late final TextEditingController _username =
-      TextEditingController(text: widget.username ?? '');
+  late final TextEditingController _username = TextEditingController(
+    text: widget.username ?? '',
+  );
   final TextEditingController _otp = TextEditingController();
   String? _emailChallengeId;
   String? _phoneChallengeId;
@@ -144,14 +156,17 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     });
     try {
       if (kind == _CodeKind.email) {
-        _emailChallengeId =
-            await widget.api.requestEmailLinkCode(_email.text.trim());
+        _emailChallengeId = await widget.api.requestEmailLinkCode(
+          _email.text.trim(),
+        );
       } else {
-        final challenge =
-            await widget.api.requestBookingOtp(phone: _normalizedPhone);
+        final challenge = await widget.api.requestBookingOtp(
+          phone: _normalizedPhone,
+        );
         if (challenge.challengeId == null || challenge.channel == null) {
           throw const FormatException(
-              'A code could not be sent to this number.');
+            'A code could not be sent to this number.',
+          );
         }
         _phoneChallengeId = challenge.challengeId;
         _phoneChannel = challenge.channel;
@@ -276,194 +291,220 @@ class _ProfileDialogState extends State<_ProfileDialog> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final content = SingleChildScrollView(
+      padding: AppPageInsets.withSafeAreaBottom(
+        context,
+        AppPageInsets.standard,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!widget.fullScreen)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'My profile',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+          if (widget.fullScreen) ...[
+            const SizedBox(height: AppSpace.md),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                _editing
+                    ? 'Update your contact details and profile photo.'
+                    : 'Your account details and contact preferences.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            const SizedBox(height: AppSpace.lg),
+          ],
+          SurfaceCard(
+            child: Column(
+              children: [
+                FutureBuilder<String?>(
+                  future: _profilePhotoUrl,
+                  builder: (context, snapshot) => Column(
+                    children: [
+                      if (_photoBytes != null)
+                        ClipOval(
+                          child: Image.memory(
+                            _photoBytes!,
+                            width: 88,
+                            height: 88,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      else
+                        AppAvatar(
+                          name: _name.text,
+                          imageUrl:
+                              snapshot.data ?? widget.initialProfilePhotoUrl,
+                          size: 88,
+                        ),
+                      if (snapshot.hasError)
+                        const Padding(
+                          padding: EdgeInsets.only(top: AppSpace.sm),
+                          child: Text('Profile photo could not be loaded.'),
+                        ),
+                    ],
+                  ),
+                ),
+                if (_editing)
+                  TextButton.icon(
+                    onPressed: _busy ? null : _pickPhoto,
+                    icon: const Icon(Icons.add_a_photo_outlined),
+                    label: const Text('Change profile picture'),
+                  ),
+                Text(
+                  widget.role[0].toUpperCase() + widget.role.substring(1),
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+                const SizedBox(height: AppSpace.md),
+                _field('Full name', _name, enabled: _editing && !_busy),
+                const SizedBox(height: AppSpace.sm),
+                _field(
+                  'Email',
+                  _email,
+                  enabled: _editing && !_busy,
+                  keyboardType: TextInputType.emailAddress,
+                  suffix: _editing && _emailChanged
+                      ? _verifyButton(
+                          _emailVerified,
+                          () => _sendCode(_CodeKind.email),
+                        )
+                      : null,
+                  onChanged: (_) => setState(() {
+                    _emailVerified = false;
+                    _emailChallengeId = null;
+                  }),
+                ),
+                const SizedBox(height: AppSpace.sm),
+                _field(
+                  'Mobile number',
+                  _phone,
+                  enabled: _editing && !_busy,
+                  keyboardType: TextInputType.phone,
+                  prefix: const Padding(
+                    padding: EdgeInsets.only(right: AppSpace.sm),
+                    child: Text('+91'),
+                  ),
+                  suffix: _editing && _phoneChanged
+                      ? _verifyButton(
+                          _phoneVerified,
+                          () => _sendCode(_CodeKind.phone),
+                        )
+                      : null,
+                  onChanged: (_) => setState(() {
+                    _phoneVerified = false;
+                    _phoneChallengeId = null;
+                  }),
+                ),
+                if (widget.username?.isNotEmpty == true) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  _field('Username', _username, enabled: false),
+                ],
+                if (_editing && _codeKind != null) ...[
+                  const SizedBox(height: AppSpace.md),
+                  Text(
+                    _codeKind == _CodeKind.email
+                        ? 'Enter the code sent to ${_email.text}.'
+                        : 'Code sent via ${_phoneChannel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS'} to +91 $_normalizedPhone.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: AppSpace.sm),
+                  TextField(
+                    controller: _otp,
+                    enabled: !_busy,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: '6-digit code',
+                      counterText: '',
+                    ),
+                  ),
+                  PrimaryButton(
+                    label: 'Verify code',
+                    loading: _busy,
+                    onPressed: _busy ? null : _verifyCode,
+                  ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  Text(_error!, style: TextStyle(color: colors.danger.fg)),
+                ],
+                if (_notice != null) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  Text(_notice!, style: TextStyle(color: colors.success.fg)),
+                ],
+                if (_photoError != null) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  Text(_photoError!, style: TextStyle(color: colors.danger.fg)),
+                ],
+                const SizedBox(height: AppSpace.lg),
+                if (_editing)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: _busy ? null : _cancelEdit,
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: AppSpace.sm),
+                      PrimaryButton(
+                        label: 'Save profile',
+                        loading: _busy,
+                        onPressed: _busy ? null : _save,
+                      ),
+                    ],
+                  )
+                else
+                  PrimaryButton(
+                    label: 'Edit profile',
+                    onPressed: () => setState(() {
+                      _editing = true;
+                      _notice = null;
+                    }),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (widget.fullScreen) {
+      return AppScaffold(
+        title: _editing ? 'Edit profile' : 'My profile',
+        body: content,
+      );
+    }
     return Dialog(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420, maxHeight: 680),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpace.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'My profile',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Close',
-                    onPressed: _busy ? null : () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              FutureBuilder<String?>(
-                future: _profilePhotoUrl,
-                builder: (context, snapshot) => Column(
-                  children: [
-                    if (_photoBytes != null)
-                      ClipOval(
-                        child: Image.memory(
-                          _photoBytes!,
-                          width: 88,
-                          height: 88,
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                    else
-                      AppAvatar(
-                        name: _name.text,
-                        imageUrl:
-                            snapshot.data ?? widget.initialProfilePhotoUrl,
-                        size: 88,
-                      ),
-                    if (snapshot.hasError)
-                      const Padding(
-                        padding: EdgeInsets.only(top: AppSpace.sm),
-                        child: Text('Profile photo could not be loaded.'),
-                      ),
-                  ],
-                ),
-              ),
-              if (_editing)
-                TextButton.icon(
-                  onPressed: _busy ? null : _pickPhoto,
-                  icon: const Icon(Icons.add_a_photo_outlined),
-                  label: const Text('Change profile picture'),
-                ),
-              Text(
-                widget.role[0].toUpperCase() + widget.role.substring(1),
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
-              const SizedBox(height: AppSpace.md),
-              _field('Full name', _name, enabled: _editing && !_busy),
-              const SizedBox(height: AppSpace.sm),
-              _field(
-                'Email',
-                _email,
-                enabled: _editing && !_busy,
-                keyboardType: TextInputType.emailAddress,
-                suffix: _editing && _emailChanged
-                    ? _verifyButton(
-                        _emailVerified,
-                        () => _sendCode(_CodeKind.email),
-                      )
-                    : null,
-                onChanged: (_) => setState(() {
-                  _emailVerified = false;
-                  _emailChallengeId = null;
-                }),
-              ),
-              const SizedBox(height: AppSpace.sm),
-              _field(
-                'Mobile number',
-                _phone,
-                enabled: _editing && !_busy,
-                keyboardType: TextInputType.phone,
-                prefix: const Padding(
-                  padding: EdgeInsets.only(right: AppSpace.sm),
-                  child: Text('+91'),
-                ),
-                suffix: _editing && _phoneChanged
-                    ? _verifyButton(
-                        _phoneVerified,
-                        () => _sendCode(_CodeKind.phone),
-                      )
-                    : null,
-                onChanged: (_) => setState(() {
-                  _phoneVerified = false;
-                  _phoneChallengeId = null;
-                }),
-              ),
-              if (widget.username?.isNotEmpty == true) ...[
-                const SizedBox(height: AppSpace.sm),
-                _field(
-                  'Username',
-                  _username,
-                  enabled: false,
-                ),
-              ],
-              if (_editing && _codeKind != null) ...[
-                const SizedBox(height: AppSpace.md),
-                Text(
-                  _codeKind == _CodeKind.email
-                      ? 'Enter the code sent to ${_email.text}.'
-                      : 'Code sent via ${_phoneChannel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS'} to +91 $_normalizedPhone.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: AppSpace.sm),
-                TextField(
-                  controller: _otp,
-                  enabled: !_busy,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(6),
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: '6-digit code',
-                    counterText: '',
-                  ),
-                ),
-                PrimaryButton(
-                  label: 'Verify code',
-                  loading: _busy,
-                  onPressed: _busy ? null : _verifyCode,
-                ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: AppSpace.sm),
-                Text(_error!, style: TextStyle(color: colors.danger.fg)),
-              ],
-              if (_notice != null) ...[
-                const SizedBox(height: AppSpace.sm),
-                Text(_notice!, style: TextStyle(color: colors.success.fg)),
-              ],
-              if (_photoError != null) ...[
-                const SizedBox(height: AppSpace.sm),
-                Text(_photoError!, style: TextStyle(color: colors.danger.fg)),
-              ],
-              const SizedBox(height: AppSpace.lg),
-              if (_editing)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: _busy ? null : _cancelEdit,
-                      child: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: AppSpace.sm),
-                    PrimaryButton(
-                      label: 'Save profile',
-                      loading: _busy,
-                      onPressed: _busy ? null : _save,
-                    ),
-                  ],
-                )
-              else
-                PrimaryButton(
-                  label: 'Edit profile',
-                  onPressed: () => setState(() {
-                    _editing = true;
-                    _notice = null;
-                  }),
-                ),
-            ],
-          ),
-        ),
+        child: content,
       ),
     );
   }
 
   Widget _verifyButton(bool verified, VoidCallback onPressed) => TextButton(
-        onPressed: _busy || verified ? null : onPressed,
-        child: verified
-            ? Icon(Icons.check_circle, color: context.colors.success.fg)
-            : const Text('Send code'),
-      );
+    onPressed: _busy || verified ? null : onPressed,
+    child: verified
+        ? Icon(Icons.check_circle, color: context.colors.success.fg)
+        : const Text('Send code'),
+  );
 
   Widget _field(
     String label,
@@ -473,18 +514,17 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     Widget? prefix,
     Widget? suffix,
     ValueChanged<String>? onChanged,
-  }) =>
-      TextField(
-        controller: controller,
-        enabled: enabled,
-        keyboardType: keyboardType,
-        onChanged: onChanged,
-        decoration: InputDecoration(
-          labelText: label,
-          prefix: prefix,
-          suffixIcon: suffix,
-        ),
-      );
+  }) => TextField(
+    controller: controller,
+    enabled: enabled,
+    keyboardType: keyboardType,
+    onChanged: onChanged,
+    decoration: InputDecoration(
+      labelText: label,
+      prefix: prefix,
+      suffixIcon: suffix,
+    ),
+  );
 }
 
 extension on String {
