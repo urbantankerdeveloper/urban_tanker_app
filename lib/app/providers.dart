@@ -257,6 +257,11 @@ final adminHealthProvider =
   return ref.watch(apiProvider).adminHealth();
 });
 
+final adminApprovalRequiredProvider = FutureProvider.autoDispose<bool>((ref) {
+  ref.watch(sessionUserIdProvider);
+  return ref.watch(apiProvider).adminApprovalRequiredEnabled();
+});
+
 final dispatcherOrdersProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, DispatcherOrderFilter>((ref, filter) {
   ref.watch(sessionUserIdProvider);

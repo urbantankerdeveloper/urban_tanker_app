@@ -7,6 +7,7 @@ import 'package:urban_tanker_app/app/providers.dart';
 import 'package:urban_tanker_app/core/design_system/design_system.dart';
 import 'package:urban_tanker_app/models/account.dart';
 import 'package:urban_tanker_app/models/vendor.dart';
+import 'package:urban_tanker_app/screens/admin/admin_access_requests_screen.dart';
 import 'package:urban_tanker_app/screens/admin/admin_pulse_screen.dart';
 import 'package:urban_tanker_app/screens/admin/admin_reports_screen.dart';
 import 'package:urban_tanker_app/screens/admin/operations/admin_common.dart';
@@ -14,6 +15,95 @@ import 'package:urban_tanker_app/screens/admin/operations/people_section.dart';
 import 'package:urban_tanker_app/services/api_client.dart';
 
 class _ApprovalApiClient extends ApiClient {
+  final reviewedRequests = <(String, String)>[];
+  final adminActiveChanges = <(String, bool)>[];
+  final users = <Map<String, dynamic>>[
+    {
+      'id': 'request-1',
+      'kind': 'request',
+      'name': 'Jordan Smith',
+      'email': 'jordan@example.com',
+      'phone_e164': '+919876543210',
+      'reason': 'Manage regional operations.',
+      'status': 'pending',
+      'is_active': null,
+      'requested_at': '2026-02-01T10:00:00.000Z',
+    },
+    {
+      'id': 'request-2',
+      'kind': 'request',
+      'name': 'Riley Patel',
+      'email': 'riley@example.com',
+      'phone_e164': '+919876543211',
+      'reason': 'Coordinate fleet administration.',
+      'status': 'pending',
+      'is_active': null,
+      'requested_at': '2026-02-02T10:00:00.000Z',
+    },
+    {
+      'id': 'admin-1',
+      'kind': 'admin',
+      'name': 'Asha Kumar',
+      'email': 'asha@example.com',
+      'phone_e164': '+919876543212',
+      'status': 'approved',
+      'is_active': true,
+      'requested_at': '2026-01-01T10:00:00.000Z',
+    },
+    {
+      'id': 'request-3',
+      'kind': 'request',
+      'name': 'Rejected Admin',
+      'email': 'rejected@example.com',
+      'phone_e164': '+919876543213',
+      'reason': 'Previously reviewed.',
+      'status': 'rejected',
+      'is_active': null,
+      'requested_at': '2026-01-03T10:00:00.000Z',
+    },
+  ];
+
+  @override
+  Future<bool> adminApprovalRequiredEnabled() async => true;
+
+  @override
+  Future<List<Map<String, dynamic>>> adminUsers() async =>
+      users.map(Map<String, dynamic>.from).toList();
+
+  @override
+  Future<void> reviewAdminAccessRequest(
+    String id, {
+    required String decision,
+  }) async {
+    reviewedRequests.add((id, decision));
+    if (decision == 'approved') {
+      users.removeWhere((item) => item['id'] == id);
+      users.add({
+        'id': 'new-admin-$id',
+        'kind': 'admin',
+        'name': id == 'request-1' ? 'Jordan Smith' : 'Riley Patel',
+        'email': id == 'request-1' ? 'jordan@example.com' : 'riley@example.com',
+        'phone_e164': '+919876543210',
+        'status': 'approved',
+        'is_active': true,
+        'requested_at': '2026-02-01T10:00:00.000Z',
+      });
+    } else {
+      final index = users.indexWhere((item) => item['id'] == id);
+      users[index] = {...users[index], 'status': 'rejected'};
+    }
+  }
+
+  @override
+  Future<void> setAdminUserActive(
+    String id, {
+    required bool isActive,
+  }) async {
+    adminActiveChanges.add((id, isActive));
+    final index = users.indexWhere((item) => item['id'] == id);
+    users[index] = {...users[index], 'is_active': isActive};
+  }
+
   @override
   Future<List<AccountRecord>> adminVendors() async => [
         const AccountRecord({
@@ -264,6 +354,75 @@ void main() {
     await tester.tap(find.text('Approved Driver'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Licence number: DL-1234567'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('admin users can review requests and toggle approved accounts',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await tester.runAsync(SharedPreferences.getInstance);
+    final api = _ApprovalApiClient();
+    final controller = AppController(api: api, preferences: preferences!);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          adminApprovalRequiredProvider.overrideWith((ref) async => true),
+        ],
+        child: MaterialApp(
+          theme: buildLightTheme(),
+          home: AdminUsersScreen(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Admin Users'), findsOneWidget);
+    expect(find.text('Jordan Smith'), findsOneWidget);
+    expect(find.text('jordan@example.com'), findsOneWidget);
+    expect(find.text('+919876543210'), findsOneWidget);
+    expect(find.text('Manage regional operations.'), findsOneWidget);
+    expect(find.text('Asha Kumar'), findsOneWidget);
+    expect(find.text('Rejected Admin'), findsOneWidget);
+    expect(find.textContaining('Requested '), findsNWidgets(4));
+
+    await tester.tap(find.text('Approve').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Approve admin access?'), findsOneWidget);
+    await tester.tap(find.text('Approve').last);
+    await tester.pumpAndSettle();
+
+    expect(api.reviewedRequests, [('request-1', 'approved')]);
+    expect(find.text('Jordan Smith'), findsOneWidget);
+    expect(find.text('Riley Patel'), findsOneWidget);
+
+    await tester.tap(find.text('Reject').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Reject admin request?'), findsOneWidget);
+    await tester.tap(find.text('Reject').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(api.reviewedRequests, [
+      ('request-1', 'approved'),
+      ('request-2', 'rejected'),
+    ]);
+    expect(find.text('Riley Patel'), findsOneWidget);
+    expect(api.reviewedRequests, [
+      ('request-1', 'approved'),
+      ('request-2', 'rejected'),
+    ]);
+
+    await tester.tap(find.text('Deactivate').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Deactivate admin access?'), findsOneWidget);
+    await tester.tap(find.text('Deactivate').last);
+    await tester.pumpAndSettle();
+    expect(api.adminActiveChanges, [('admin-1', false)]);
+    expect(find.text('Reactivate'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

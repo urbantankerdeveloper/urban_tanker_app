@@ -335,6 +335,56 @@ void main() {
     expect(jsonDecode(captured!.body), {'refreshToken': 'refresh-token-value'});
   });
 
+  test('admin-access review uses the shared pending and decision endpoints',
+      () async {
+    final requests = <http.Request>[];
+    final client = MockClient((request) async {
+      requests.add(request);
+      if (request.method == 'GET') {
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 'request-1',
+              'name': 'Jordan Smith',
+              'email': 'jordan@example.com',
+              'phone_e164': '+919876543210',
+              'reason': 'Manage regional operations.',
+              'status': 'pending',
+              'requested_at': '2026-02-01T10:00:00.000Z',
+            },
+          ]),
+          200,
+        );
+      }
+      return http.Response(
+          jsonEncode({'id': 'request-1', 'status': 'approved'}), 200);
+    });
+    final api = _SignedInApiClient(client: client);
+
+    final rows = await api.adminUsers();
+    await api.reviewAdminAccessRequest('request-1', decision: 'approved');
+    await api.reviewAdminAccessRequest('request-2', decision: 'rejected');
+    await api.setAdminUserActive('admin-1', isActive: false);
+
+    expect(rows.single['email'], 'jordan@example.com');
+    expect(requests.map((request) => request.url.path), [
+      '/api/admin-access/admins',
+      '/api/admin-access/requests/request-1',
+      '/api/admin-access/requests/request-2',
+      '/api/admin-access/admins/admin-1/status',
+    ]);
+    expect(requests.map((request) => request.method),
+        ['GET', 'PATCH', 'PATCH', 'PATCH']);
+    expect(jsonDecode(requests[1].body), {'decision': 'approved'});
+    expect(jsonDecode(requests[2].body), {'decision': 'rejected'});
+    expect(jsonDecode(requests[3].body), {'isActive': false});
+    expect(
+      requests.every((request) =>
+          request.headers['authorization'] == 'Bearer access-token'),
+      isTrue,
+    );
+  });
+
   test('MPIN enrollment sends the PIN only to the authenticated API', () async {
     http.Request? captured;
     final client = MockClient((request) async {

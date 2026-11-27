@@ -13,6 +13,54 @@ class AdminApi {
 
   final ApiTransport _api;
 
+  Future<bool> adminApprovalRequiredEnabled() async {
+    final response = await _api.request('GET', '/config/flags');
+    final decoded = decodeBody(response);
+    if (decoded is! Map<String, dynamic> ||
+        decoded['admin_approval_required_enabled'] is! bool) {
+      throw const FormatException('The feature flags response was invalid.');
+    }
+    return decoded['admin_approval_required_enabled'] as bool;
+  }
+
+  Future<List<Map<String, dynamic>>> adminUsers() async {
+    final response = await _api.request('GET', '/admin-access/admins');
+    final decoded = decodeBody(response);
+    if (decoded is! List) {
+      throw const FormatException(
+        'The admin users response was invalid.',
+      );
+    }
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(Map<String, dynamic>.from)
+        .toList();
+  }
+
+  Future<void> setAdminUserActive(
+    String id, {
+    required bool isActive,
+  }) async {
+    await _api.request(
+      'PATCH',
+      '/admin-access/admins/${Uri.encodeComponent(id)}/status',
+      body: {'isActive': isActive},
+      retry: false,
+    );
+  }
+
+  Future<void> reviewAdminAccessRequest(
+    String id, {
+    required String decision,
+  }) async {
+    await _api.request(
+      'PATCH',
+      '/admin-access/requests/${Uri.encodeComponent(id)}',
+      body: {'decision': decision},
+      retry: false,
+    );
+  }
+
   Future<List<AccountRecord>> adminVendors() =>
       _records('/admin/vendors', 'admin vendors');
 

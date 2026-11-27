@@ -913,6 +913,23 @@ class ApiClient implements ApiTransport {
 
   Future<Map<String, dynamic>> adminHealth() => _admin.adminHealth();
 
+  Future<bool> adminApprovalRequiredEnabled() =>
+      _admin.adminApprovalRequiredEnabled();
+
+  Future<List<Map<String, dynamic>>> adminUsers() => _admin.adminUsers();
+
+  Future<void> setAdminUserActive(
+    String id, {
+    required bool isActive,
+  }) =>
+      _admin.setAdminUserActive(id, isActive: isActive);
+
+  Future<void> reviewAdminAccessRequest(
+    String id, {
+    required String decision,
+  }) =>
+      _admin.reviewAdminAccessRequest(id, decision: decision);
+
   Future<void> updateVendorVerification(String id, String status) =>
       _admin.updateVendorVerification(id, status);
 

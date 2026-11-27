@@ -22,6 +22,9 @@ class _FakeApiClient extends ApiClient {
   String? verifiedName;
   String? loggedInCredential;
   String? loggedInPassword;
+  String? loginErrorCode;
+  int loginErrorStatus = 401;
+  AuthResult? loginResult;
 
   ApiException? emailRequestError;
   ApiException? emailVerifyError;
@@ -46,7 +49,14 @@ class _FakeApiClient extends ApiClient {
   Future<AuthResult> login(String credential, String password) async {
     loggedInCredential = credential;
     loggedInPassword = password;
-    if (loginError != null) throw ApiException(loginError!, 401);
+    if (loginError != null) {
+      throw ApiException(
+        loginError!,
+        loginErrorStatus,
+        code: loginErrorCode,
+      );
+    }
+    if (loginResult != null) return loginResult!;
     throw StateError('A successful login is not expected in this test.');
   }
 
@@ -236,6 +246,66 @@ void main() {
     expect(api.loggedInCredential, 'asha.kumar');
     expect(api.loggedInPassword, 'incorrect');
     expect(find.text(api.loginError!), findsOneWidget);
+  });
+
+  test('an approved existing admin session is accepted by the Flutter client',
+      () async {
+    api.loginResult = const AuthResult(
+      user: SessionUser(
+        id: 'legacy-admin',
+        name: 'Existing Admin',
+        username: 'admin@example.com',
+        role: WorkspaceRole.admin,
+      ),
+      accessToken: 'admin-access-token',
+    );
+
+    await controller.signIn('admin@example.com', 'correct-password');
+
+    expect(controller.user?.id, 'legacy-admin');
+    expect(controller.user?.role, WorkspaceRole.admin);
+    expect(controller.errorMessage, isNull);
+  });
+
+  testWidgets('admin approval login errors show the specific server message',
+      (tester) async {
+    api.loginError = 'Your admin access request is pending approval';
+    api.loginErrorCode = 'ADMIN_ACCESS_PENDING';
+    api.loginErrorStatus = 403;
+    await showAuthScreen(tester);
+    await tester.tap(_chip('Email or username'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).first,
+      'admin@example.com',
+    );
+    await tester.enterText(
+        find.byType(TextFormField).at(1), 'correct-password');
+    await tester.tap(_button('Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(api.loginError!), findsOneWidget);
+    expect(find.text('Invalid email or password.'), findsNothing);
+
+    api.loginError = 'Your admin access request was rejected';
+    api.loginErrorCode = 'ADMIN_ACCESS_REJECTED';
+    await tester.tap(_button('Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(api.loginError!), findsOneWidget);
+    expect(
+      find.text('Your admin access request is pending approval'),
+      findsNothing,
+    );
+
+    api.loginError = 'Your admin access has been deactivated';
+    api.loginErrorCode = 'ADMIN_ACCESS_DEACTIVATED';
+    await tester.tap(_button('Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(api.loginError!), findsOneWidget);
+    expect(find.text('Invalid email or password.'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('requests an OTP for a valid mobile number', (tester) async {

@@ -529,7 +529,12 @@ class AppController extends ChangeNotifier {
     try {
       await operation();
     } catch (error) {
-      errorMessage = friendlyError(error);
+      errorMessage = error is ApiException &&
+              (error.code == 'ADMIN_ACCESS_PENDING' ||
+                  error.code == 'ADMIN_ACCESS_REJECTED' ||
+                  error.code == 'ADMIN_ACCESS_DEACTIVATED')
+          ? error.message
+          : friendlyError(error);
       errorStatusCode = error is ApiException ? error.statusCode : null;
     } finally {
       busy = false;

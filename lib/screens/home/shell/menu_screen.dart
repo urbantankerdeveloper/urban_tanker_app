@@ -10,6 +10,7 @@ import '../../../models/session.dart';
 import '../../../models/workspace_navigation.dart';
 import '../../security_settings_screen.dart';
 import '../../profile_dialog.dart';
+import '../../admin/admin_access_requests_screen.dart';
 import 'appearance.dart';
 
 /// Menu tab for vendor, dispatcher and admin. Replaces the old drawer: the
@@ -40,7 +41,6 @@ class MenuScreen extends ConsumerWidget {
       error: (_, __) => null,
     );
     final profilePhotoFuture = ref.read(profileSelfieProvider.future);
-
     void openProfile() {
       if (user == null) return;
       showUserProfileDialog(
@@ -102,6 +102,19 @@ class MenuScreen extends ConsumerWidget {
                 title: 'My profile',
                 trailing: const Icon(Icons.chevron_right),
                 onTap: openProfile,
+              ),
+            if (role == WorkspaceRole.admin)
+              AppListRow(
+                leading: const Icon(Icons.admin_panel_settings_outlined),
+                title: 'Admin Users',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AdminUsersScreen(
+                      controller: controller,
+                    ),
+                  ),
+                ),
               ),
             AppListRow(
               leading: _NotificationIcon(notifications: notifications),
