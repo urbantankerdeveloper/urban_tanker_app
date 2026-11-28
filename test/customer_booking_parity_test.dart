@@ -596,8 +596,6 @@ void main() {
     );
     await tester.tap(find.text('Send code').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Send code').last);
-    await tester.pumpAndSettle();
     expect(api.bookingOtpRequests, 1);
     await tester.enterText(
       find.byKey(const Key('booking-otp-digit-0')),
@@ -673,8 +671,6 @@ void main() {
     );
     expect(find.text('Tank cleaning'), findsNothing);
     await tester.tap(find.text('Send code').first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Send code').last);
     await tester.pumpAndSettle();
     expect(api.bookingOtpRequests, 2);
   });

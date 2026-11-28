@@ -50,11 +50,7 @@ class _FakeApiClient extends ApiClient {
     loggedInCredential = credential;
     loggedInPassword = password;
     if (loginError != null) {
-      throw ApiException(
-        loginError!,
-        loginErrorStatus,
-        code: loginErrorCode,
-      );
+      throw ApiException(loginError!, loginErrorStatus, code: loginErrorCode);
     }
     if (loginResult != null) return loginResult!;
     throw StateError('A successful login is not expected in this test.');
@@ -66,10 +62,7 @@ class _FakeApiClient extends ApiClient {
   ) async {
     requestedPhone = phone;
     if (requestError != null) throw ApiException(requestError!, 503);
-    return (
-      challengeId: 'challenge-id',
-      channel: requestedPhoneChannel,
-    );
+    return (challengeId: 'challenge-id', channel: requestedPhoneChannel);
   }
 
   @override
@@ -107,7 +100,7 @@ class _FakeApiClient extends ApiClient {
       return (
         authResult: null,
         challengeId: 'challenge-1',
-        resendAfterSeconds: 30
+        resendAfterSeconds: 30,
       );
     }
     return (authResult: _customer, challengeId: null, resendAfterSeconds: 0);
@@ -137,9 +130,9 @@ class _FakeApiClient extends ApiClient {
 
 /// The one-time-code boxes are backed by a single TextField inside OtpField.
 Finder _otpInput() => find.descendant(
-      of: find.byType(OtpField),
-      matching: find.byType(TextField),
-    );
+  of: find.byType(OtpField),
+  matching: find.byType(TextField),
+);
 
 Finder _chip(String label) => find.widgetWithText(ChoiceChip, label);
 
@@ -149,10 +142,8 @@ Future<void> _openCreateAccount(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Finder _button(String label) => find.descendant(
-      of: find.byType(PrimaryButton),
-      matching: find.text(label),
-    );
+Finder _button(String label) =>
+    find.descendant(of: find.byType(PrimaryButton), matching: find.text(label));
 
 String _fieldText(WidgetTester tester, int index) => tester
     .widget<EditableText>(find.byType(EditableText).at(index))
@@ -183,8 +174,9 @@ void main() {
     );
   }
 
-  testWidgets('sign-in is the first screen, with a link to create account',
-      (tester) async {
+  testWidgets('sign-in is the first screen, with a link to create account', (
+    tester,
+  ) async {
     await showAuthScreen(tester);
 
     expect(find.text('Welcome back.'), findsOneWidget);
@@ -198,8 +190,9 @@ void main() {
     expect(find.text('Password'), findsNothing);
   });
 
-  testWidgets('the create-account link opens the sign-up form and back',
-      (tester) async {
+  testWidgets('the create-account link opens the sign-up form and back', (
+    tester,
+  ) async {
     await showAuthScreen(tester);
     await _openCreateAccount(tester);
 
@@ -229,16 +222,14 @@ void main() {
     expect(find.text('Send verification code'), findsOneWidget);
   });
 
-  testWidgets('existing users can sign in with username and password',
-      (tester) async {
+  testWidgets('existing users can sign in with username and password', (
+    tester,
+  ) async {
     api.loginError = 'Invalid credentials';
     await showAuthScreen(tester);
     await tester.tap(_chip('Email or username'));
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byType(TextFormField).first,
-      'asha.kumar',
-    );
+    await tester.enterText(find.byType(TextFormField).first, 'asha.kumar');
     await tester.enterText(find.byType(TextFormField).at(1), 'incorrect');
     await tester.tap(_button('Sign in'));
     await tester.pumpAndSettle();
@@ -248,27 +239,30 @@ void main() {
     expect(find.text(api.loginError!), findsOneWidget);
   });
 
-  test('an approved existing admin session is accepted by the Flutter client',
-      () async {
-    api.loginResult = const AuthResult(
-      user: SessionUser(
-        id: 'legacy-admin',
-        name: 'Existing Admin',
-        username: 'admin@example.com',
-        role: WorkspaceRole.admin,
-      ),
-      accessToken: 'admin-access-token',
-    );
+  test(
+    'an approved existing admin session is accepted by the Flutter client',
+    () async {
+      api.loginResult = const AuthResult(
+        user: SessionUser(
+          id: 'legacy-admin',
+          name: 'Existing Admin',
+          username: 'admin@example.com',
+          role: WorkspaceRole.admin,
+        ),
+        accessToken: 'admin-access-token',
+      );
 
-    await controller.signIn('admin@example.com', 'correct-password');
+      await controller.signIn('admin@example.com', 'correct-password');
 
-    expect(controller.user?.id, 'legacy-admin');
-    expect(controller.user?.role, WorkspaceRole.admin);
-    expect(controller.errorMessage, isNull);
-  });
+      expect(controller.user?.id, 'legacy-admin');
+      expect(controller.user?.role, WorkspaceRole.admin);
+      expect(controller.errorMessage, isNull);
+    },
+  );
 
-  testWidgets('admin approval login errors show the specific server message',
-      (tester) async {
+  testWidgets('admin approval login errors show the specific server message', (
+    tester,
+  ) async {
     api.loginError = 'Your admin access request is pending approval';
     api.loginErrorCode = 'ADMIN_ACCESS_PENDING';
     api.loginErrorStatus = 403;
@@ -280,7 +274,9 @@ void main() {
       'admin@example.com',
     );
     await tester.enterText(
-        find.byType(TextFormField).at(1), 'correct-password');
+      find.byType(TextFormField).at(1),
+      'correct-password',
+    );
     await tester.tap(_button('Sign in'));
     await tester.pumpAndSettle();
 
@@ -311,10 +307,7 @@ void main() {
   testWidgets('requests an OTP for a valid mobile number', (tester) async {
     await showAuthScreen(tester);
     await _openCreateAccount(tester);
-    await tester.enterText(
-      find.byType(TextFormField).first,
-      '9876543210',
-    );
+    await tester.enterText(find.byType(TextFormField).first, '9876543210');
     await tester.tap(find.text('Send verification code'));
     await tester.pumpAndSettle();
 
@@ -324,16 +317,14 @@ void main() {
       find.text('We sent a code via WhatsApp to +91 ******3210.'),
       findsOneWidget,
     );
-    expect(
-      tester.widget<TextField>(_otpInput()).autofillHints,
-      isNull,
-    );
+    expect(tester.widget<TextField>(_otpInput()).autofillHints, isNull);
     expect(find.text('Full name'), findsOneWidget);
     expect(find.text('Verify code and create account'), findsOneWidget);
   });
 
-  testWidgets('uses SMS copy and one-time-code autofill for SMS fallback',
-      (tester) async {
+  testWidgets('uses SMS copy and one-time-code autofill for SMS fallback', (
+    tester,
+  ) async {
     api.requestedPhoneChannel = PhoneOtpChannel.sms;
     await showAuthScreen(tester);
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
@@ -341,15 +332,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-        find.text('We sent a code via SMS to +91 ******3210.'), findsOneWidget);
-    expect(
-      tester.widget<TextField>(_otpInput()).autofillHints,
-      const [AutofillHints.oneTimeCode],
+      find.text('We sent a code via SMS to +91 ******3210.'),
+      findsOneWidget,
     );
+    expect(tester.widget<TextField>(_otpInput()).autofillHints, const [
+      AutofillHints.oneTimeCode,
+    ]);
   });
 
-  testWidgets('pastes the complete copied code into the OTP field',
-      (tester) async {
+  testWidgets('pastes the complete copied code into the OTP field', (
+    tester,
+  ) async {
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async =>
@@ -367,8 +360,9 @@ void main() {
     expect(api.verifiedOtp, '123456');
   });
 
-  testWidgets('sends the phone, OTP, and optional new-account name to verify',
-      (tester) async {
+  testWidgets('sends the phone, OTP, and optional new-account name to verify', (
+    tester,
+  ) async {
     api.verifyError = 'The verification code is incorrect.';
     await showAuthScreen(tester);
     await _openCreateAccount(tester);
@@ -383,12 +377,26 @@ void main() {
     expect(api.verifiedPhone, '9876543210');
     expect(api.verifiedOtp, '123456');
     expect(api.verifiedName, 'Asha Kumar');
-    expect(find.text(api.verifyError!), findsOneWidget);
-    expect(find.text('Verify code and create account'), findsOneWidget);
+    if (AuthFeatureFlags.newUiEnabled) {
+      expect(find.text('Code not accepted'), findsNWidgets(2));
+      expect(
+        find.text(
+          'The verification code is incorrect or has expired. Check it and try again.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.text('Verify code and create account'), findsOneWidget);
+    } else {
+      expect(find.text(api.verifyError!), findsOneWidget);
+      expect(find.text('Verify code and create account'), findsOneWidget);
+    }
   });
 
-  testWidgets('existing users can verify a phone code without a name',
-      (tester) async {
+  testWidgets('existing users can verify a phone code without a name', (
+    tester,
+  ) async {
     api.verifyError = 'The verification code is incorrect.';
     await showAuthScreen(tester);
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
@@ -401,11 +409,19 @@ void main() {
     expect(api.verifiedPhone, '9876543210');
     expect(api.verifiedOtp, '123456');
     expect(api.verifiedName, isNull);
-    expect(find.text(api.verifyError!), findsOneWidget);
+    if (AuthFeatureFlags.newUiEnabled) {
+      expect(find.text('Code not accepted'), findsNWidgets(2));
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.text('Verify code and sign in'), findsOneWidget);
+    } else {
+      expect(find.text(api.verifyError!), findsOneWidget);
+    }
   });
 
-  testWidgets('shows OTP delivery errors and keeps phone entry available',
-      (tester) async {
+  testWidgets('shows OTP delivery errors and keeps phone entry available', (
+    tester,
+  ) async {
     api.requestError = 'Mobile verification is not configured yet.';
     await showAuthScreen(tester);
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
@@ -416,8 +432,9 @@ void main() {
     expect(find.text('Send verification code'), findsOneWidget);
   });
 
-  testWidgets('a new code waits 30 seconds after each code is sent',
-      (tester) async {
+  testWidgets('a new code waits 30 seconds after each code is sent', (
+    tester,
+  ) async {
     await showAuthScreen(tester);
     await tester.enterText(find.byType(TextFormField).first, '9876543210');
     await tester.tap(find.text('Send verification code'));
@@ -434,8 +451,9 @@ void main() {
     expect(find.text('Send a new code'), findsOneWidget);
   });
 
-  testWidgets('email sign-in with a password sends the normalized address',
-      (tester) async {
+  testWidgets('email sign-in with a password sends the normalized address', (
+    tester,
+  ) async {
     api.loginError = 'Incorrect email or password.';
     await showAuthScreen(tester);
     await tester.tap(_chip('Email or username'));
@@ -464,60 +482,73 @@ void main() {
     expect(find.text('Send reset instructions'), findsOneWidget);
   });
 
-  testWidgets('email code sign-in requests a code and verifies it',
-      skip: !AuthFeatureFlags.emailOtp, (tester) async {
-    api.emailVerifyError = ApiException('The code is incorrect.', 400);
-    await showAuthScreen(tester);
-    await tester.tap(_chip('Email or username'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Email me a code'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byType(TextFormField).first, 'asha@example.com');
-    await tester.tap(_button('Send code'));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'email code sign-in requests a code and verifies it',
+    skip: !AuthFeatureFlags.emailOtp,
+    (tester) async {
+      api.emailVerifyError = ApiException('The code is incorrect.', 400);
+      await showAuthScreen(tester);
+      await tester.tap(_chip('Email or username'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Email me a code'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'asha@example.com',
+      );
+      await tester.tap(_button('Send code'));
+      await tester.pumpAndSettle();
 
-    expect(api.requestedEmail, 'asha@example.com');
-    expect(find.text('Verification code'), findsOneWidget);
+      expect(api.requestedEmail, 'asha@example.com');
+      expect(find.text('Verification code'), findsOneWidget);
 
-    await tester.enterText(_otpInput(), '123456');
-    await tester.pumpAndSettle();
+      await tester.enterText(_otpInput(), '123456');
+      await tester.pumpAndSettle();
 
-    expect(api.verifiedEmail, 'asha@example.com');
-    expect(api.verifiedEmailOtp, '123456');
-    expect(find.text(api.emailVerifyError!.message), findsOneWidget);
-  });
+      expect(api.verifiedEmail, 'asha@example.com');
+      expect(api.verifiedEmailOtp, '123456');
+      expect(find.text(api.emailVerifyError!.message), findsOneWidget);
+    },
+  );
 
-  testWidgets('email codes are hidden when the server does not have them',
-      skip: !AuthFeatureFlags.emailOtp, (tester) async {
-    api.emailRequestError = ApiException('Not found', 404);
-    await showAuthScreen(tester);
-    await tester.tap(_chip('Email or username'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Email me a code'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byType(TextFormField).first, 'asha@example.com');
-    await tester.tap(_button('Send code'));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'email codes are hidden when the server does not have them',
+    skip: !AuthFeatureFlags.emailOtp,
+    (tester) async {
+      api.emailRequestError = ApiException('Not found', 404);
+      await showAuthScreen(tester);
+      await tester.tap(_chip('Email or username'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Email me a code'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'asha@example.com',
+      );
+      await tester.tap(_button('Send code'));
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text(AppController.emailCodesUnavailableMessage),
-      findsOneWidget,
-    );
-    expect(find.text('Email me a code'), findsNothing);
-    expect(find.text('Password'), findsOneWidget);
-  });
+      expect(
+        find.text(AppController.emailCodesUnavailableMessage),
+        findsOneWidget,
+      );
+      expect(find.text('Email me a code'), findsNothing);
+      expect(find.text('Password'), findsOneWidget);
+    },
+  );
 
-  testWidgets('a weak password is refused before the account is created',
-      (tester) async {
+  testWidgets('a weak password is refused before the account is created', (
+    tester,
+  ) async {
     await showAuthScreen(tester);
     await _openCreateAccount(tester);
     await tester.tap(_chip('Email'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'Asha Kumar');
     await tester.enterText(
-        find.byType(TextFormField).at(1), 'asha@example.com');
+      find.byType(TextFormField).at(1),
+      'asha@example.com',
+    );
     await tester.enterText(find.byType(TextFormField).at(2), '9876543210');
     await tester.enterText(find.byType(TextFormField).at(3), 'short');
     await tester.tap(_button('Create account'));
@@ -533,30 +564,35 @@ void main() {
     expect(api.signupCalls, 0);
   });
 
-  testWidgets('an email sign-up that needs confirmation shows the inbox state',
-      (tester) async {
-    api.signupRequiresVerification = true;
-    await showAuthScreen(tester);
-    await _openCreateAccount(tester);
-    await tester.tap(_chip('Email'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), 'Asha Kumar');
-    await tester.enterText(
-        find.byType(TextFormField).at(1), ' Asha@Example.com');
-    await tester.enterText(find.byType(TextFormField).at(2), '9876543210');
-    await tester.enterText(find.byType(TextFormField).at(3), 'Secret123');
-    await tester.tap(_button('Create account'));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'an email sign-up that needs confirmation shows the inbox state',
+    (tester) async {
+      api.signupRequiresVerification = true;
+      await showAuthScreen(tester);
+      await _openCreateAccount(tester);
+      await tester.tap(_chip('Email'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).at(0), 'Asha Kumar');
+      await tester.enterText(
+        find.byType(TextFormField).at(1),
+        ' Asha@Example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).at(2), '9876543210');
+      await tester.enterText(find.byType(TextFormField).at(3), 'Secret123');
+      await tester.tap(_button('Create account'));
+      await tester.pumpAndSettle();
 
-    expect(api.requestedEmail, 'asha@example.com');
-    expect(find.text('Enter your verification code'), findsOneWidget);
-    expect(find.text('asha@example.com'), findsOneWidget);
-    expect(find.text('Verify and continue'), findsOneWidget);
-    expect(find.text('Back to sign in'), findsOneWidget);
-  });
+      expect(api.requestedEmail, 'asha@example.com');
+      expect(find.text('Enter your verification code'), findsOneWidget);
+      expect(find.text('asha@example.com'), findsOneWidget);
+      expect(find.text('Verify and continue'), findsOneWidget);
+      expect(find.text('Back to sign in'), findsOneWidget);
+    },
+  );
 
-  testWidgets('an address that already has an account opens sign-in with it',
-      (tester) async {
+  testWidgets('an address that already has an account opens sign-in with it', (
+    tester,
+  ) async {
     api.signupError = ApiException('This email is already registered.', 409);
     await showAuthScreen(tester);
     await _openCreateAccount(tester);
@@ -564,7 +600,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'Asha Kumar');
     await tester.enterText(
-        find.byType(TextFormField).at(1), 'asha@example.com');
+      find.byType(TextFormField).at(1),
+      'asha@example.com',
+    );
     await tester.enterText(find.byType(TextFormField).at(2), '9876543210');
     await tester.enterText(find.byType(TextFormField).at(3), 'Secret123');
     await tester.tap(_button('Create account'));
@@ -578,8 +616,9 @@ void main() {
     expect(_fieldText(tester, 0), 'asha@example.com');
   });
 
-  testWidgets('a signed-out user opens the sign-in screen normally',
-      (tester) async {
+  testWidgets('a signed-out user opens the sign-in screen normally', (
+    tester,
+  ) async {
     await showAuthScreen(tester);
     await tester.pumpAndSettle();
 

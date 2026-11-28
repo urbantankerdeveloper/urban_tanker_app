@@ -116,11 +116,15 @@ void main() {
     });
 
     test('admin: booking goes to Operations, anything else to Reports', () {
+      final tabs = tabsForRole(WorkspaceRole.admin);
       expect(
         notificationTabIndex(WorkspaceRole.admin, _item(bookingId: 'b')),
-        1,
+        tabs.indexWhere((tab) => tab.label == 'Operations'),
       );
-      expect(notificationTabIndex(WorkspaceRole.admin, _item()), 2);
+      expect(
+        notificationTabIndex(WorkspaceRole.admin, _item()),
+        tabs.indexWhere((tab) => tab.label == 'Reports'),
+      );
     });
 
     test('customer: booking goes to Bookings, anything else to Account', () {

@@ -6,8 +6,13 @@ import 'package:urban_tanker_app/models/account.dart';
 import 'package:urban_tanker_app/screens/admin/admin_reports_screen.dart';
 
 void main() {
-  testWidgets('registered vendors expand to show vendor details',
-      (tester) async {
+  testWidgets('registered vendors expand to show vendor details', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final vendors = [
       const AccountRecord({
         'id': 'vendor-1',
@@ -28,16 +33,18 @@ void main() {
         overrides: [
           dispatcherVendorsProvider.overrideWith((ref) async => vendors),
         ],
-        child: const MaterialApp(
-          home: Scaffold(body: AdminReportsScreen()),
+        child: MaterialApp(
+          home: Scaffold(body: AdminReportsScreen(loadReport: (_) async => {})),
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Registered vendors (3)'), findsOneWidget);
     await tester.tap(find.text('Registered vendors (3)'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('North Tankers'), findsOneWidget);
     expect(find.text('north@example.com • verified'), findsOneWidget);

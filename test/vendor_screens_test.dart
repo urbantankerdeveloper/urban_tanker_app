@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:urban_tanker_app/app/app_controller.dart';
+import 'package:urban_tanker_app/app/auth_feature_flags.dart';
 import 'package:urban_tanker_app/app/providers.dart';
 import 'package:urban_tanker_app/core/design_system/design_system.dart';
 import 'package:urban_tanker_app/models/account.dart';
@@ -31,10 +32,7 @@ VendorOrder _order(String id, String status) =>
 /// The value shown in the stat card labelled [label].
 String _statValue(WidgetTester tester, String label) {
   final card = find
-      .ancestor(
-        of: find.text(label),
-        matching: find.byType(StatCard),
-      )
+      .ancestor(of: find.text(label), matching: find.byType(StatCard))
       .first;
   return tester
       .widgetList<Text>(find.descendant(of: card, matching: find.byType(Text)))
@@ -43,8 +41,9 @@ String _statValue(WidgetTester tester, String label) {
 }
 
 void main() {
-  testWidgets('customer account starts its independent sections together',
-      (tester) async {
+  testWidgets('customer account starts its independent sections together', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await tester.runAsync(SharedPreferences.getInstance);
     final controller = AppController(
@@ -73,25 +72,34 @@ void main() {
         overrides: [
           appControllerProvider.overrideWith((ref) => controller),
           profileSelfieProvider.overrideWith((ref) async => null),
-          customerProfileProvider
-              .overrideWith((ref) => pending('profile', profile)),
+          customerProfileProvider.overrideWith(
+            (ref) => pending('profile', profile),
+          ),
           customerUsageProvider.overrideWith((ref) => pending('usage', usage)),
-          customerMembershipProvider
-              .overrideWith((ref) => pending('membership', membership)),
-          customerOffersProvider
-              .overrideWith((ref) => pending('offers', offers)),
-          customerWalletProvider
-              .overrideWith((ref) => pending('wallet', wallet)),
-          customerInvoicesProvider
-              .overrideWith((ref) => pending('invoices', invoices)),
-          customerSubscriptionsProvider
-              .overrideWith((ref) => pending('subscriptions', subscriptions)),
-          customerContractsProvider
-              .overrideWith((ref) => pending('contracts', contracts)),
-          customerAddressesProvider
-              .overrideWith((ref) => pending('addresses', addresses)),
-          customerSupportProvider
-              .overrideWith((ref) => pending('support', support)),
+          customerMembershipProvider.overrideWith(
+            (ref) => pending('membership', membership),
+          ),
+          customerOffersProvider.overrideWith(
+            (ref) => pending('offers', offers),
+          ),
+          customerWalletProvider.overrideWith(
+            (ref) => pending('wallet', wallet),
+          ),
+          customerInvoicesProvider.overrideWith(
+            (ref) => pending('invoices', invoices),
+          ),
+          customerSubscriptionsProvider.overrideWith(
+            (ref) => pending('subscriptions', subscriptions),
+          ),
+          customerContractsProvider.overrideWith(
+            (ref) => pending('contracts', contracts),
+          ),
+          customerAddressesProvider.overrideWith(
+            (ref) => pending('addresses', addresses),
+          ),
+          customerSupportProvider.overrideWith(
+            (ref) => pending('support', support),
+          ),
         ],
         child: MaterialApp(
           theme: buildLightTheme(),
@@ -118,11 +126,13 @@ void main() {
     );
     expect(find.byType(SkeletonBox), findsWidgets);
 
-    profile.complete(const CustomerProfile(
-      name: 'Taylor User',
-      email: 'taylor@example.com',
-      phone: '+911234567890',
-    ));
+    profile.complete(
+      const CustomerProfile(
+        name: 'Taylor User',
+        email: 'taylor@example.com',
+        phone: '+911234567890',
+      ),
+    );
     await tester.pump();
     expect(find.textContaining('Email: taylor@example.com'), findsOneWidget);
     expect(find.textContaining('Phone: +911234567890'), findsOneWidget);
@@ -131,8 +141,9 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('operations starts saved updates while orders are loading',
-      (tester) async {
+  testWidgets('operations starts saved updates while orders are loading', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await tester.runAsync(SharedPreferences.getInstance);
     final controller = AppController(
@@ -166,14 +177,19 @@ void main() {
 
     expect(ordersStarted, isTrue);
     expect(updatesStarted, isTrue);
-    expect(find.text('Loading your orders...'), findsOneWidget);
+    if (AuthFeatureFlags.newUiEnabled) {
+      expect(find.byType(ListLoadingState), findsOneWidget);
+    } else {
+      expect(find.text('Loading your orders...'), findsOneWidget);
+    }
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
   });
 
-  testWidgets('fleet starts independent requests while dashboard is loading',
-      (tester) async {
+  testWidgets('fleet starts independent requests while dashboard is loading', (
+    tester,
+  ) async {
     final dashboard = Completer<VendorDashboard>();
     final services = Completer<List<VendorService>>();
     final attendance = Completer<List<Map<String, dynamic>>>();
@@ -228,91 +244,100 @@ void main() {
   });
 
   testWidgets(
-      'vendor fleet separates waiting and approved vehicles and drivers',
-      (tester) async {
-    tester.view.physicalSize = const Size(800, 2400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    final dashboard = VendorDashboard(
-      orders: const [],
-      vehicles: const [
-        VendorVehicle(
-          id: 'vehicle-waiting',
-          registrationNumber: 'WAIT 1',
-          capacityLitres: 10000,
-          active: false,
-          verification: 'pending',
-        ),
-        VendorVehicle(
-          id: 'vehicle-approved',
-          registrationNumber: 'APPROVED 1',
-          capacityLitres: 10000,
-          active: true,
-          verification: 'approved',
-        ),
-      ],
-      drivers: const [
-        VendorDriver(
-          id: 'driver-waiting',
-          name: 'Waiting Driver',
-          mobile: '+919876543210',
-          active: false,
-          verification: 'pending',
-        ),
-        VendorDriver(
-          id: 'driver-approved',
-          name: 'Approved Driver',
-          mobile: '+919876543211',
-          active: true,
-          verification: 'approved',
-        ),
-      ],
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          vendorDashboardProvider.overrideWith((ref) async => dashboard),
-          vendorServicesProvider.overrideWith((ref) async => <VendorService>[]),
-          vendorAttendanceProvider.overrideWith(
-            (ref, date) async => <Map<String, dynamic>>[],
+    'vendor fleet separates waiting and approved vehicles and drivers',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      final dashboard = VendorDashboard(
+        orders: const [],
+        vehicles: const [
+          VendorVehicle(
+            id: 'vehicle-waiting',
+            registrationNumber: 'WAIT 1',
+            capacityLitres: 10000,
+            active: false,
+            verification: 'pending',
           ),
-          vendorComplaintsProvider
-              .overrideWith((ref) async => <Map<String, dynamic>>[]),
-          vendorDocumentsProvider
-              .overrideWith((ref) async => <Map<String, dynamic>>[]),
+          VendorVehicle(
+            id: 'vehicle-approved',
+            registrationNumber: 'APPROVED 1',
+            capacityLitres: 10000,
+            active: true,
+            verification: 'approved',
+          ),
         ],
-        child: MaterialApp(
-          theme: buildLightTheme(),
-          home: const Scaffold(body: VendorFleetScreen()),
+        drivers: const [
+          VendorDriver(
+            id: 'driver-waiting',
+            name: 'Waiting Driver',
+            mobile: '+919876543210',
+            active: false,
+            verification: 'pending',
+          ),
+          VendorDriver(
+            id: 'driver-approved',
+            name: 'Approved Driver',
+            mobile: '+919876543211',
+            active: true,
+            verification: 'approved',
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            vendorDashboardProvider.overrideWith((ref) async => dashboard),
+            vendorServicesProvider.overrideWith(
+              (ref) async => <VendorService>[],
+            ),
+            vendorAttendanceProvider.overrideWith(
+              (ref, date) async => <Map<String, dynamic>>[],
+            ),
+            vendorComplaintsProvider.overrideWith(
+              (ref) async => <Map<String, dynamic>>[],
+            ),
+            vendorDocumentsProvider.overrideWith(
+              (ref) async => <Map<String, dynamic>>[],
+            ),
+          ],
+          child: MaterialApp(
+            theme: buildLightTheme(),
+            home: const Scaffold(body: VendorFleetScreen()),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.widgetWithText(VehicleTile, 'WAIT 1'), findsOneWidget);
-    expect(find.widgetWithText(VehicleTile, 'APPROVED 1'), findsNothing);
-    expect(find.widgetWithText(DriverTile, 'Waiting Driver'), findsOneWidget);
-    expect(find.widgetWithText(DriverTile, 'Approved Driver'), findsNothing);
-
-    Future<void> selectStatus(int index) async {
-      final tabs = find.byType(SegmentedTabs).at(index);
-      await tester
-          .tap(find.descendant(of: tabs, matching: find.text('Approved')));
+      );
       await tester.pumpAndSettle();
-    }
 
-    await selectStatus(0);
-    expect(find.widgetWithText(VehicleTile, 'WAIT 1'), findsNothing);
-    expect(find.widgetWithText(VehicleTile, 'APPROVED 1'), findsOneWidget);
+      expect(find.widgetWithText(VehicleTile, 'WAIT 1'), findsOneWidget);
+      expect(find.widgetWithText(VehicleTile, 'APPROVED 1'), findsNothing);
+      expect(find.widgetWithText(DriverTile, 'Waiting Driver'), findsOneWidget);
+      expect(find.widgetWithText(DriverTile, 'Approved Driver'), findsNothing);
 
-    await selectStatus(1);
-    expect(find.widgetWithText(DriverTile, 'Waiting Driver'), findsNothing);
-    expect(find.widgetWithText(DriverTile, 'Approved Driver'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+      Future<void> selectStatus(int index) async {
+        final tabs = find.byType(SegmentedTabs).at(index);
+        await tester.tap(
+          find.descendant(of: tabs, matching: find.text('Approved')),
+        );
+        await tester.pumpAndSettle();
+      }
 
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump(const Duration(seconds: 15));
-  });
+      await selectStatus(0);
+      expect(find.widgetWithText(VehicleTile, 'WAIT 1'), findsNothing);
+      expect(find.widgetWithText(VehicleTile, 'APPROVED 1'), findsOneWidget);
+
+      await selectStatus(1);
+      expect(find.widgetWithText(DriverTile, 'Waiting Driver'), findsNothing);
+      expect(
+        find.widgetWithText(DriverTile, 'Approved Driver'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 15));
+    },
+  );
 
   testWidgets('earnings total follows the period filter', (tester) async {
     final now = DateTime.now();
@@ -360,8 +385,9 @@ void main() {
         overrides: [
           appControllerProvider.overrideWith((ref) => controller),
           vendorOrdersProvider.overrideWith((ref) async => orders),
-          vendorOfflineMutationsProvider
-              .overrideWith((ref) async => <VendorOfflineMutation>[]),
+          vendorOfflineMutationsProvider.overrideWith(
+            (ref) async => <VendorOfflineMutation>[],
+          ),
         ],
         child: MaterialApp(
           theme: buildLightTheme(),

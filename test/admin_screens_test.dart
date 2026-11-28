@@ -95,10 +95,7 @@ class _ApprovalApiClient extends ApiClient {
   }
 
   @override
-  Future<void> setAdminUserActive(
-    String id, {
-    required bool isActive,
-  }) async {
+  Future<void> setAdminUserActive(String id, {required bool isActive}) async {
     adminActiveChanges.add((id, isActive));
     final index = users.indexWhere((item) => item['id'] == id);
     users[index] = {...users[index], 'is_active': isActive};
@@ -106,73 +103,72 @@ class _ApprovalApiClient extends ApiClient {
 
   @override
   Future<List<AccountRecord>> adminVendors() async => [
-        const AccountRecord({
-          'id': 'vendor-waiting',
-          'business_name': 'Waiting Vendor',
-          'verification': 'pending',
-        }),
-        const AccountRecord({
-          'id': 'vendor-approved',
-          'business_name': 'Approved Vendor',
-          'verification': 'approved',
-          'full_name': 'Asha Kumar',
-          'mobile_e164': '+919876543210',
-          'is_active': true,
-          'from': 'Chennai',
-        }),
-      ];
+    const AccountRecord({
+      'id': 'vendor-waiting',
+      'business_name': 'Waiting Vendor',
+      'verification': 'pending',
+    }),
+    const AccountRecord({
+      'id': 'vendor-approved',
+      'business_name': 'Approved Vendor',
+      'verification': 'approved',
+      'full_name': 'Asha Kumar',
+      'phone_e164': '+919876543210',
+      'email': 'asha@example.com',
+      'is_active': true,
+      'is_online': true,
+      'service_zone': 'Chennai',
+    }),
+  ];
 
   @override
   Future<List<AccountRecord>> adminCustomers() async => [];
 
   @override
   Future<List<AdminFleetVehicle>> adminVehicles() async => [
-        const AdminFleetVehicle(
-          id: 'vehicle-waiting',
-          vendorId: 'vendor-1',
-          registrationNumber: 'WAIT 1',
-          capacityLitres: 10000,
-          active: false,
-          verification: 'pending',
-        ),
-        const AdminFleetVehicle(
-          id: 'vehicle-approved',
-          vendorId: 'vendor-1',
-          registrationNumber: 'APPROVED 1',
-          capacityLitres: 10000,
-          active: true,
-          verification: 'approved',
-          data: {
-            'registration_number': 'APPROVED 1',
-            'chassis_number': 'CH-123',
-          },
-        ),
-      ];
+    const AdminFleetVehicle(
+      id: 'vehicle-waiting',
+      vendorId: 'vendor-1',
+      registrationNumber: 'WAIT 1',
+      capacityLitres: 10000,
+      active: false,
+      verification: 'pending',
+    ),
+    const AdminFleetVehicle(
+      id: 'vehicle-approved',
+      vendorId: 'vendor-1',
+      registrationNumber: 'APPROVED 1',
+      capacityLitres: 10000,
+      active: true,
+      verification: 'approved',
+      data: {'registration_number': 'APPROVED 1', 'chassis_number': 'CH-123'},
+    ),
+  ];
 
   @override
   Future<List<AdminFleetDriver>> adminDrivers() async => [
-        const AdminFleetDriver(
-          id: 'driver-waiting',
-          vendorId: 'vendor-1',
-          name: 'Waiting Driver',
-          mobile: '+919876543210',
-          active: false,
-          verification: 'pending',
-        ),
-        const AdminFleetDriver(
-          id: 'driver-approved',
-          vendorId: 'vendor-1',
-          name: 'Approved Driver',
-          mobile: '+919876543211',
-          active: true,
-          verification: 'approved',
-          data: {
-            'name': 'Approved Driver',
-            'mobile_e164': '+919876543211',
-            'licence_number': 'DL-1234567',
-          },
-        ),
-      ];
+    const AdminFleetDriver(
+      id: 'driver-waiting',
+      vendorId: 'vendor-1',
+      name: 'Waiting Driver',
+      mobile: '+919876543210',
+      active: false,
+      verification: 'pending',
+    ),
+    const AdminFleetDriver(
+      id: 'driver-approved',
+      vendorId: 'vendor-1',
+      name: 'Approved Driver',
+      mobile: '+919876543211',
+      active: true,
+      verification: 'approved',
+      data: {
+        'name': 'Approved Driver',
+        'mobile_e164': '+919876543211',
+        'licence_number': 'DL-1234567',
+      },
+    ),
+  ];
 }
 
 void main() {
@@ -223,8 +219,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('reports offer the three ranges and start on today',
-      (tester) async {
+  testWidgets('reports offer the three ranges and start on today', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -234,16 +235,18 @@ void main() {
         ],
         child: MaterialApp(
           theme: buildLightTheme(),
-          home: const Scaffold(body: AdminReportsScreen()),
+          home: Scaffold(body: AdminReportsScreen(loadReport: (_) async => {})),
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
+    expect(find.text('Day'), findsOneWidget);
+    expect(find.text('Week'), findsOneWidget);
+    expect(find.text('Month'), findsOneWidget);
+    expect(find.text('Sales report'), findsOneWidget);
     expect(find.text('Today'), findsOneWidget);
-    expect(find.text('Last 7 days'), findsOneWidget);
-    expect(find.text('Last 30 days'), findsOneWidget);
-    expect(find.text('Run report'), findsOneWidget);
     expect(find.text('Registered vendors (0)'), findsOneWidget);
     expect(
       tester.widget<ListView>(find.byType(ListView)).padding,
@@ -251,8 +254,9 @@ void main() {
     );
   });
 
-  testWidgets('admin vendor and fleet lists split waiting and approved rows',
-      (tester) async {
+  testWidgets('admin vendor and fleet lists split waiting and approved rows', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -296,10 +300,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Approved Vendor'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Name: Asha Kumar'), findsOneWidget);
-    expect(find.textContaining('Phone: +919876543210'), findsOneWidget);
-    expect(find.textContaining('Active: Yes'), findsOneWidget);
-    expect(find.textContaining('From: Chennai'), findsOneWidget);
+    expect(find.text('Application details'), findsOneWidget);
+    expect(find.text('Business name'), findsOneWidget);
+    expect(find.text('Approved Vendor'), findsNWidgets(2));
+    expect(find.text('+919876543210'), findsOneWidget);
+    expect(find.text('asha@example.com'), findsOneWidget);
+    expect(find.text('Chennai'), findsOneWidget);
+    expect(find.text('Online'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
@@ -310,13 +317,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('WAIT 1'), findsOneWidget);
-    expect(find.text('APPROVED 1'), findsNothing);
+    expect(find.textContaining('WAIT 1'), findsOneWidget);
+    expect(find.textContaining('APPROVED 1'), findsNothing);
     expect(find.byType(PopupMenuButton<(String, bool)>), findsOneWidget);
 
     await selectStatus('Approved');
-    expect(find.text('WAIT 1'), findsNothing);
-    expect(find.text('APPROVED 1'), findsOneWidget);
+    expect(find.textContaining('WAIT 1'), findsNothing);
+    expect(find.textContaining('APPROVED 1'), findsOneWidget);
     expect(find.byType(PopupMenuButton<(String, bool)>), findsOneWidget);
     await tester.tap(find.byType(PopupMenuButton<(String, bool)>));
     await tester.pumpAndSettle();
@@ -324,7 +331,7 @@ void main() {
     expect(find.text('Suspend and deactivate'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('APPROVED 1'));
+    await tester.tap(find.textContaining('APPROVED 1'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Chassis number: CH-123'), findsOneWidget);
     await tester.binding.handlePopRoute();
@@ -353,12 +360,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Approved Driver'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Licence number: DL-1234567'), findsOneWidget);
+    expect(find.text('Application details'), findsOneWidget);
+    expect(find.text('Licence number'), findsOneWidget);
+    expect(find.text('DL-1234567'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('admin users hide pending requests and open row actions',
-      (tester) async {
+  testWidgets('admin users hide pending requests and open row actions', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);

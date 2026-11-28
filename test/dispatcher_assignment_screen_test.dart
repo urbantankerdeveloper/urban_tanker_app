@@ -32,6 +32,10 @@ void main() {
               }),
             ],
           ),
+          dispatcherVendorDetailsProvider.overrideWith(
+            (ref, vendorId) async =>
+                AccountRecord({'id': vendorId, 'vehicles': [], 'drivers': []}),
+          ),
         ],
         child: MaterialApp(
           theme: buildNewUiLightTheme(),
@@ -50,9 +54,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('UT-ORDER-1'), findsOneWidget);
-    expect(find.text('Approved Water Co.'), findsOneWidget);
+    expect(find.text('Approved Water Co.'), findsNWidgets(2));
     expect(find.text('Pending Water Co.'), findsNothing);
-    expect(find.text('Assign vendor'), findsOneWidget);
+    expect(find.text('Assign vehicle and driver'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

@@ -13,27 +13,29 @@ import 'package:urban_tanker_app/services/realtime_service.dart';
 
 void main() {
   group('realtimeNoticeFor', () {
-    test('customer accepted notice shares a key with booking.updated accepted',
-        () {
-      final fromAccepted = realtimeNoticeFor(
-        WorkspaceRole.customer,
-        const RealtimeEvent('booking.vendor_accepted', {
-          'bookingId': 'b1',
-          'vendorId': 'v1',
-          'reference': 'UT-1',
-        }),
-      );
-      final fromUpdated = realtimeNoticeFor(
-        WorkspaceRole.customer,
-        const RealtimeEvent('booking.updated', {
-          'bookingId': 'b1',
-          'status': 'accepted',
-        }),
-      );
-      expect(fromAccepted, isNotNull);
-      expect(fromUpdated?.key, fromAccepted?.key);
-      expect(fromUpdated?.message, 'Your vendor accepted the booking.');
-    });
+    test(
+      'customer accepted notice shares a key with booking.updated accepted',
+      () {
+        final fromAccepted = realtimeNoticeFor(
+          WorkspaceRole.customer,
+          const RealtimeEvent('booking.vendor_accepted', {
+            'bookingId': 'b1',
+            'vendorId': 'v1',
+            'reference': 'UT-1',
+          }),
+        );
+        final fromUpdated = realtimeNoticeFor(
+          WorkspaceRole.customer,
+          const RealtimeEvent('booking.updated', {
+            'bookingId': 'b1',
+            'status': 'accepted',
+          }),
+        );
+        expect(fromAccepted, isNotNull);
+        expect(fromUpdated?.key, fromAccepted?.key);
+        expect(fromUpdated?.message, 'Your vendor accepted the booking.');
+      },
+    );
 
     test('vendor gets a new-order notice; customer does not', () {
       const event = RealtimeEvent('vendor.order.created', {
@@ -90,6 +92,8 @@ void main() {
         ProviderScope(
           overrides: [
             vendorOrdersProvider.overrideWith((ref) async => orders),
+            vendorVehiclesProvider.overrideWith((ref) async => []),
+            vendorDriversProvider.overrideWith((ref) async => []),
           ],
           child: MaterialApp(
             theme: buildLightTheme(),
@@ -106,19 +110,20 @@ void main() {
     }
 
     VendorOrder order(String id) => VendorOrder(
-          id: id,
-          reference: 'UT-$id',
-          serviceCode: '',
-          address: '',
-          status: 'pending_vendor',
-          amountPaise: 0,
-          createdAt: null,
-          scheduledFor: null,
-        );
+      id: id,
+      reference: 'UT-$id',
+      serviceCode: '',
+      address: '',
+      status: 'pending_vendor',
+      amountPaise: 0,
+      createdAt: null,
+      scheduledFor: null,
+    );
 
-    testWidgets('new-order offer stays open with Accept and Reject for vendors',
-        (tester) async {
-      await pumpListener(tester, WorkspaceRole.vendor);
+    testWidgets('new-order offer stays open with accept and decline actions', (
+      tester,
+    ) async {
+      await pumpListener(tester, WorkspaceRole.vendor, orders: [order('b4')]);
 
       events.add(
         const RealtimeEvent('vendor.order.created', {
@@ -128,21 +133,18 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.textContaining('New order UT-4'), findsOneWidget);
-      expect(
-        find.byIcon(Icons.notifications_active_outlined),
-        findsOneWidget,
-      );
-      expect(find.text('Accept'), findsOneWidget);
-      expect(find.text('Reject'), findsOneWidget);
+      expect(find.text('INCOMING ORDER'), findsOneWidget);
+      expect(find.byIcon(Icons.notifications_active_outlined), findsOneWidget);
+      expect(find.text('Accept order'), findsOneWidget);
+      expect(find.text('Decline'), findsOneWidget);
 
       final size = tester.view.physicalSize / tester.view.devicePixelRatio;
-      final accept = tester.getCenter(find.text('Accept'));
+      final accept = tester.getCenter(find.text('Accept order'));
       expect(accept.dx, greaterThan(size.width / 2));
       expect(accept.dy, greaterThan(size.height / 2));
 
       await tester.pump(const Duration(seconds: 10));
-      expect(find.textContaining('New order UT-4'), findsOneWidget);
+      expect(find.text('INCOMING ORDER'), findsOneWidget);
     });
 
     testWidgets('notices appear in the top-right corner', (tester) async {
@@ -164,13 +166,10 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
     });
 
-    testWidgets('Accept opens the order sheet for the offered order',
-        (tester) async {
-      await pumpListener(
-        tester,
-        WorkspaceRole.vendor,
-        orders: [order('b9')],
-      );
+    testWidgets('Accept opens the order sheet for the offered order', (
+      tester,
+    ) async {
+      await pumpListener(tester, WorkspaceRole.vendor, orders: [order('b9')]);
 
       events.add(
         const RealtimeEvent('vendor.order.created', {
@@ -179,19 +178,16 @@ void main() {
         }),
       );
       await tester.pump();
-      await tester.tap(find.text('Accept'));
+      await tester.tap(find.text('Accept order'));
       await tester.pumpAndSettle();
 
       expect(find.text('Assign vehicle and driver'), findsOneWidget);
     });
 
-    testWidgets('Reject opens the reason prompt for the offered order',
-        (tester) async {
-      await pumpListener(
-        tester,
-        WorkspaceRole.vendor,
-        orders: [order('b10')],
-      );
+    testWidgets('Reject opens the reason prompt for the offered order', (
+      tester,
+    ) async {
+      await pumpListener(tester, WorkspaceRole.vendor, orders: [order('b10')]);
 
       events.add(
         const RealtimeEvent('vendor.order.created', {
@@ -200,14 +196,15 @@ void main() {
         }),
       );
       await tester.pump();
-      await tester.tap(find.text('Reject'));
+      await tester.tap(find.text('Decline'));
       await tester.pumpAndSettle();
 
       expect(find.text('Reason'), findsOneWidget);
     });
 
-    testWidgets('taken closes the open offer for the same booking',
-        (tester) async {
+    testWidgets('taken closes the open offer for the same booking', (
+      tester,
+    ) async {
       await pumpListener(tester, WorkspaceRole.vendor);
 
       events
@@ -225,8 +222,8 @@ void main() {
         );
       await tester.pump();
 
-      expect(find.textContaining('New order UT-11'), findsNothing);
-      expect(find.text('Accept'), findsNothing);
+      expect(find.text('INCOMING ORDER'), findsNothing);
+      expect(find.text('Accept order'), findsNothing);
       expect(
         find.text('Order UT-11 was accepted by another vendor.'),
         findsOneWidget,
@@ -257,8 +254,9 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
     });
 
-    testWidgets('does not show vendor order notices to customers',
-        (tester) async {
+    testWidgets('does not show vendor order notices to customers', (
+      tester,
+    ) async {
       await pumpListener(tester, WorkspaceRole.customer);
 
       events.add(

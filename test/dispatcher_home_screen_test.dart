@@ -89,12 +89,10 @@ void main() {
     ]);
 
     for (final label in ['View orders', 'Live fleet map', 'Open alerts']) {
-      await tester.scrollUntilVisible(
-        find.text(label),
-        240,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.text(label));
+      final destination = find.text(label);
+      await tester.ensureVisible(destination);
+      await tester.pumpAndSettle();
+      await tester.tap(destination);
     }
     expect(ordersOpened, isTrue);
     expect(liveOpened, isTrue);

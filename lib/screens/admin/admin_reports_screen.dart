@@ -18,7 +18,9 @@ const _ranges = <(String, int)>[
 String _isoDate(DateTime date) => date.toIso8601String().split('T').first;
 
 class AdminReportsScreen extends ConsumerWidget {
-  const AdminReportsScreen({super.key});
+  const AdminReportsScreen({super.key, this.loadReport});
+
+  final Future<Map<String, dynamic>> Function(Map<String, dynamic>)? loadReport;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,7 +32,12 @@ class AdminReportsScreen extends ConsumerWidget {
           AppPageInsets.standard,
         ),
         children: [
-          AdminSalesReportPanel(vendors: vendors.value ?? const []),
+          AdminSalesReportPanel(
+            vendors: vendors.value ?? const [],
+            loadReport: loadReport,
+          ),
+          const SizedBox(height: AppSpace.xl),
+          _VendorDirectory(vendors: vendors.value ?? const []),
           if (vendors.hasError) ...[
             const SizedBox(height: AppSpace.md),
             ErrorState(
