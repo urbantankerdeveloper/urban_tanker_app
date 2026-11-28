@@ -49,24 +49,25 @@ class SessionUser {
   }
 
   SessionUser copyWith({
+    String? name,
+    String? email,
     String? phone,
     bool? phoneVerified,
     bool? phoneVerificationRequired,
     bool? selfieRequired,
-  }) =>
-      SessionUser(
-        id: id,
-        name: name,
-        username: username,
-        role: role,
-        email: email,
-        phone: phone ?? this.phone,
-        phoneVerified: phoneVerified ?? this.phoneVerified,
-        phoneVerificationRequired:
-            phoneVerificationRequired ?? this.phoneVerificationRequired,
-        themeMode: themeMode,
-        selfieRequired: selfieRequired ?? this.selfieRequired,
-      );
+  }) => SessionUser(
+    id: id,
+    name: name ?? this.name,
+    username: username,
+    role: role,
+    email: email ?? this.email,
+    phone: phone ?? this.phone,
+    phoneVerified: phoneVerified ?? this.phoneVerified,
+    phoneVerificationRequired:
+        phoneVerificationRequired ?? this.phoneVerificationRequired,
+    themeMode: themeMode,
+    selfieRequired: selfieRequired ?? this.selfieRequired,
+  );
 }
 
 class AuthResult {

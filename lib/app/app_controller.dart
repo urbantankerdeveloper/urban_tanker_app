@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'auth_feature_flags.dart';
+import '../models/account.dart';
 import '../models/session.dart';
 import '../services/api_base.dart';
 import '../services/api_client.dart';
@@ -477,6 +478,26 @@ class AppController extends ChangeNotifier {
     final current = user;
     if (current == null) return;
     final updated = current.copyWith(phone: phone, phoneVerified: true);
+    user = updated;
+    unawaited(_persistSessionUser(updated));
+    notifyListeners();
+  }
+
+  void applyProfileUpdate(CustomerProfile profile) {
+    final current = user;
+    if (current == null ||
+        (current.name == profile.name &&
+            current.email == profile.email &&
+            current.phone == profile.phone &&
+            current.phoneVerified == profile.phoneVerified)) {
+      return;
+    }
+    final updated = current.copyWith(
+      name: profile.name,
+      email: profile.email,
+      phone: profile.phone,
+      phoneVerified: profile.phoneVerified,
+    );
     user = updated;
     unawaited(_persistSessionUser(updated));
     notifyListeners();

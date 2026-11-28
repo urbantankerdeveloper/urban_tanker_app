@@ -117,9 +117,11 @@ final bookingTrackingProvider = FutureProvider.autoDispose
 
 final customerProfileProvider = FutureProvider.autoDispose<CustomerProfile>((
   ref,
-) {
+) async {
   ref.watch(sessionUserIdProvider);
-  return ref.watch(apiProvider).profile();
+  final profile = await ref.watch(apiProvider).profile();
+  ref.read(appControllerProvider).applyProfileUpdate(profile);
+  return profile;
 });
 
 final profileSelfieProvider = FutureProvider.autoDispose<String?>((ref) {

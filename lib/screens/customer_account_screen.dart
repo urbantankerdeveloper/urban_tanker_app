@@ -21,6 +21,9 @@ class CustomerAccountScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(customerProfileProvider);
+    final sessionUser = ref.watch(
+      appControllerProvider.select((controller) => controller.user),
+    );
     final profilePhoto = ref.watch(profileSelfieProvider);
     final profilePhotoUrl = profilePhoto.when(
       data: (url) => url,
@@ -51,40 +54,48 @@ class CustomerAccountScreen extends ConsumerWidget {
               message: friendlyError(error),
               retry: () => ref.invalidate(customerProfileProvider),
             ),
-            data: (user) => _ProfileCard(
-              profile: user,
-              imageUrl: profilePhotoUrl,
-              onView: () => showUserProfileDialog(
-                context: context,
-                api: ref.read(apiProvider),
-                name: user.name,
-                role: 'customer',
-                email: user.email,
-                phone: user.phone,
-                profilePhotoUrl: ref.read(profileSelfieProvider.future),
-                initialProfilePhotoUrl: profilePhotoUrl,
-                onSaved: (_) async {
-                  ref.invalidate(profileSelfieProvider);
-                  await ref.read(appControllerProvider).refreshUserProfile();
-                  ref.invalidate(customerProfileProvider);
-                },
-              ),
-              onEdit: () => showUserProfileDialog(
-                context: context,
-                api: ref.read(apiProvider),
-                name: user.name,
-                role: 'customer',
-                email: user.email,
-                phone: user.phone,
-                profilePhotoUrl: ref.read(profileSelfieProvider.future),
-                initialProfilePhotoUrl: profilePhotoUrl,
-                onSaved: (_) async {
-                  ref.invalidate(profileSelfieProvider);
-                  await ref.read(appControllerProvider).refreshUserProfile();
-                  ref.invalidate(customerProfileProvider);
-                },
-              ),
-            ),
+            data: (user) {
+              final currentProfile = sessionUser == null
+                  ? user
+                  : CustomerProfile(
+                      name: sessionUser.name,
+                      email: sessionUser.email ?? user.email,
+                      phone: sessionUser.phone ?? user.phone,
+                      phoneVerified:
+                          sessionUser.phoneVerified ?? user.phoneVerified,
+                    );
+              Future<void> onProfileSaved(CustomerProfile saved) async {
+                ref.read(appControllerProvider).applyProfileUpdate(saved);
+                ref.invalidate(profileSelfieProvider);
+              }
+
+              return _ProfileCard(
+                profile: currentProfile,
+                imageUrl: profilePhotoUrl,
+                onView: () => showUserProfileDialog(
+                  context: context,
+                  api: ref.read(apiProvider),
+                  name: currentProfile.name,
+                  role: 'customer',
+                  email: currentProfile.email,
+                  phone: currentProfile.phone,
+                  profilePhotoUrl: ref.read(profileSelfieProvider.future),
+                  initialProfilePhotoUrl: profilePhotoUrl,
+                  onSaved: onProfileSaved,
+                ),
+                onEdit: () => showUserProfileDialog(
+                  context: context,
+                  api: ref.read(apiProvider),
+                  name: currentProfile.name,
+                  role: 'customer',
+                  email: currentProfile.email,
+                  phone: currentProfile.phone,
+                  profilePhotoUrl: ref.read(profileSelfieProvider.future),
+                  initialProfilePhotoUrl: profilePhotoUrl,
+                  onSaved: onProfileSaved,
+                ),
+              );
+            },
           ),
           const SizedBox(height: AppSpace.md),
           const _UsageCard(),

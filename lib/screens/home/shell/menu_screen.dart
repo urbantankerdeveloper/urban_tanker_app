@@ -36,7 +36,9 @@ class MenuScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = controller.user;
+    final user = ref.watch(
+      appControllerProvider.select((controller) => controller.user),
+    );
     final profilePhoto = ref.watch(profileSelfieProvider);
     final profilePhotoUrl = profilePhoto.when(
       data: (url) => url,
@@ -56,9 +58,9 @@ class MenuScreen extends ConsumerWidget {
         role: role.name,
         profilePhotoUrl: profilePhotoFuture,
         initialProfilePhotoUrl: profilePhotoUrl,
-        onSaved: (_) async {
+        onSaved: (profile) async {
+          controller.applyProfileUpdate(profile);
           ref.invalidate(profileSelfieProvider);
-          await controller.refreshUserProfile();
         },
       );
     }

@@ -156,10 +156,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             loading: () => null,
             error: (_, __) => null,
           ),
-      onSaved: (_) async {
-        await widget.controller.refreshUserProfile();
+      onSaved: (profile) async {
+        widget.controller.applyProfileUpdate(profile);
         if (!mounted) return;
-        ref.invalidate(customerProfileProvider);
         ref.invalidate(profileSelfieProvider);
       },
     );
@@ -288,7 +287,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final user = widget.controller.user;
+    final user = ref.watch(
+      appControllerProvider.select((controller) => controller.user),
+    );
     // The app switches to the auth screen on sign-out; render nothing until then.
     if (user == null) return const SizedBox.shrink();
     final isCustomer = role == WorkspaceRole.customer;
