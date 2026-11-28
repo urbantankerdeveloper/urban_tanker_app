@@ -104,10 +104,17 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Run report'));
     await tester.pumpAndSettle();
     expect(find.text('₹300.00'), findsOneWidget);
-    expect(reportCalls, 2);
+    expect(find.text('Today'), findsOneWidget);
+    expect(reportCalls, 1);
+    final today = DateTime.now();
+    final todayIso =
+        '${today.year.toString().padLeft(4, '0')}-'
+        '${today.month.toString().padLeft(2, '0')}-'
+        '${today.day.toString().padLeft(2, '0')}';
+    expect(reportRequests.single['from'], todayIso);
+    expect(reportRequests.single['to'], todayIso);
 
     await tester.tap(find.text('All vendors'));
     await tester.pumpAndSettle();
@@ -117,9 +124,8 @@ void main() {
 
     expect(find.text('Vendor A'), findsOneWidget);
     expect(find.text('₹100.00'), findsNWidgets(2));
-    expect(reportCalls, 4);
-    expect(reportRequests.skip(2).map((request) => request['vendorId']), [
-      'vendor-1',
+    expect(reportCalls, 2);
+    expect(reportRequests.skip(1).map((request) => request['vendorId']), [
       'vendor-1',
     ]);
   });

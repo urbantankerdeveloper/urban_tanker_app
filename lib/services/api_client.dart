@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 
 import '../app/auth_feature_flags.dart';
 import '../models/account.dart';
+import '../models/admin_dashboard_summary.dart';
 import '../models/admin_enquiry_page.dart';
 import '../models/booking.dart';
 import '../models/booking_service_details.dart';
@@ -886,6 +887,9 @@ class ApiClient implements ApiTransport {
 
   Future<Map<String, dynamic>> adminHealth() => _admin.adminHealth();
 
+  Future<AdminDashboardSummary> adminDashboardSummary() =>
+      _admin.adminDashboardSummary();
+
   Future<bool> adminApprovalRequiredEnabled() =>
       _admin.adminApprovalRequiredEnabled();
 
@@ -893,6 +897,15 @@ class ApiClient implements ApiTransport {
 
   Future<void> setAdminUserActive(String id, {required bool isActive}) =>
       _admin.setAdminUserActive(id, isActive: isActive);
+
+  Future<void> approveRejectedAdminUser(String id) =>
+      _admin.approveRejectedAdminUser(id);
+
+  Future<void> deleteAdminUser(String id, {required String kind}) =>
+      _admin.deleteAdminUser(id, kind: kind);
+
+  Future<void> reactivateAdminAccessRequest(String id) =>
+      _admin.reactivateAdminAccessRequest(id);
 
   Future<void> reviewAdminAccessRequest(
     String id, {

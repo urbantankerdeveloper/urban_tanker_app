@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +7,7 @@ import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/account.dart';
 import '../../../models/vendor.dart';
+import '../../../models/workspace_navigation.dart';
 import '../../../services/api_client.dart';
 import '../../../services/friendly_error.dart';
 import '../../../services/location_coordinates.dart';
@@ -19,7 +21,9 @@ const _approvalTabs = ['Waiting for approval', 'Approved'];
 /// Admin people and fleet: vendors, customers, vehicles and drivers. Each list
 /// has search, and vendors and fleet items have status actions.
 class AdminPeopleSection extends ConsumerStatefulWidget {
-  const AdminPeopleSection({super.key});
+  const AdminPeopleSection({super.key, this.focus});
+
+  final ValueListenable<OperationsFocus?>? focus;
 
   @override
   ConsumerState<AdminPeopleSection> createState() => _AdminPeopleSectionState();
@@ -38,13 +42,35 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
   @override
   void initState() {
     super.initState();
+    widget.focus?.addListener(_onFocus);
     _reload();
   }
 
   @override
+  void didUpdateWidget(covariant AdminPeopleSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focus != widget.focus) {
+      oldWidget.focus?.removeListener(_onFocus);
+      widget.focus?.addListener(_onFocus);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.focus?.removeListener(_onFocus);
     _search.dispose();
     super.dispose();
+  }
+
+  void _onFocus() {
+    final request = widget.focus?.value;
+    final index = request?.subsection;
+    if (request?.section == OperationsSection.people &&
+        index != null &&
+        index >= 0 &&
+        index < _peopleTabs.length) {
+      _selectTab(index);
+    }
   }
 
   void _reload() {
@@ -221,13 +247,19 @@ class _AdminPeopleSectionState extends ConsumerState<AdminPeopleSection> {
         ? 'No vehicles waiting for approval.'
         : 'No approved vehicles found.',
     filter: (vehicle) =>
-        _matches(vehicle.registrationNumber, vehicle.verification) &&
+        _matches(
+          '${vehicle.ownerName} ${vehicle.registrationNumber}',
+          vehicle.verification,
+        ) &&
         _inApprovalTab(vehicle.verification),
     row: (vehicle) => SurfaceCard(
       padding: EdgeInsets.zero,
       child: AppListRow(
-        title: vehicle.registrationNumber,
+        title: vehicle.ownerName.isEmpty
+            ? 'Owner name unavailable'
+            : vehicle.ownerName,
         subtitle:
+            '${vehicle.registrationNumber}\n'
             '${vehicle.capacityLitres} L • ${vehicle.verification} • '
             '${vehicle.active ? 'Active' : 'Inactive'}',
         trailing: _fleetStatusMenu(

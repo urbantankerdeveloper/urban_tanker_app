@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +6,7 @@ import '../../../app/auth_feature_flags.dart';
 import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/account.dart';
+import '../../../models/workspace_navigation.dart';
 import '../../../services/friendly_error.dart';
 import '../admin_partner_review_screen.dart';
 import 'admin_common.dart';
@@ -14,7 +16,9 @@ const _financeTabs = ['Coupons', 'Payouts', 'Partners'];
 /// Admin finance and promos: coupons (with create), payouts, and partner
 /// applications. Each list searches and opens its record in a sheet.
 class AdminFinanceSection extends ConsumerStatefulWidget {
-  const AdminFinanceSection({super.key});
+  const AdminFinanceSection({super.key, this.focus});
+
+  final ValueListenable<OperationsFocus?>? focus;
 
   @override
   ConsumerState<AdminFinanceSection> createState() =>
@@ -32,13 +36,35 @@ class _AdminFinanceSectionState extends ConsumerState<AdminFinanceSection> {
   @override
   void initState() {
     super.initState();
+    widget.focus?.addListener(_onFocus);
     _reload();
   }
 
   @override
+  void didUpdateWidget(covariant AdminFinanceSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focus != widget.focus) {
+      oldWidget.focus?.removeListener(_onFocus);
+      widget.focus?.addListener(_onFocus);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.focus?.removeListener(_onFocus);
     _search.dispose();
     super.dispose();
+  }
+
+  void _onFocus() {
+    final request = widget.focus?.value;
+    final index = request?.subsection;
+    if (request?.section == OperationsSection.finance &&
+        index != null &&
+        index >= 0 &&
+        index < _financeTabs.length) {
+      _selectTab(index);
+    }
   }
 
   void _reload() {

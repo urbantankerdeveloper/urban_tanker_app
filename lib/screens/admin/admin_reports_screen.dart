@@ -22,6 +22,27 @@ class AdminReportsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (AuthFeatureFlags.newUiEnabled) {
+      final vendors = ref.watch(dispatcherVendorsProvider);
+      return ListView(
+        padding: AppPageInsets.withSafeAreaBottom(
+          context,
+          AppPageInsets.standard,
+        ),
+        children: [
+          AdminSalesReportPanel(vendors: vendors.value ?? const []),
+          if (vendors.hasError) ...[
+            const SizedBox(height: AppSpace.md),
+            ErrorState(
+              error: vendors.error!,
+              message: friendlyError(vendors.error!),
+              onRetry: () => ref.invalidate(dispatcherVendorsProvider),
+            ),
+          ],
+        ],
+      );
+    }
+
     final vendors = ref.watch(dispatcherVendorsProvider);
     return vendors.when(
       loading: () => const LoadingState(message: 'Loading reports...'),
@@ -37,11 +58,7 @@ class AdminReportsScreen extends ConsumerWidget {
             AppPageInsets.standard,
           ),
           children: [
-            Text('Reports', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: AppSpace.lg),
-            AuthFeatureFlags.newUiEnabled
-                ? AdminSalesReportPanel(vendors: items)
-                : const _RevenueReport(),
+            const _RevenueReport(),
             const SizedBox(height: AppSpace.xl),
             _VendorDirectory(vendors: items),
           ],
@@ -51,7 +68,7 @@ class AdminReportsScreen extends ConsumerWidget {
   }
 }
 
-/// Sales report with date comparison and a server-side vendor filter.
+/// Sales report with day, week and month navigation.
 class AdminSalesReportPanel extends ConsumerStatefulWidget {
   const AdminSalesReportPanel({
     required this.vendors,
@@ -69,22 +86,94 @@ class AdminSalesReportPanel extends ConsumerStatefulWidget {
 
 class _AdminSalesReportPanelState extends ConsumerState<AdminSalesReportPanel> {
   int _rangeIndex = 0;
+  int _periodOffset = 0;
   String? _vendorId;
   bool _running = false;
+  bool _sending = false;
   String? _error;
   List<Map<String, dynamic>>? _rows;
-  List<Map<String, dynamic>>? _previousRows;
 
   static const _rangeLabels = ['Day', 'Week', 'Month'];
-  static const _periodLengths = [1, 7, 30];
+  static const _monthLabels = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _run());
+  }
+
+  (DateTime, DateTime) _selectedWindow() {
+    final today = DateTime.now();
+    final date = DateTime(today.year, today.month, today.day);
+    if (_rangeIndex == 0) {
+      final selected = date.subtract(Duration(days: _periodOffset));
+      return (selected, selected);
+    }
+    if (_rangeIndex == 1) {
+      final start = date.subtract(
+        Duration(days: date.weekday - 1 + 7 * _periodOffset),
+      );
+      final end = _periodOffset == 0
+          ? date
+          : start.add(const Duration(days: 6));
+      return (start, end);
+    }
+    final start = DateTime(today.year, today.month - _periodOffset, 1);
+    final end = _periodOffset == 0
+        ? date
+        : DateTime(start.year, start.month + 1, 0);
+    return (start, end);
+  }
+
+  int get _maximumOffset => _rangeIndex == 0 ? 6 : 2;
+
+  String _dateLabel(DateTime date) =>
+      '${_monthLabels[date.month - 1]} ${date.day}';
+
+  String _periodLabel((DateTime, DateTime) window) {
+    if (_rangeIndex == 0) {
+      if (_periodOffset == 0) return 'Today';
+      if (_periodOffset == 1) return 'Yesterday';
+      return _dateLabel(window.$1);
+    }
+    if (_rangeIndex == 1) {
+      return _periodOffset == 0
+          ? 'This week'
+          : 'Week of ${_dateLabel(window.$1)}';
+    }
+    return _periodOffset == 0
+        ? 'This month'
+        : '${_monthLabels[window.$1.month - 1]} ${window.$1.year}';
+  }
+
+  Future<void> _changeRange(int index) async {
+    setState(() {
+      _rangeIndex = index;
+      _periodOffset = 0;
+    });
+    await _run();
+  }
+
+  Future<void> _changePeriod(int direction) async {
+    setState(() => _periodOffset += direction);
+    await _run();
+  }
 
   Future<void> _run() async {
-    final length = _periodLengths[_rangeIndex];
-    final today = DateTime.now();
-    final currentEnd = DateTime(today.year, today.month, today.day);
-    final currentStart = currentEnd.subtract(Duration(days: length - 1));
-    final previousEnd = currentStart.subtract(const Duration(days: 1));
-    final previousStart = previousEnd.subtract(Duration(days: length - 1));
+    final window = _selectedWindow();
     final runReport =
         widget.loadReport ??
         ((Map<String, dynamic> body) =>
@@ -93,28 +182,17 @@ class _AdminSalesReportPanelState extends ConsumerState<AdminSalesReportPanel> {
     setState(() {
       _running = true;
       _error = null;
-      _rows = null;
-      _previousRows = null;
     });
     try {
-      final reports = await Future.wait([
-        runReport({
-          'type': 'revenue',
-          'from': _isoDate(currentStart),
-          'to': _isoDate(currentEnd),
-          if (_vendorId != null) 'vendorId': _vendorId,
-        }),
-        runReport({
-          'type': 'revenue',
-          'from': _isoDate(previousStart),
-          'to': _isoDate(previousEnd),
-          if (_vendorId != null) 'vendorId': _vendorId,
-        }),
-      ]);
+      final report = await runReport({
+        'type': 'revenue',
+        'from': _isoDate(window.$1),
+        'to': _isoDate(window.$2),
+        if (_vendorId != null) 'vendorId': _vendorId,
+      });
       if (!mounted) return;
       setState(() {
-        _rows = _reportRows(reports.first);
-        _previousRows = _reportRows(reports.last);
+        _rows = _reportRows(report);
       });
     } catch (error) {
       if (mounted) setState(() => _error = friendlyError(error));
@@ -134,19 +212,57 @@ class _AdminSalesReportPanelState extends ConsumerState<AdminSalesReportPanel> {
     await _run();
   }
 
+  Future<void> _openReportSettings() async {
+    final selected = _selectedWindow();
+    final emailRequest = await showAppBottomSheet<_ReportEmailRequest>(
+      context,
+      builder: (_) => _ReportEmailSettingsSheet(
+        initialFrom: selected.$1,
+        initialTo: selected.$2,
+      ),
+    );
+    if (emailRequest == null || !mounted) return;
+    setState(() => _sending = true);
+    try {
+      final report = await ref.read(appControllerProvider).api.adminReport({
+        'type': 'revenue',
+        'from': _isoDate(emailRequest.from),
+        'to': _isoDate(emailRequest.to),
+        'email': emailRequest.email,
+        if (_vendorId != null) 'vendorId': _vendorId,
+      });
+      if (report['emailSent'] != true) {
+        throw const FormatException('The report email was not sent.');
+      }
+      if (mounted) {
+        showAppSnack(
+          context,
+          'Sales report sent to ${emailRequest.email}.',
+          variant: AppSnackVariant.success,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        showAppSnack(
+          context,
+          'Sales report could not be sent: ${friendlyError(error)}',
+          variant: AppSnackVariant.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final rows = _rows == null
         ? const <Map<String, dynamic>>[]
         : AdminRevenueReport.filterRows(_rows!, vendorId: _vendorId);
     final total = AdminRevenueReport.total(rows);
-    final previousRows = _previousRows == null
-        ? const <Map<String, dynamic>>[]
-        : AdminRevenueReport.filterRows(_previousRows!, vendorId: _vendorId);
-    final previousTotal = AdminRevenueReport.total(previousRows);
     final breakdown = AdminRevenueReport._byService(rows);
-    final length = _periodLengths[_rangeIndex];
-    final values = _dailyValues(rows, length);
+    final window = _selectedWindow();
+    final values = _dailyValues(rows, window.$1, window.$2);
     final selectedVendor = widget.vendors
         .where((vendor) => vendor.id == _vendorId)
         .firstOrNull;
@@ -155,14 +271,58 @@ class _AdminSalesReportPanelState extends ConsumerState<AdminSalesReportPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Sales report', style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Sales report',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Report settings and email',
+                onPressed: _sending ? null : _openReportSettings,
+                icon: _sending
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.settings_outlined),
+              ),
+            ],
+          ),
           const SizedBox(height: AppSpace.md),
           SegmentedTabs(
             labels: _rangeLabels,
             selectedIndex: _rangeIndex,
-            onChanged: (index) => setState(() => _rangeIndex = index),
+            onChanged: _changeRange,
           ),
           const SizedBox(height: AppSpace.md),
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Previous ${_rangeLabels[_rangeIndex].toLowerCase()}',
+                onPressed: _periodOffset < _maximumOffset
+                    ? () => _changePeriod(1)
+                    : null,
+                icon: const Icon(Icons.chevron_left),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    _periodLabel(window),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Next ${_rangeLabels[_rangeIndex].toLowerCase()}',
+                onPressed: _periodOffset > 0 ? () => _changePeriod(-1) : null,
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
           Align(
             alignment: AlignmentDirectional.centerStart,
             child: ChoiceChip(
@@ -174,13 +334,10 @@ class _AdminSalesReportPanelState extends ConsumerState<AdminSalesReportPanel> {
               onSelected: (_) => _chooseVendor(),
             ),
           ),
-          const SizedBox(height: AppSpace.md),
-          PrimaryButton(
-            label: _running ? 'Running...' : 'Run report',
-            icon: Icons.insights_outlined,
-            loading: _running,
-            onPressed: _running ? null : _run,
-          ),
+          if (_running) ...[
+            const SizedBox(height: AppSpace.md),
+            const LinearProgressIndicator(),
+          ],
           if (_error != null) ...[
             const SizedBox(height: AppSpace.md),
             AppStateInline.error(
@@ -209,11 +366,6 @@ class _AdminSalesReportPanelState extends ConsumerState<AdminSalesReportPanel> {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: AppSpace.sm),
-            Text(
-              _comparisonText(total, previousTotal),
-              style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: AppSpace.lg),
             SizedBox(
@@ -248,10 +400,12 @@ class _AdminSalesReportPanelState extends ConsumerState<AdminSalesReportPanel> {
     );
   }
 
-  List<double> _dailyValues(List<Map<String, dynamic>> rows, int days) {
-    final today = DateTime.now();
-    final end = DateTime(today.year, today.month, today.day);
-    final start = end.subtract(Duration(days: days - 1));
+  List<double> _dailyValues(
+    List<Map<String, dynamic>> rows,
+    DateTime start,
+    DateTime end,
+  ) {
+    final days = end.difference(start).inDays + 1;
     final totals = List<double>.filled(days, 0);
     for (final row in rows) {
       final createdAt = DateTime.tryParse((row['created_at'] ?? '').toString());
@@ -275,22 +429,6 @@ class _AdminSalesReportPanelState extends ConsumerState<AdminSalesReportPanel> {
           .map((row) => Map<String, dynamic>.from(row))
           .toList() ??
       const <Map<String, dynamic>>[];
-
-  static String _comparisonText(double current, double previous) {
-    if (previous <= 0) {
-      return current <= 0
-          ? 'No revenue in either period.'
-          : 'No revenue was recorded in the previous period.';
-    }
-    final percentage = ((current - previous) / previous) * 100;
-    final direction = percentage > 0
-        ? 'Up'
-        : percentage < 0
-        ? 'Down'
-        : 'Unchanged';
-    return '$direction ${percentage.abs().toStringAsFixed(1)}% vs previous '
-        'period (₹${previous.toStringAsFixed(2)}).';
-  }
 }
 
 class AdminRevenueReport {
@@ -460,6 +598,158 @@ class _VendorFilterSheetState extends State<_VendorFilterSheet> {
   }
 }
 
+class _ReportEmailRequest {
+  const _ReportEmailRequest({
+    required this.from,
+    required this.to,
+    required this.email,
+  });
+
+  final DateTime from;
+  final DateTime to;
+  final String email;
+}
+
+class _ReportEmailSettingsSheet extends StatefulWidget {
+  const _ReportEmailSettingsSheet({
+    required this.initialFrom,
+    required this.initialTo,
+  });
+
+  final DateTime initialFrom;
+  final DateTime initialTo;
+
+  @override
+  State<_ReportEmailSettingsSheet> createState() =>
+      _ReportEmailSettingsSheetState();
+}
+
+class _ReportEmailSettingsSheetState extends State<_ReportEmailSettingsSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _email = TextEditingController();
+  late DateTime _from = widget.initialFrom;
+  late DateTime _to = widget.initialTo;
+  String? _dateError;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    super.dispose();
+  }
+
+  Future<void> _chooseDate({required bool from}) async {
+    final today = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: from ? _from : _to,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(today.year, today.month, today.day),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      if (from) {
+        _from = selected;
+      } else {
+        _to = selected;
+      }
+      _dateError = null;
+    });
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    if (_to.isBefore(_from)) {
+      setState(
+        () => _dateError = 'The end date must be on or after the start date.',
+      );
+      return;
+    }
+    Navigator.of(
+      context,
+    ).pop(_ReportEmailRequest(from: _from, to: _to, email: _email.text.trim()));
+  }
+
+  String _dateText(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')}/'
+      '${date.month.toString().padLeft(2, '0')}/${date.year}';
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    padding: const EdgeInsets.fromLTRB(
+      AppSpace.gutter,
+      AppSpace.sm,
+      AppSpace.gutter,
+      AppSpace.xl,
+    ),
+    child: Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Report settings',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpace.sm),
+          Text(
+            'Choose a date range and recipient for the emailed dashboard and sales report.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: AppSpace.md),
+          SurfaceCard(
+            padding: EdgeInsets.zero,
+            child: AppListRow(
+              title: 'From',
+              subtitle: _dateText(_from),
+              trailing: const Icon(Icons.calendar_today_outlined),
+              onTap: () => _chooseDate(from: true),
+            ),
+          ),
+          const SizedBox(height: AppSpace.sm),
+          SurfaceCard(
+            padding: EdgeInsets.zero,
+            child: AppListRow(
+              title: 'To',
+              subtitle: _dateText(_to),
+              trailing: const Icon(Icons.calendar_today_outlined),
+              onTap: () => _chooseDate(from: false),
+            ),
+          ),
+          if (_dateError != null) ...[
+            const SizedBox(height: AppSpace.xs),
+            Text(
+              _dateError!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: AppSpace.md),
+          TextFormField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            decoration: const InputDecoration(
+              labelText: 'Recipient email',
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
+            validator: (value) {
+              final email = value?.trim() ?? '';
+              return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)
+                  ? null
+                  : 'Enter a valid email address.';
+            },
+          ),
+          const SizedBox(height: AppSpace.lg),
+          PrimaryButton(
+            label: 'Send report',
+            icon: Icons.send_outlined,
+            onPressed: _submit,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 /// Revenue for a chosen range: totals, a bar per day, and a share action.
 class _RevenueReport extends ConsumerStatefulWidget {
   const _RevenueReport();
@@ -600,7 +890,7 @@ class BarPainter extends CustomPainter {
     final max = values.fold<double>(0, (a, b) => b > a ? b : a);
     if (max <= 0) return;
     final slot = size.width / values.length;
-    final barWidth = slot * 0.6;
+    final barWidth = values.length == 1 ? slot : slot * 0.6;
     final paint = Paint()..color = color;
     for (var i = 0; i < values.length; i++) {
       final height = size.height * (values[i] / max);

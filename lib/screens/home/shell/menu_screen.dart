@@ -11,6 +11,7 @@ import '../../../models/workspace_navigation.dart';
 import '../../security_settings_screen.dart';
 import '../../profile_dialog.dart';
 import '../../admin/admin_access_requests_screen.dart';
+import '../../admin/admin_settings_screen.dart';
 import 'appearance.dart';
 
 /// Menu tab for vendor, dispatcher and admin. Replaces the old drawer: the
@@ -22,6 +23,7 @@ class MenuScreen extends ConsumerWidget {
     required this.notifications,
     required this.onDestination,
     required this.onNotifications,
+    required this.onHome,
     super.key,
   });
 
@@ -30,6 +32,7 @@ class MenuScreen extends ConsumerWidget {
   final Future<List<NotificationItem>>? notifications;
   final ValueChanged<WorkspaceNavigationDestination> onDestination;
   final VoidCallback onNotifications;
+  final VoidCallback onHome;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -94,7 +97,9 @@ class MenuScreen extends ConsumerWidget {
                 leading: const Icon(Icons.settings_outlined),
                 title: 'Settings',
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openSecurity(context),
+                onTap: () => role == WorkspaceRole.admin
+                    ? _openAdminSettings(context)
+                    : _openSecurity(context),
               ),
             ]),
           ),
@@ -199,6 +204,15 @@ class MenuScreen extends ConsumerWidget {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SecuritySettingsScreen(controller: controller),
+      ),
+    );
+  }
+
+  void _openAdminSettings(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            AdminSettingsScreen(controller: controller, onBackToHome: onHome),
       ),
     );
   }

@@ -53,11 +53,13 @@ class VendorOrder {
 
   factory VendorOrder.fromJson(Map<String, dynamic> json) {
     final parentOrder = json['order'];
-    final parentOrderMap =
-        parentOrder is Map ? parentOrder : const <String, dynamic>{};
+    final parentOrderMap = parentOrder is Map
+        ? parentOrder
+        : const <String, dynamic>{};
     final nestedOrders = json['orders'];
-    final nestedOrderMap =
-        nestedOrders is Map ? nestedOrders : const <String, dynamic>{};
+    final nestedOrderMap = nestedOrders is Map
+        ? nestedOrders
+        : const <String, dynamic>{};
     final orderItems = _vendorRecords(
       json['items'] ?? json['order_items'],
       BookingOrderItem.fromJson,
@@ -76,24 +78,27 @@ class VendorOrder {
     );
     final serviceDetails = parsedServiceDetails.isEmpty
         ? orderItems
-            .map((item) => VendorOrderServiceDetail(
+              .map(
+                (item) => VendorOrderServiceDetail(
                   service: item.serviceName,
                   capacity: item.details.quantity,
                   details: item.details.details,
                   waterType: item.details.waterType,
                   tankerCount: item.details.tankerCount,
-                ))
-            .toList()
+                ),
+              )
+              .toList()
         : parsedServiceDetails;
     return VendorOrder(
       id: (json['id'] ?? '').toString(),
       orderId: (json['order_id'] ?? json['orderId'])?.toString(),
-      reference: (json['reference'] ??
-              parentOrderMap['reference'] ??
-              nestedOrderMap['reference'] ??
-              json['id'] ??
-              '')
-          .toString(),
+      reference:
+          (json['reference'] ??
+                  parentOrderMap['reference'] ??
+                  nestedOrderMap['reference'] ??
+                  json['id'] ??
+                  '')
+              .toString(),
       serviceCode: (json['service_code'] ?? json['service'] ?? '').toString(),
       address: (json['address_text'] ?? json['location'] ?? '').toString(),
       status: _normalizeVendorOrderStatus(json['status']),
@@ -101,9 +106,11 @@ class VendorOrder {
       amountPaise: _vendorAmountPaise(json),
       serviceDetails: serviceDetails,
       createdAt: DateTime.tryParse(
-          (json['created_at'] ?? json['createdAt'] ?? '').toString()),
+        (json['created_at'] ?? json['createdAt'] ?? '').toString(),
+      ),
       scheduledFor: DateTime.tryParse(
-          (json['scheduled_for'] ?? json['scheduledFor'] ?? '').toString()),
+        (json['scheduled_for'] ?? json['scheduledFor'] ?? '').toString(),
+      ),
       vehicleId: (json['vehicle_id'] ?? json['vehicleId'])?.toString(),
       driverId: (json['driver_id'] ?? json['driverId'])?.toString(),
       vehicle:
@@ -127,30 +134,29 @@ class VendorOrder {
   double get amountRupees => amountPaise / 100;
 
   Booking toBooking() => Booking(
-        id: id,
-        reference: reference,
-        status: status,
-        location: address,
-        capacity: '',
-        deliveryDate: scheduledFor,
-        createdAt: createdAt,
-        quotedAmount: amountPaise.toString(),
-        latitude: latitude,
-        longitude: longitude,
-        cancellationReason: cancellationReason,
-        orderItems: orderItems,
-        fulfilments: fulfilments,
-        orderId: orderId,
-      );
+    id: id,
+    reference: reference,
+    status: status,
+    location: address,
+    capacity: '',
+    deliveryDate: scheduledFor,
+    createdAt: createdAt,
+    quotedAmount: amountPaise.toString(),
+    latitude: latitude,
+    longitude: longitude,
+    cancellationReason: cancellationReason,
+    orderItems: orderItems,
+    fulfilments: fulfilments,
+    orderId: orderId,
+  );
 }
 
 List<T> _vendorRecords<T>(
   Object? value,
   T Function(Map<String, dynamic>) parse,
-) =>
-    value is List
-        ? value.whereType<Map<String, dynamic>>().map(parse).toList()
-        : <T>[];
+) => value is List
+    ? value.whereType<Map<String, dynamic>>().map(parse).toList()
+    : <T>[];
 
 class VendorOrderServiceDetail {
   const VendorOrderServiceDetail({
@@ -216,17 +222,17 @@ class VendorVehicle {
   final String verification;
 
   factory VendorVehicle.fromJson(Map<String, dynamic> json) => VendorVehicle(
-        id: (json['id'] ?? '').toString(),
-        registrationNumber:
-            (json['registration_number'] ?? json['registrationNumber'] ?? '')
-                .toString(),
-        capacityLitres:
-            ((json['capacity_litres'] ?? json['capacityLitres']) as num?)
-                    ?.toInt() ??
-                0,
-        active: json['is_active'] == true || json['isActive'] == true,
-        verification: (json['verification'] ?? 'pending').toString(),
-      );
+    id: (json['id'] ?? '').toString(),
+    registrationNumber:
+        (json['registration_number'] ?? json['registrationNumber'] ?? '')
+            .toString(),
+    capacityLitres:
+        ((json['capacity_litres'] ?? json['capacityLitres']) as num?)
+            ?.toInt() ??
+        0,
+    active: json['is_active'] == true || json['isActive'] == true,
+    verification: (json['verification'] ?? 'pending').toString(),
+  );
 
   bool get assignable => active && verification.toLowerCase() == 'approved';
 }
@@ -251,17 +257,16 @@ class VendorDriver {
   final double? longitude;
 
   factory VendorDriver.fromJson(Map<String, dynamic> json) => VendorDriver(
-        id: (json['id'] ?? '').toString(),
-        name: (json['name'] ?? json['full_name'] ?? json['fullName'] ?? '')
-            .toString(),
-        mobile:
-            (json['mobile_e164'] ?? json['mobileE164'] ?? json['mobile'] ?? '')
-                .toString(),
-        active: json['is_active'] == true || json['isActive'] == true,
-        verification: (json['verification'] ?? 'pending').toString(),
-        latitude: (json['latitude'] as num?)?.toDouble(),
-        longitude: (json['longitude'] as num?)?.toDouble(),
-      );
+    id: (json['id'] ?? '').toString(),
+    name: (json['name'] ?? json['full_name'] ?? json['fullName'] ?? '')
+        .toString(),
+    mobile: (json['mobile_e164'] ?? json['mobileE164'] ?? json['mobile'] ?? '')
+        .toString(),
+    active: json['is_active'] == true || json['isActive'] == true,
+    verification: (json['verification'] ?? 'pending').toString(),
+    latitude: (json['latitude'] as num?)?.toDouble(),
+    longitude: (json['longitude'] as num?)?.toDouble(),
+  );
 
   bool get assignable => active && verification.toLowerCase() == 'approved';
 }
@@ -285,6 +290,10 @@ class AdminFleetVehicle {
   final String verification;
   final Map<String, dynamic> data;
 
+  String get ownerName =>
+      (data['owner_name'] ?? data['ownerName'] ?? data['owner_full_name'] ?? '')
+          .toString();
+
   bool get eligible => active && verification.toLowerCase() == 'approved';
 
   factory AdminFleetVehicle.fromJson(Map<String, dynamic> json) =>
@@ -296,8 +305,8 @@ class AdminFleetVehicle {
                 .toString(),
         capacityLitres:
             ((json['capacity_litres'] ?? json['capacityLitres']) as num?)
-                    ?.toInt() ??
-                0,
+                ?.toInt() ??
+            0,
         active: json['is_active'] == true || json['isActive'] == true,
         verification: (json['verification'] ?? 'pending').toString(),
         data: Map<String, dynamic>.from(json),
@@ -375,11 +384,11 @@ class VendorPayout {
       amountPaise: amountPaise is num
           ? amountPaise.toInt()
           : amount is num
-              ? (amount * 100).round()
-              : 0,
+          ? (amount * 100).round()
+          : 0,
       status: (json['status'] ?? 'pending').toString(),
-      reference:
-          (json['reference'] ?? json['booking_reference'] ?? '').toString(),
+      reference: (json['reference'] ?? json['booking_reference'] ?? '')
+          .toString(),
       createdAt: DateTime.tryParse((json['created_at'] ?? '').toString()),
       paidAt: DateTime.tryParse((json['paid_at'] ?? '').toString()),
       periodStart: DateTime.tryParse((json['period_start'] ?? '').toString()),
@@ -434,10 +443,7 @@ class VendorBusinessProfile {
       );
 }
 
-List<T> _records<T>(
-  dynamic value,
-  T Function(Map<String, dynamic>) parse,
-) {
+List<T> _records<T>(dynamic value, T Function(Map<String, dynamic>) parse) {
   if (value is! List) return const [];
   return value.whereType<Map<String, dynamic>>().map(parse).toList();
 }
@@ -489,9 +495,9 @@ class VendorService {
   final bool enabled;
 
   factory VendorService.fromJson(Map<String, dynamic> json) => VendorService(
-        code: (json['code'] ?? '').toString(),
-        name: (json['name'] ?? json['code'] ?? '').toString(),
-        description: (json['description'] ?? '').toString(),
-        enabled: json['vendor_enabled'] != false,
-      );
+    code: (json['code'] ?? '').toString(),
+    name: (json['name'] ?? json['code'] ?? '').toString(),
+    description: (json['description'] ?? '').toString(),
+    enabled: json['vendor_enabled'] != false,
+  );
 }

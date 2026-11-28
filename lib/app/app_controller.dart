@@ -388,8 +388,15 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  /// Signs out. Each remote step is best effort; local state is always cleared.
+  /// Shows the sign-in screen immediately. Remote cleanup is best effort.
   Future<void> signOut() async {
+    busy = true;
+    realtime?.dispose();
+    realtime = null;
+    user = null;
+    sessionLocked = false;
+    notifyListeners();
+
     String? refreshToken;
     try {
       refreshToken = await api.readRefreshToken();
@@ -413,10 +420,6 @@ class AppController extends ChangeNotifier {
     } catch (_) {
       // OneSignal keeps its own state; the app session is still cleared.
     }
-    realtime?.dispose();
-    realtime = null;
-    user = null;
-    sessionLocked = false;
     try {
       await api.clearSession();
     } catch (_) {
@@ -427,8 +430,12 @@ class AppController extends ChangeNotifier {
     } catch (_) {
       // Only a legacy key lives here, so a failure is harmless.
     }
-    await deleteSavedInvoiceFiles();
-    notifyListeners();
+    try {
+      await deleteSavedInvoiceFiles();
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {

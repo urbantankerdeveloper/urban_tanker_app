@@ -1,4 +1,5 @@
 import '../../models/account.dart';
+import '../../models/admin_dashboard_summary.dart';
 import '../../models/admin_enquiry_page.dart';
 import '../../models/dispatcher.dart';
 import '../../models/vendor.dart';
@@ -40,6 +41,32 @@ class AdminApi {
       'PATCH',
       '/admin-access/admins/${Uri.encodeComponent(id)}/status',
       body: {'isActive': isActive},
+      retry: false,
+    );
+  }
+
+  Future<void> approveRejectedAdminUser(String id) async {
+    await _api.request(
+      'PATCH',
+      '/admin-access/admins/${Uri.encodeComponent(id)}/approval',
+      retry: false,
+    );
+  }
+
+  Future<void> deleteAdminUser(String id, {required String kind}) async {
+    await _api.request(
+      'DELETE',
+      '/admin-access/admins/${Uri.encodeComponent(id)}',
+      body: {'kind': kind},
+      retry: false,
+    );
+  }
+
+  Future<void> reactivateAdminAccessRequest(String id) async {
+    await _api.request(
+      'PATCH',
+      '/admin-access/requests/${Uri.encodeComponent(id)}',
+      body: {'decision': 'pending'},
       retry: false,
     );
   }
@@ -152,6 +179,15 @@ class AdminApi {
   Future<Map<String, dynamic>> adminHealth() async {
     final response = await _api.request('GET', '/admin/system/health');
     return mapResponse(response, 'admin health');
+  }
+
+  Future<AdminDashboardSummary> adminDashboardSummary() async {
+    final response = await _api.request('GET', '/admin/dashboard-summary');
+    final decoded = await decodeBodyAsync(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The admin dashboard response was invalid.');
+    }
+    return AdminDashboardSummary.fromJson(decoded);
   }
 
   Future<void> updateVendorVerification(String id, String status) async {

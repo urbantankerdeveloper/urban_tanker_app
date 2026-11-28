@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'app_controller.dart';
 import '../models/booking.dart';
 import '../models/account.dart';
+import '../models/admin_dashboard_summary.dart';
 import '../models/notification.dart';
 import '../models/vendor.dart';
 import '../services/api_client.dart';
@@ -274,6 +275,12 @@ final adminHealthProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
   ref.watch(sessionUserIdProvider);
   return ref.watch(apiProvider).adminHealth();
 });
+
+final adminDashboardSummaryProvider =
+    FutureProvider.autoDispose<AdminDashboardSummary>((ref) {
+      ref.watch(sessionUserIdProvider);
+      return ref.watch(apiProvider).adminDashboardSummary();
+    });
 
 final adminApprovalRequiredProvider = FutureProvider.autoDispose<bool>((ref) {
   ref.watch(sessionUserIdProvider);

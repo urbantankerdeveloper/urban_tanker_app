@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,7 +7,6 @@ import '../../app/app_controller.dart';
 import '../../app/auth_feature_flags.dart';
 import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
-import '../../core/design_system/gallery/design_system_gallery.dart';
 import '../../models/booking.dart';
 import '../../models/notification.dart';
 import '../../models/service.dart';
@@ -16,6 +14,8 @@ import '../../models/session.dart';
 import '../../models/workspace_navigation.dart';
 import '../../services/friendly_error.dart';
 import '../../services/realtime_service.dart';
+import '../admin/admin_dashboard_screen.dart';
+import '../admin/admin_approvals_hub_screen.dart';
 import '../admin/admin_operations_screen.dart';
 import '../admin/admin_pulse_screen.dart';
 import '../admin/admin_reports_screen.dart';
@@ -68,6 +68,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     _notifications =
         role == WorkspaceRole.customer ||
             role == WorkspaceRole.vendor ||
+            role == WorkspaceRole.dispatcher ||
             role == WorkspaceRole.admin
         ? widget.controller.api.notifications(role.name)
         : null;
@@ -184,6 +185,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     if (!mounted ||
         !(role == WorkspaceRole.customer ||
             role == WorkspaceRole.vendor ||
+            role == WorkspaceRole.dispatcher ||
             role == WorkspaceRole.admin)) {
       return;
     }
@@ -244,6 +246,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     if (section != null) _operationsFocus.value = OperationsFocus(section);
   }
 
+  void _openAdminOperations(OperationsFocus focus) {
+    _operationsFocus.value = focus;
+    _selectPage(ShellPage.adminOperations);
+  }
+
+  void _goHome() {
+    setState(() => _index = 0);
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   void _selectNotification(NotificationItem item) {
     if (!hasNotificationTarget(item)) {
       Navigator.of(context).pop();
@@ -275,36 +287,43 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     if (user == null) return const SizedBox.shrink();
     final isCustomer = role == WorkspaceRole.customer;
     final tabs = tabsForRole(role);
+    final appBarTitle =
+        role == WorkspaceRole.admin && user.name.trim().isNotEmpty
+        ? user.name.trim()
+        : titleForRole(role);
     return Scaffold(
       appBar: AppBar(
-        title: Text(titleForRole(role)),
+        title: Text(appBarTitle),
         actions: [
-          if (kDebugMode)
-            IconButton(
-              tooltip: 'Design system',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const DesignSystemGallery(),
-                ),
-              ),
-              icon: const Icon(Icons.palette_outlined),
-            ),
+          IconButton(
+            tooltip: 'Home',
+            onPressed: _goHome,
+            icon: const Icon(Icons.home_outlined),
+          ),
           _notificationBell(),
         ],
       ),
-      body: RealtimeNoticeListener(
-        events: widget.controller.realtime?.events,
-        role: role,
-        child: SwipeNavigationArea(
-          onSwipeLeft: _index < tabs.length - 1
-              ? () => setState(() => _index++)
-              : null,
-          onSwipeRight: _index > 0 ? () => setState(() => _index--) : null,
-          child: IndexedStack(
-            index: _index,
-            children: [for (final tab in tabs) _pageFor(tab.page, user)],
+      body: Column(
+        children: [
+          Expanded(
+            child: RealtimeNoticeListener(
+              events: widget.controller.realtime?.events,
+              role: role,
+              child: SwipeNavigationArea(
+                onSwipeLeft: _index < tabs.length - 1
+                    ? () => setState(() => _index++)
+                    : null,
+                onSwipeRight: _index > 0
+                    ? () => setState(() => _index--)
+                    : null,
+                child: IndexedStack(
+                  index: _index,
+                  children: [for (final tab in tabs) _pageFor(tab.page, user)],
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
       floatingActionButton: isCustomer && _index == 0
           ? FloatingActionButton.extended(
@@ -382,8 +401,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ShellPage.dispatchDispatch => const DispatcherDispatchScreen(),
     ShellPage.dispatchLive => const DispatcherLiveScreen(),
     ShellPage.dispatchAlerts => const DispatcherAlertsScreen(),
-    ShellPage.adminPulse => const AdminPulseScreen(),
+    ShellPage.adminDashboard => AdminDashboardScreen(
+      onOpenOperations: _openAdminOperations,
+      onOpenReports: () => _selectPage(ShellPage.adminReports),
+    ),
+    ShellPage.adminPulse => AdminPulseScreen(onBackToHome: _goHome),
     ShellPage.adminOperations => AdminOperationsScreen(focus: _operationsFocus),
+    ShellPage.adminApprovals => AdminApprovalsHubScreen(
+      controller: widget.controller,
+    ),
     ShellPage.adminReports => const AdminReportsScreen(),
     ShellPage.menu => MenuScreen(
       controller: widget.controller,
@@ -391,6 +417,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       notifications: _notifications,
       onDestination: _openDestination,
       onNotifications: _openNotificationInbox,
+      onHome: _goHome,
     ),
   };
 }

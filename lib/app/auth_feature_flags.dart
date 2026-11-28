@@ -1,9 +1,16 @@
 /// Switches for auth features that depend on backend endpoints.
 abstract final class AuthFeatureFlags {
-  /// Enables the phased visual redesign while the legacy interface remains
-  /// available by default. Turn on with `--dart-define=NEW_UI_ENABLED=true`.
+  /// Enables the phased visual redesign by default. Set to false to use the
+  /// legacy interface with `--dart-define=NEW_UI_ENABLED=false`.
   static const newUiEnabled = bool.fromEnvironment(
     'NEW_UI_ENABLED',
+    defaultValue: true,
+  );
+
+  /// Shows Platform diagnostics in admin Settings by default.
+  /// Configure with `--dart-define=SHOW_PLATFORM_DIAGNOSTICS=false`.
+  static const showPlatformDiagnostics = bool.fromEnvironment(
+    'SHOW_PLATFORM_DIAGNOSTICS',
     defaultValue: false,
   );
 

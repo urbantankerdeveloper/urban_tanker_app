@@ -16,8 +16,10 @@ enum ShellPage {
   dispatchDispatch,
   dispatchLive,
   dispatchAlerts,
+  adminDashboard,
   adminPulse,
   adminOperations,
+  adminApprovals,
   adminReports,
   menu,
 }
@@ -105,9 +107,22 @@ List<ShellTab> tabsForRole(
               ),
               menu,
             ],
-    WorkspaceRole.admin => const [
-      ShellTab(ShellPage.adminPulse, 'Pulse', Icons.dashboard_outlined),
+    WorkspaceRole.admin => [
+      if (newUiEnabled)
+        const ShellTab(
+          ShellPage.adminDashboard,
+          'Dashboard',
+          Icons.dashboard_outlined,
+        )
+      else
+        const ShellTab(ShellPage.adminPulse, 'Pulse', Icons.dashboard_outlined),
       ShellTab(ShellPage.adminOperations, 'Operations', Icons.monitor_outlined),
+      if (newUiEnabled)
+        const ShellTab(
+          ShellPage.adminApprovals,
+          'Approvals',
+          Icons.fact_check_outlined,
+        ),
       ShellTab(ShellPage.adminReports, 'Reports', Icons.analytics_outlined),
       menu,
     ],
