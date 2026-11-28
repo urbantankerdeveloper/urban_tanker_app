@@ -1,4 +1,5 @@
 import '../../models/account.dart';
+import '../../models/admin_dashboard_summary.dart';
 import '../../models/admin_enquiry_page.dart';
 import '../../models/dispatcher.dart';
 import '../../models/vendor.dart';
@@ -27,9 +28,7 @@ class AdminApi {
     final response = await _api.request('GET', '/admin-access/admins');
     final decoded = decodeBody(response);
     if (decoded is! List) {
-      throw const FormatException(
-        'The admin users response was invalid.',
-      );
+      throw const FormatException('The admin users response was invalid.');
     }
     return decoded
         .whereType<Map<String, dynamic>>()
@@ -37,14 +36,37 @@ class AdminApi {
         .toList();
   }
 
-  Future<void> setAdminUserActive(
-    String id, {
-    required bool isActive,
-  }) async {
+  Future<void> setAdminUserActive(String id, {required bool isActive}) async {
     await _api.request(
       'PATCH',
       '/admin-access/admins/${Uri.encodeComponent(id)}/status',
       body: {'isActive': isActive},
+      retry: false,
+    );
+  }
+
+  Future<void> approveRejectedAdminUser(String id) async {
+    await _api.request(
+      'PATCH',
+      '/admin-access/admins/${Uri.encodeComponent(id)}/approval',
+      retry: false,
+    );
+  }
+
+  Future<void> deleteAdminUser(String id, {required String kind}) async {
+    await _api.request(
+      'DELETE',
+      '/admin-access/admins/${Uri.encodeComponent(id)}',
+      body: {'kind': kind},
+      retry: false,
+    );
+  }
+
+  Future<void> reactivateAdminAccessRequest(String id) async {
+    await _api.request(
+      'PATCH',
+      '/admin-access/requests/${Uri.encodeComponent(id)}',
+      body: {'decision': 'pending'},
       retry: false,
     );
   }
@@ -86,12 +108,16 @@ class AdminApi {
     required int capacityLitres,
     List<String> supportedServices = const [],
   }) async {
-    final response = await _api.request('POST', '/admin/vehicles', body: {
-      'vendorId': vendorId,
-      'registrationNumber': registrationNumber,
-      'capacityLitres': capacityLitres,
-      'supportedServices': supportedServices,
-    });
+    final response = await _api.request(
+      'POST',
+      '/admin/vehicles',
+      body: {
+        'vendorId': vendorId,
+        'registrationNumber': registrationNumber,
+        'capacityLitres': capacityLitres,
+        'supportedServices': supportedServices,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The vehicle response was invalid.');
@@ -107,14 +133,18 @@ class AdminApi {
     double? latitude,
     double? longitude,
   }) async {
-    final response = await _api.request('POST', '/admin/drivers', body: {
-      'vendorId': vendorId,
-      'name': name,
-      'mobileE164': normalizeIndianPhone(mobile),
-      'licenceNumber': licenceNumber,
-      if (latitude != null) 'latitude': latitude,
-      if (longitude != null) 'longitude': longitude,
-    });
+    final response = await _api.request(
+      'POST',
+      '/admin/drivers',
+      body: {
+        'vendorId': vendorId,
+        'name': name,
+        'mobileE164': normalizeIndianPhone(mobile),
+        'licenceNumber': licenceNumber,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The driver response was invalid.');
@@ -127,10 +157,11 @@ class AdminApi {
     required String verification,
     required bool isActive,
   }) async {
-    await _api.request('PATCH', '/admin/vehicles/$id/status', body: {
-      'verification': verification,
-      'isActive': isActive,
-    });
+    await _api.request(
+      'PATCH',
+      '/admin/vehicles/$id/status',
+      body: {'verification': verification, 'isActive': isActive},
+    );
   }
 
   Future<void> updateAdminDriverStatus(
@@ -138,15 +169,25 @@ class AdminApi {
     required String verification,
     required bool isActive,
   }) async {
-    await _api.request('PATCH', '/admin/drivers/$id/status', body: {
-      'verification': verification,
-      'isActive': isActive,
-    });
+    await _api.request(
+      'PATCH',
+      '/admin/drivers/$id/status',
+      body: {'verification': verification, 'isActive': isActive},
+    );
   }
 
   Future<Map<String, dynamic>> adminHealth() async {
     final response = await _api.request('GET', '/admin/system/health');
     return mapResponse(response, 'admin health');
+  }
+
+  Future<AdminDashboardSummary> adminDashboardSummary() async {
+    final response = await _api.request('GET', '/admin/dashboard-summary');
+    final decoded = await decodeBodyAsync(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('The admin dashboard response was invalid.');
+    }
+    return AdminDashboardSummary.fromJson(decoded);
   }
 
   Future<void> updateVendorVerification(String id, String status) async {
@@ -203,22 +244,19 @@ class AdminApi {
     );
     return (pageData['rows'] as List?)
             ?.whereType<Map>()
-            .map((row) => DispatcherOrder.fromJson(
-                  Map<String, dynamic>.from(row),
-                ))
+            .map(
+              (row) => DispatcherOrder.fromJson(Map<String, dynamic>.from(row)),
+            )
             .toList() ??
         const [];
   }
 
   Future<List<AccountRecord>> adminAlerts({String? status}) => _records(
-        _adminPath('/alerts', {if (status != null) 'status': status}),
-        'admin alerts',
-      );
+    _adminPath('/alerts', {if (status != null) 'status': status}),
+    'admin alerts',
+  );
 
-  Future<AccountRecord> updateDispatcherAlert(
-    String id,
-    String status,
-  ) async {
+  Future<AccountRecord> updateDispatcherAlert(String id, String status) async {
     final response = await _api.request(
       'PATCH',
       '/admin/alerts/$id',
@@ -239,24 +277,44 @@ class AdminApi {
     String? vendorId,
     String? vehicleId,
     String? driverId,
-  }) =>
-      assignAdminOrder(
-        orderId,
-        vendorId: vendorId,
-        vehicleId: vehicleId,
-        driverId: driverId,
-      );
+  }) => assignAdminOrder(
+    orderId,
+    vendorId: vendorId,
+    vehicleId: vehicleId,
+    driverId: driverId,
+  );
 
-  Future<AccountRecord> dispatcherUpdateStatus(
-    String orderId,
-    String status,
-  ) =>
+  Future<Map<String, dynamic>> dispatcherDriverContact(String orderId) async {
+    final response = await _api.request(
+      'GET',
+      '/admin/orders/$orderId/driver-contact',
+    );
+    return mapResponse(response, 'dispatcher driver contact');
+  }
+
+  Future<bool> dispatcherNotifyCustomer({
+    required String orderId,
+    required String message,
+  }) async {
+    final response = await _api.request(
+      'POST',
+      '/admin/orders/$orderId/notify-customer',
+      body: {'message': message},
+      retry: false,
+    );
+    final decoded = await mapResponse(response, 'dispatcher notification');
+    if (decoded['notified'] is! bool) {
+      throw const FormatException(
+        'The dispatcher notification response was invalid.',
+      );
+    }
+    return decoded['notified'] as bool;
+  }
+
+  Future<AccountRecord> dispatcherUpdateStatus(String orderId, String status) =>
       updateAdminOrderStatus(orderId, status);
 
-  Future<AccountRecord> dispatcherCancelOrder(
-    String orderId,
-    String reason,
-  ) =>
+  Future<AccountRecord> dispatcherCancelOrder(String orderId, String reason) =>
       cancelAdminOrder(orderId, reason);
 
   Future<AccountRecord> assignAdminOrder(
@@ -265,12 +323,15 @@ class AdminApi {
     String? vehicleId,
     String? driverId,
   }) async {
-    final response =
-        await _api.request('PATCH', '/admin/orders/$id/assignment', body: {
-      if (vendorId != null) 'vendorId': vendorId,
-      if (vehicleId != null) 'vehicleId': vehicleId,
-      if (driverId != null) 'driverId': driverId,
-    });
+    final response = await _api.request(
+      'PATCH',
+      '/admin/orders/$id/assignment',
+      body: {
+        if (vendorId != null) 'vendorId': vendorId,
+        if (vehicleId != null) 'vehicleId': vehicleId,
+        if (driverId != null) 'driverId': driverId,
+      },
+    );
     return AccountRecord(await mapResponse(response, 'admin assignment'));
   }
 
@@ -336,7 +397,8 @@ class AdminApi {
       body: {'reason': normalizedReason},
     );
     return AccountRecord(
-        await mapResponse(response, 'admin order cancellation'));
+      await mapResponse(response, 'admin order cancellation'),
+    );
   }
 
   Future<AccountRecord> adminVendor(String id) async =>
@@ -348,9 +410,14 @@ class AdminApi {
   }
 
   Future<AccountRecord> updateAdminVendor(
-      String id, Map<String, dynamic> body) async {
-    final response =
-        await _api.request('PATCH', '/admin/vendors/$id', body: body);
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _api.request(
+      'PATCH',
+      '/admin/vendors/$id',
+      body: body,
+    );
     return AccountRecord(await mapResponse(response, 'admin vendor update'));
   }
 
@@ -367,9 +434,14 @@ class AdminApi {
   }
 
   Future<AccountRecord> updateAdminCustomer(
-      String id, Map<String, dynamic> body) async {
-    final response =
-        await _api.request('PATCH', '/admin/customers/$id', body: body);
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _api.request(
+      'PATCH',
+      '/admin/customers/$id',
+      body: body,
+    );
     return AccountRecord(await mapResponse(response, 'admin customer update'));
   }
 
@@ -384,9 +456,14 @@ class AdminApi {
   }
 
   Future<AccountRecord> updateAdminCoupon(
-      String id, Map<String, dynamic> body) async {
-    final response =
-        await _api.request('PATCH', '/admin/coupons/$id', body: body);
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _api.request(
+      'PATCH',
+      '/admin/coupons/$id',
+      body: body,
+    );
     _api.invalidateReadCache(path: '/customer/offers');
     return AccountRecord(await mapResponse(response, 'admin coupon update'));
   }
@@ -406,9 +483,14 @@ class AdminApi {
   }
 
   Future<AccountRecord> updateAdminService(
-      String id, Map<String, dynamic> body) async {
-    final response =
-        await _api.request('PATCH', '/admin/services/$id', body: body);
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _api.request(
+      'PATCH',
+      '/admin/services/$id',
+      body: body,
+    );
     _invalidateServiceCatalogs();
     return AccountRecord(await mapResponse(response, 'admin service update'));
   }
@@ -446,10 +528,7 @@ class AdminApi {
     }
     final response = await _api.request(
       'GET',
-      _adminPath('/enquiries', {
-        'page': '$page',
-        'pageSize': '$pageSize',
-      }),
+      _adminPath('/enquiries', {'page': '$page', 'pageSize': '$pageSize'}),
     );
     return AdminEnquiryPage.fromJson(
       await mapResponse(response, 'admin enquiries'),
@@ -483,15 +562,26 @@ class AdminApi {
     String? reviewNote,
   }) async {
     final response = await _api.request(
-        'PATCH', '/admin/partner-applications/$id', body: {
-      'status': status,
-      if (reviewNote != null) 'reviewNote': reviewNote
-    });
+      'PATCH',
+      '/admin/partner-applications/$id',
+      body: {
+        'status': status,
+        if (reviewNote != null) 'reviewNote': reviewNote,
+      },
+    );
     return AccountRecord(await mapResponse(response, 'partner review'));
   }
 
   Future<List<AccountRecord>> partnerApplicationHistory(String id) => _records(
-      '/admin/partner-applications/$id/history', 'partner application history');
+    '/admin/partner-applications/$id/history',
+    'partner application history',
+  );
+
+  Future<List<AccountRecord>> partnerApplicationDocuments(String id) =>
+      _records(
+        '/admin/partner-applications/$id/documents',
+        'partner application documents',
+      );
 
   Future<Map<String, dynamic>> adminReport(Map<String, dynamic> body) async {
     final response = await _api.request('POST', '/admin/reports', body: body);
@@ -507,8 +597,10 @@ class AdminApi {
   }
 
   Future<Map<String, dynamic>> adminPayoutPage({int page = 1}) async {
-    final response =
-        await _api.request('GET', _adminPath('/payouts', {'page': '$page'}));
+    final response = await _api.request(
+      'GET',
+      _adminPath('/payouts', {'page': '$page'}),
+    );
     return mapResponse(response, 'admin payouts');
   }
 
@@ -544,8 +636,10 @@ class AdminApi {
       recordList(_api, path, label);
 
   String _adminPath(String path, Map<String, String> query) {
-    final uri =
-        Uri(path: '/admin$path', queryParameters: query.isEmpty ? null : query);
+    final uri = Uri(
+      path: '/admin$path',
+      queryParameters: query.isEmpty ? null : query,
+    );
     return uri.toString();
   }
 

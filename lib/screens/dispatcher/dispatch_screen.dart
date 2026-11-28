@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/auth_feature_flags.dart';
 import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/dispatcher.dart';
@@ -25,6 +26,7 @@ class _DispatcherDispatchScreenState
   String? from;
   String? to;
   bool? assigned;
+  bool _delayedOnly = false;
   int page = 1;
 
   @override
@@ -109,10 +111,7 @@ class _DispatcherDispatchScreenState
             child: Text('Assigned and unassigned'),
           ),
           DropdownMenuItem<bool?>(value: true, child: Text('Assigned only')),
-          DropdownMenuItem<bool?>(
-            value: false,
-            child: Text('Unassigned only'),
-          ),
+          DropdownMenuItem<bool?>(value: false, child: Text('Unassigned only')),
         ],
         onChanged: (value) => setState(() {
           assigned = value;
@@ -120,6 +119,16 @@ class _DispatcherDispatchScreenState
         }),
       ),
       const SizedBox(height: AppSpace.md),
+      if (AuthFeatureFlags.newUiEnabled)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FilterChip(
+            label: const Text('Delayed orders'),
+            selected: _delayedOnly,
+            onSelected: (value) => setState(() => _delayedOnly = value),
+          ),
+        ),
+      if (AuthFeatureFlags.newUiEnabled) const SizedBox(height: AppSpace.md),
       Wrap(
         spacing: AppSpace.sm,
         runSpacing: AppSpace.sm,
@@ -152,71 +161,91 @@ class _DispatcherDispatchScreenState
     ];
     // Each entry builds one order card, the empty message, or the pager.
     final body = orders.when<List<Widget Function()>>(
-      loading: () => [
-        () => const LoadingState(message: 'Loading the dispatch queue...'),
-      ],
+      loading: () => AuthFeatureFlags.newUiEnabled
+          ? List.generate(
+              4,
+              (_) =>
+                  () => const Padding(
+                    padding: EdgeInsets.only(bottom: AppSpace.md),
+                    child: SkeletonBox(height: 112, radius: AppRadius.card),
+                  ),
+            )
+          : [
+              () =>
+                  const LoadingState(message: 'Loading the dispatch queue...'),
+            ],
       error: (error, _) => [
         () => ErrorState(
-              error: error,
-              message: friendlyError(error),
-              onRetry: () => ref.invalidate(dispatcherOrdersProvider(filter)),
-            ),
+          error: error,
+          message: friendlyError(error),
+          onRetry: () => ref.invalidate(dispatcherOrdersProvider(filter)),
+        ),
       ],
       data: (pageData) {
-        final rows = (pageData['rows'] as List?)
+        final rawRows =
+            (pageData['rows'] as List?)
                 ?.whereType<Map<String, dynamic>>()
                 .toList() ??
             const <Map<String, dynamic>>[];
-        if (rows.isEmpty) {
+        if (rawRows.isEmpty) {
           return [
             () => const EmptyState(
-                  icon: Icons.inbox_outlined,
-                  title: 'No dispatch orders.',
-                ),
+              icon: Icons.inbox_outlined,
+              title: 'No dispatch orders.',
+            ),
           ];
         }
         final now = DateTime.now();
         final queue = [
-          for (final raw in rows)
-            (raw: raw, order: DispatcherOrder.fromJson(raw)),
+          for (final raw in rawRows)
+            if (!_delayedOnly || _isDelayed(DispatcherOrder.fromJson(raw), now))
+              (raw: raw, order: DispatcherOrder.fromJson(raw)),
         ]..sort((a, b) => compareByPriority(a.order, b.order, now));
+        if (queue.isEmpty) {
+          return [
+            () => const EmptyState(
+              icon: Icons.check_circle_outline,
+              title: 'No delayed orders on this page.',
+            ),
+          ];
+        }
         final currentPage = (pageData['page'] as num?)?.toInt() ?? page;
-        final total = (pageData['total'] as num?)?.toInt() ?? rows.length;
+        final total = (pageData['total'] as num?)?.toInt() ?? rawRows.length;
         final pageSize = (pageData['pageSize'] as num?)?.toInt() ?? 25;
         return [
           for (final entry in queue)
             () => Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpace.md),
-                  child: DispatchOrderCard(raw: entry.raw),
-                ),
+              padding: const EdgeInsets.only(bottom: AppSpace.md),
+              child: DispatchOrderCard(raw: entry.raw),
+            ),
           if (total > pageSize)
             () => Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Page $currentPage of ${(total / pageSize).ceil()}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                Row(
                   children: [
-                    Text(
-                      'Page $currentPage of ${(total / pageSize).ceil()}',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                    IconButton(
+                      tooltip: 'Previous page',
+                      onPressed: currentPage > 1
+                          ? () => setState(() => page = currentPage - 1)
+                          : null,
+                      icon: const Icon(Icons.chevron_left),
                     ),
-                    Row(
-                      children: [
-                        IconButton(
-                          tooltip: 'Previous page',
-                          onPressed: currentPage > 1
-                              ? () => setState(() => page = currentPage - 1)
-                              : null,
-                          icon: const Icon(Icons.chevron_left),
-                        ),
-                        IconButton(
-                          tooltip: 'Next page',
-                          onPressed: currentPage * pageSize < total
-                              ? () => setState(() => page = currentPage + 1)
-                              : null,
-                          icon: const Icon(Icons.chevron_right),
-                        ),
-                      ],
+                    IconButton(
+                      tooltip: 'Next page',
+                      onPressed: currentPage * pageSize < total
+                          ? () => setState(() => page = currentPage + 1)
+                          : null,
+                      icon: const Icon(Icons.chevron_right),
                     ),
                   ],
                 ),
+              ],
+            ),
         ];
       },
     );
@@ -250,4 +279,14 @@ class _DispatcherDispatchScreenState
       '${selected.day.toString().padLeft(2, '0')}',
     );
   }
+
+  static bool _isDelayed(DispatcherOrder order, DateTime now) =>
+      order.scheduledFor != null &&
+      order.scheduledFor!.isBefore(now) &&
+      !const {
+        'delivered',
+        'cancelled',
+        'canceled',
+        'rejected',
+      }.contains(order.status.toLowerCase());
 }

@@ -52,7 +52,8 @@ class CustomerApi {
         capacity: capacity,
         location: location,
         deliveryDate: deliveryDate,
-        services: services ??
+        services:
+            services ??
             [
               BookingServiceDetails(
                 serviceId: serviceId,
@@ -103,7 +104,8 @@ class CustomerApi {
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException(
-          'The multi-service order response was invalid.');
+        'The multi-service order response was invalid.',
+      );
     }
     return decoded;
   }
@@ -117,7 +119,7 @@ class CustomerApi {
       '/customer/multi-service-orders/$orderId/cancel-online-payment',
       body: {
         if (couponCode != null && couponCode.isNotEmpty)
-          'couponCode': couponCode
+          'couponCode': couponCode,
       },
     );
   }
@@ -183,30 +185,34 @@ class CustomerApi {
     double? latitude,
     double? longitude,
   }) async {
-    final response =
-        await _api.request('POST', '/customer/orders/quote-preview', body: {
-      ...buildBookingRequestBody(
-        serviceId: serviceId,
-        capacity: capacity,
-        location: location,
-        deliveryDate: deliveryDate,
-        services: services ??
-            [
-              BookingServiceDetails(
-                serviceId: serviceId,
-                quantity: capacity,
-                details: notes ?? '',
-              ),
-            ],
-        notes: notes,
-        paymentMethod: paymentMethod,
-        couponCode: couponCode,
-        phone: phone,
-        phoneVerificationChallengeId: phoneVerificationChallengeId,
-        latitude: latitude,
-        longitude: longitude,
-      ),
-    });
+    final response = await _api.request(
+      'POST',
+      '/customer/orders/quote-preview',
+      body: {
+        ...buildBookingRequestBody(
+          serviceId: serviceId,
+          capacity: capacity,
+          location: location,
+          deliveryDate: deliveryDate,
+          services:
+              services ??
+              [
+                BookingServiceDetails(
+                  serviceId: serviceId,
+                  quantity: capacity,
+                  details: notes ?? '',
+                ),
+              ],
+          notes: notes,
+          paymentMethod: paymentMethod,
+          couponCode: couponCode,
+          phone: phone,
+          phoneVerificationChallengeId: phoneVerificationChallengeId,
+          latitude: latitude,
+          longitude: longitude,
+        ),
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The booking quote response was invalid.');
@@ -256,8 +262,10 @@ class CustomerApi {
 
   /// Removes an unpaid online-payment booking after the customer cancels the
   /// Razorpay checkout. The server refuses paid or already accepted bookings.
-  Future<void> cancelOnlinePayment(String bookingId,
-      {String? couponCode}) async {
+  Future<void> cancelOnlinePayment(
+    String bookingId, {
+    String? couponCode,
+  }) async {
     await _api.request(
       'POST',
       '/customer/bookings/$bookingId/cancel-online-payment',
@@ -281,16 +289,21 @@ class CustomerApi {
   /// this once the driver has started collecting cash.
   Future<void> switchBookingToOnline(String bookingId) async {
     await _api.request(
-        'POST', '/customer/orders/$bookingId/payment-method/online');
+      'POST',
+      '/customer/orders/$bookingId/payment-method/online',
+    );
   }
 
   /// Loads the payment receipt for a booking, or null when no payment exists.
   Future<PaymentReceipt?> getPaymentDetails(String bookingId) async {
     try {
-      final response =
-          await _api.request('GET', '/customer/payments/$bookingId');
+      final response = await _api.request(
+        'GET',
+        '/customer/payments/$bookingId',
+      );
       return PaymentReceipt.fromJson(
-          await mapResponse(response, 'payment details'));
+        await mapResponse(response, 'payment details'),
+      );
     } on ApiException catch (error) {
       if (error.statusCode == 404) return null;
       rethrow;
@@ -314,10 +327,7 @@ class CustomerApi {
   Future<BookingPage> bookingsPage({int offset = 0, int pageSize = 100}) async {
     if (AuthFeatureFlags.multiServiceOrders) {
       final responses = await Future.wait([
-        _api.request(
-          'GET',
-          '/customer/orders?offset=0&pageSize=100',
-        ),
+        _api.request('GET', '/customer/orders?offset=0&pageSize=100'),
         _api.request('GET', '/customer/multi-service-orders'),
       ]);
       final legacyDecoded = await decodeBodyAsync(responses[0]);
@@ -337,17 +347,20 @@ class CustomerApi {
           .toSet();
       final legacyOrders = (legacyDecoded['rows'] as List)
           .whereType<Map<String, dynamic>>()
-          .where((order) =>
-              !compatibilityBookingIds.contains(order['id']?.toString()));
-      final combined = [
-        ...legacyOrders,
-        ...multiOrders.map(_asBookingOrder),
-      ]..sort((a, b) => (b['created_at'] ?? '')
-          .toString()
-          .compareTo((a['created_at'] ?? '').toString()));
+          .where(
+            (order) =>
+                !compatibilityBookingIds.contains(order['id']?.toString()),
+          );
+      final combined = [...legacyOrders, ...multiOrders.map(_asBookingOrder)]
+        ..sort(
+          (a, b) => (b['created_at'] ?? '').toString().compareTo(
+            (a['created_at'] ?? '').toString(),
+          ),
+        );
       final start = offset.clamp(0, combined.length).toInt();
-      final end =
-          (start + pageSize.clamp(1, 100)).clamp(0, combined.length).toInt();
+      final end = (start + pageSize.clamp(1, 100))
+          .clamp(0, combined.length)
+          .toInt();
       return BookingPage(
         rows: combined.sublist(start, end).map(Booking.fromJson).toList(),
         nextOffset: end < combined.length ? end : null,
@@ -406,8 +419,9 @@ class CustomerApi {
       retry: false,
     );
     final decoded = decodeBody(response);
-    final rawUrl =
-        decoded is Map<String, dynamic> ? decoded['trackingUrl'] : null;
+    final rawUrl = decoded is Map<String, dynamic>
+        ? decoded['trackingUrl']
+        : null;
     final trackingUrl = rawUrl is String ? Uri.tryParse(rawUrl) : null;
     if (trackingUrl == null ||
         !const {'http', 'https'}.contains(trackingUrl.scheme) ||
@@ -419,8 +433,10 @@ class CustomerApi {
 
   Future<PublicTrackingSnapshot> publicTracking(String token) async {
     final response = await _api.request(
-        'GET', '/public/tracking/${Uri.encodeComponent(token)}',
-        retry: false);
+      'GET',
+      '/public/tracking/${Uri.encodeComponent(token)}',
+      retry: false,
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The public tracking response was invalid.');
@@ -428,11 +444,11 @@ class CustomerApi {
     return PublicTrackingSnapshot.fromJson(decoded);
   }
 
-  Future<Booking> cancelBooking(String bookingId) async {
+  Future<Booking> cancelBooking(String bookingId, {String? reason}) async {
     final response = await _api.request(
       'PATCH',
       '/customer/orders/$bookingId/status',
-      body: {'status': 'cancelled'},
+      body: {'status': 'cancelled', if (reason != null) 'reason': reason},
     );
     return _bookingFromResponse(response, 'cancelled booking');
   }
@@ -585,13 +601,17 @@ class CustomerApi {
     required String pincode,
     bool isDefault = false,
   }) async {
-    final response = await _api.request('POST', '/customer/addresses', body: {
-      'label': label,
-      'address': address,
-      'city': city,
-      'pincode': pincode,
-      'isDefault': isDefault,
-    });
+    final response = await _api.request(
+      'POST',
+      '/customer/addresses',
+      body: {
+        'label': label,
+        'address': address,
+        'city': city,
+        'pincode': pincode,
+        'isDefault': isDefault,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The address response was invalid.');
@@ -608,14 +628,17 @@ class CustomerApi {
     String? pincode,
     bool? isDefault,
   }) async {
-    final response =
-        await _api.request('PATCH', '/customer/addresses/$id', body: {
-      if (label != null) 'label': label,
-      if (address != null) 'address': address,
-      if (city != null) 'city': city,
-      if (pincode != null) 'pincode': pincode,
-      if (isDefault != null) 'isDefault': isDefault,
-    });
+    final response = await _api.request(
+      'PATCH',
+      '/customer/addresses/$id',
+      body: {
+        if (label != null) 'label': label,
+        if (address != null) 'address': address,
+        if (city != null) 'city': city,
+        if (pincode != null) 'pincode': pincode,
+        if (isDefault != null) 'isDefault': isDefault,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The address update response was invalid.');
@@ -631,10 +654,11 @@ class CustomerApi {
     required String subject,
     required String message,
   }) async {
-    final response = await _api.request('POST', '/support/requests', body: {
-      'subject': subject,
-      'message': message,
-    });
+    final response = await _api.request(
+      'POST',
+      '/support/requests',
+      body: {'subject': subject, 'message': message},
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The support response was invalid.');
@@ -651,10 +675,7 @@ class CustomerApi {
     return AccountRecord(decoded);
   }
 
-  Future<AccountRecord> updateSubscription(
-    String id,
-    String status,
-  ) async {
+  Future<AccountRecord> updateSubscription(String id, String status) async {
     final response = await _api.request(
       'PATCH',
       '/customer/subscriptions/$id/status',
@@ -668,8 +689,10 @@ class CustomerApi {
   }
 
   Future<AccountRecord> invoice(String id) async {
-    final response =
-        await _api.request('GET', '/customer/invoices/$id/download');
+    final response = await _api.request(
+      'GET',
+      '/customer/invoices/$id/download',
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The invoice response was invalid.');
@@ -682,12 +705,16 @@ class CustomerApi {
     required String address,
     required double estimate,
   }) async {
-    final response = await _api.request('POST', '/customer/contracts', body: {
-      'propertyType': propertyType,
-      'servicePlan': <String, dynamic>{},
-      'address': address,
-      'estimate': estimate,
-    });
+    final response = await _api.request(
+      'POST',
+      '/customer/contracts',
+      body: {
+        'propertyType': propertyType,
+        'servicePlan': <String, dynamic>{},
+        'address': address,
+        'estimate': estimate,
+      },
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The contract response was invalid.');
@@ -709,12 +736,11 @@ class CustomerApi {
     required String serviceCode,
     required double amount,
   }) async {
-    final response =
-        await _api.request('POST', '/customer/coupons/validate', body: {
-      'code': code,
-      'serviceCode': serviceCode,
-      'amount': amount,
-    });
+    final response = await _api.request(
+      'POST',
+      '/customer/coupons/validate',
+      body: {'code': code, 'serviceCode': serviceCode, 'amount': amount},
+    );
     final decoded = decodeBody(response);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('The coupon response was invalid.');
@@ -765,13 +791,16 @@ class CustomerApi {
   Future<void> uploadCustomerSelfie({required List<int> bytes}) async {
     if (bytes.isEmpty) {
       throw const FormatException(
-          'The selfie could not be read. Please retake it.');
+        'The selfie could not be read. Please retake it.',
+      );
     }
     if (bytes.length > 3 * 1024 * 1024) {
       throw const FormatException(
-          'The photo is larger than 3 MB. Choose a smaller photo.');
+        'The photo is larger than 3 MB. Choose a smaller photo.',
+      );
     }
-    final isJpeg = bytes.length >= 3 &&
+    final isJpeg =
+        bytes.length >= 3 &&
         bytes[0] == 0xff &&
         bytes[1] == 0xd8 &&
         bytes[2] == 0xff;

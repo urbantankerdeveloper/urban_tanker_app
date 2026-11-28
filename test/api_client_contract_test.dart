@@ -8,7 +8,7 @@ import 'package:urban_tanker_app/services/api_client.dart';
 /// Skips secure storage so the tests run without platform channels.
 class _SignedInApiClient extends ApiClient {
   _SignedInApiClient({required http.Client client})
-      : super(client: client, baseUrl: 'https://example.test/api');
+    : super(client: client, baseUrl: 'https://example.test/api');
 
   String? savedAccessToken;
   String? savedRefreshToken;
@@ -28,34 +28,59 @@ class _SignedInApiClient extends ApiClient {
 }
 
 Map<String, dynamic> _booking(String id) => {
-      'id': id,
-      'reference': 'UT-$id',
-      'status': 'pending',
-      'location': '12 Main Street',
-      'capacity_litres': 5000,
-      'created_at': '2026-10-21T09:00:00Z',
-    };
+  'id': id,
+  'reference': 'UT-$id',
+  'status': 'pending',
+  'location': '12 Main Street',
+  'capacity_litres': 5000,
+  'created_at': '2026-10-21T09:00:00Z',
+};
 
 void main() {
-  test('booking tracking link uses the customer endpoint and returns its URL',
-      () async {
+  test(
+    'booking tracking link uses the customer endpoint and returns its URL',
+    () async {
+      late http.Request captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({
+            'trackingUrl': 'https://urban-tanker.test/track/${'a' * 43}',
+          }),
+          200,
+        );
+      });
+
+      final trackingUrl = await _SignedInApiClient(
+        client: client,
+      ).bookingTrackingLink('booking-1');
+
+      expect(captured.method, 'GET');
+      expect(captured.url.path, '/api/customer/orders/booking-1/tracking-link');
+      expect(
+        trackingUrl.toString(),
+        'https://urban-tanker.test/track/${'a' * 43}',
+      );
+    },
+  );
+
+  test('customer cancellation sends an optional reason', () async {
     late http.Request captured;
     final client = MockClient((request) async {
       captured = request;
-      return http.Response(
-        jsonEncode(
-            {'trackingUrl': 'https://urban-tanker.test/track/${'a' * 43}'}),
-        200,
-      );
+      return http.Response(jsonEncode(_booking('booking-1')), 200);
     });
 
-    final trackingUrl = await _SignedInApiClient(client: client)
-        .bookingTrackingLink('booking-1');
+    await _SignedInApiClient(
+      client: client,
+    ).cancelBooking('booking-1', reason: 'I no longer need this delivery');
 
-    expect(captured.method, 'GET');
-    expect(captured.url.path, '/api/customer/orders/booking-1/tracking-link');
-    expect(
-        trackingUrl.toString(), 'https://urban-tanker.test/track/${'a' * 43}');
+    expect(captured.method, 'PATCH');
+    expect(captured.url.path, '/api/customer/orders/booking-1/status');
+    expect(jsonDecode(captured.body), {
+      'status': 'cancelled',
+      'reason': 'I no longer need this delivery',
+    });
   });
 
   test('phone OTP sign-in accepts the existing-account response', () async {
@@ -102,38 +127,42 @@ void main() {
     expect(api.savedRefreshToken, 'phone-refresh-token');
   });
 
-  test('bookings follows nextOffset until the server reports no more pages',
-      () async {
-    final offsets = <String?>[];
-    final client = MockClient((request) async {
-      expect(request.url.path, '/api/customer/orders');
-      offsets.add(request.url.queryParameters['offset']);
-      expect(int.parse(request.url.queryParameters['pageSize']!),
-          lessThanOrEqualTo(100));
-      final offset = request.url.queryParameters['offset'];
-      if (offset == '0') {
+  test(
+    'bookings follows nextOffset until the server reports no more pages',
+    () async {
+      final offsets = <String?>[];
+      final client = MockClient((request) async {
+        expect(request.url.path, '/api/customer/orders');
+        offsets.add(request.url.queryParameters['offset']);
+        expect(
+          int.parse(request.url.queryParameters['pageSize']!),
+          lessThanOrEqualTo(100),
+        );
+        final offset = request.url.queryParameters['offset'];
+        if (offset == '0') {
+          return http.Response(
+            jsonEncode({
+              'rows': [_booking('a')],
+              'nextOffset': 100,
+            }),
+            200,
+          );
+        }
         return http.Response(
           jsonEncode({
-            'rows': [_booking('a')],
-            'nextOffset': 100,
+            'rows': [_booking('b')],
+            'nextOffset': null,
           }),
           200,
         );
-      }
-      return http.Response(
-        jsonEncode({
-          'rows': [_booking('b')],
-          'nextOffset': null,
-        }),
-        200,
-      );
-    });
+      });
 
-    final bookings = await _SignedInApiClient(client: client).bookings();
+      final bookings = await _SignedInApiClient(client: client).bookings();
 
-    expect(bookings.map((booking) => booking.id), ['a', 'b']);
-    expect(offsets, ['0', '100']);
-  });
+      expect(bookings.map((booking) => booking.id), ['a', 'b']);
+      expect(offsets, ['0', '100']);
+    },
+  );
 
   test('a booking page without rows is rejected', () async {
     final client = MockClient((_) async => http.Response('[]', 200));
@@ -168,10 +197,9 @@ void main() {
       );
     });
 
-    final page = await _SignedInApiClient(client: client).adminEnquiries(
-      page: 2,
-      pageSize: 25,
-    );
+    final page = await _SignedInApiClient(
+      client: client,
+    ).adminEnquiries(page: 2, pageSize: 25);
 
     expect(page.rows.single.title, 'Borewell service');
     expect(page.rows.single.detail, 'Proposed depth: 120 ft');
@@ -181,66 +209,72 @@ void main() {
     expect(page.hasNextPage, isTrue);
   });
 
-  test('admin enquiry status changes use the authenticated admin endpoint',
-      () async {
-    http.Request? captured;
-    final client = MockClient((request) async {
-      captured = request;
-      return http.Response(
-        jsonEncode({
-          'id': 'enquiry-1',
-          'subject': 'Borewell service',
-          'message': 'Proposed depth: 120 ft',
-          'status': 'in_progress',
-          'response': 'Reviewing the site requirements.',
-        }),
-        200,
-      );
-    });
+  test(
+    'admin enquiry status changes use the authenticated admin endpoint',
+    () async {
+      http.Request? captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({
+            'id': 'enquiry-1',
+            'subject': 'Borewell service',
+            'message': 'Proposed depth: 120 ft',
+            'status': 'in_progress',
+            'response': 'Reviewing the site requirements.',
+          }),
+          200,
+        );
+      });
 
-    final updated = await _SignedInApiClient(client: client).updateAdminEnquiry(
-      'enquiry-1',
-      status: 'in_progress',
-      responseNote: 'Reviewing the site requirements.',
-    );
+      final updated = await _SignedInApiClient(client: client)
+          .updateAdminEnquiry(
+            'enquiry-1',
+            status: 'in_progress',
+            responseNote: 'Reviewing the site requirements.',
+          );
 
-    expect(captured?.method, 'PATCH');
-    expect(captured?.url.path, '/api/admin/enquiries/enquiry-1');
-    expect(captured?.headers['authorization'], 'Bearer access-token');
-    expect(jsonDecode(captured!.body), {
-      'status': 'in_progress',
-      'response': 'Reviewing the site requirements.',
-    });
-    expect(updated.status, 'in_progress');
-  });
+      expect(captured?.method, 'PATCH');
+      expect(captured?.url.path, '/api/admin/enquiries/enquiry-1');
+      expect(captured?.headers['authorization'], 'Bearer access-token');
+      expect(jsonDecode(captured!.body), {
+        'status': 'in_progress',
+        'response': 'Reviewing the site requirements.',
+      });
+      expect(updated.status, 'in_progress');
+    },
+  );
 
-  test('admin enquiry history uses the authenticated history endpoint',
-      () async {
-    final client = MockClient((request) async {
-      expect(request.method, 'GET');
-      expect(request.url.path, '/api/admin/enquiries/enquiry-1/history');
-      expect(request.headers['authorization'], 'Bearer access-token');
-      return http.Response(
-        jsonEncode([
-          {
-            'id': 'history-1',
-            'enquiry_id': 'enquiry-1',
-            'action': 'submitted',
-            'actor_type': 'public',
-            'new_status': 'new',
-            'created_at': '2026-11-18T03:00:00.000Z',
-          },
-        ]),
-        200,
-      );
-    });
+  test(
+    'admin enquiry history uses the authenticated history endpoint',
+    () async {
+      final client = MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/api/admin/enquiries/enquiry-1/history');
+        expect(request.headers['authorization'], 'Bearer access-token');
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 'history-1',
+              'enquiry_id': 'enquiry-1',
+              'action': 'submitted',
+              'actor_type': 'public',
+              'new_status': 'new',
+              'created_at': '2026-11-18T03:00:00.000Z',
+            },
+          ]),
+          200,
+        );
+      });
 
-    final history = await _SignedInApiClient(client: client)
-        .adminEnquiryHistory('enquiry-1');
+      final history = await _SignedInApiClient(
+        client: client,
+      ).adminEnquiryHistory('enquiry-1');
 
-    expect(history.single.data['action'], 'submitted');
-    expect(history.single.data['new_status'], 'new');
-  });
+      expect(history.single.data['action'], 'submitted');
+      expect(history.single.data['new_status'], 'new');
+    },
+  );
 
   test('partner review supports requesting additional information', () async {
     http.Request? captured;
@@ -256,12 +290,12 @@ void main() {
       );
     });
 
-    final updated =
-        await _SignedInApiClient(client: client).reviewPartnerApplication(
-      'partner-1',
-      status: 'additional_info_required',
-      reviewNote: 'Upload vehicle insurance.',
-    );
+    final updated = await _SignedInApiClient(client: client)
+        .reviewPartnerApplication(
+          'partner-1',
+          status: 'additional_info_required',
+          reviewNote: 'Upload vehicle insurance.',
+        );
 
     expect(captured?.method, 'PATCH');
     expect(captured?.url.path, '/api/admin/partner-applications/partner-1');
@@ -273,39 +307,201 @@ void main() {
     expect(updated.status, 'additional_info_required');
   });
 
-  test('partner application history uses the authenticated admin endpoint',
-      () async {
+  test(
+    'partner application history uses the authenticated admin endpoint',
+    () async {
+      final client = MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(
+          request.url.path,
+          '/api/admin/partner-applications/partner-1/history',
+        );
+        expect(request.headers['authorization'], 'Bearer access-token');
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 'history-1',
+              'action': 'reviewed',
+              'old_status': 'submitted',
+              'new_status': 'additional_info_required',
+              'review_note': 'Upload vehicle insurance.',
+            },
+          ]),
+          200,
+        );
+      });
+
+      final history = await _SignedInApiClient(
+        client: client,
+      ).partnerApplicationHistory('partner-1');
+
+      expect(history.single.data['new_status'], 'additional_info_required');
+      expect(history.single.data['review_note'], 'Upload vehicle insurance.');
+    },
+  );
+
+  test('vendor sales uses the vendor-scoped report endpoint', () async {
+    late http.Request captured;
     final client = MockClient((request) async {
-      expect(request.method, 'GET');
-      expect(
-        request.url.path,
-        '/api/admin/partner-applications/partner-1/history',
-      );
-      expect(request.headers['authorization'], 'Bearer access-token');
+      captured = request;
       return http.Response(
-        jsonEncode([
-          {
-            'id': 'history-1',
-            'action': 'reviewed',
-            'old_status': 'submitted',
-            'new_status': 'additional_info_required',
-            'review_note': 'Upload vehicle insurance.',
-          },
-        ]),
+        jsonEncode({
+          'period': 'month',
+          'totalPaise': 12500,
+          'previousTotalPaise': 9000,
+          'orderCount': 1,
+          'dailyTotalsPaise': [12500],
+          'breakdown': [
+            {'service': 'Water delivery', 'orders': 1, 'amountPaise': 12500},
+          ],
+        }),
         200,
       );
     });
 
-    final history = await _SignedInApiClient(client: client)
-        .partnerApplicationHistory('partner-1');
+    final report = await _SignedInApiClient(
+      client: client,
+    ).vendorSalesReport('month');
 
-    expect(history.single.data['new_status'], 'additional_info_required');
-    expect(history.single.data['review_note'], 'Upload vehicle insurance.');
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/api/vendor/reports/sales');
+    expect(captured.url.queryParameters, {'period': 'month'});
+    expect(report['totalPaise'], 12500);
   });
 
+  test('vendor profile reads approval and availability state', () async {
+    late http.Request captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        jsonEncode({
+          'id': 'vendor-1',
+          'business_name': 'North Tankers',
+          'service_zone': 'North district',
+          'verification': 'pending',
+          'is_online': false,
+        }),
+        200,
+      );
+    });
+
+    final profile = await _SignedInApiClient(client: client).vendorProfile();
+
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/api/vendor/profile');
+    expect(profile.businessName, 'North Tankers');
+    expect(profile.verification, 'pending');
+    expect(profile.isOnline, isFalse);
+  });
+
+  test(
+    'dispatcher contact and notify actions use their scoped endpoints',
+    () async {
+      final requests = <http.Request>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        if (request.method == 'GET') {
+          return http.Response(
+            jsonEncode({
+              'driverId': 'driver-1',
+              'name': 'Driver One',
+              'phone': '+919876543210',
+            }),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({'notified': true, 'reason': null}),
+          201,
+        );
+      });
+      final api = _SignedInApiClient(client: client);
+
+      final contact = await api.dispatcherDriverContact('booking-1');
+      final notified = await api.dispatcherNotifyCustomer(
+        orderId: 'booking-1',
+        message: 'Your delivery is delayed.',
+      );
+
+      expect(contact['phone'], '+919876543210');
+      expect(notified, isTrue);
+      expect(requests.map((request) => request.url.path), [
+        '/api/admin/orders/booking-1/driver-contact',
+        '/api/admin/orders/booking-1/notify-customer',
+      ]);
+      expect(jsonDecode(requests.last.body), {
+        'message': 'Your delivery is delayed.',
+      });
+    },
+  );
+
+  test(
+    'partner application uses flag, verification and submission endpoints',
+    () async {
+      final requests = <http.Request>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        return switch (request.url.path) {
+          '/api/config/flags' => http.Response(
+            jsonEncode({'partner_application_otp_enabled': true}),
+            200,
+          ),
+          '/api/auth/partner/request-otp' => http.Response(
+            jsonEncode({'challengeId': 'challenge-1'}),
+            202,
+          ),
+          '/api/auth/partner/verify-otp' => http.Response(
+            jsonEncode({'verified': true}),
+            200,
+          ),
+          '/api/partner/applications' => http.Response(
+            jsonEncode({
+              'ok': true,
+              'reference': 'PA-ABC12345',
+              'status': 'submitted',
+              'message': 'Your application was received.',
+            }),
+            201,
+          ),
+          _ => http.Response('{}', 404),
+        };
+      });
+      final api = _SignedInApiClient(client: client);
+
+      expect(await api.partnerApplicationOtpRequired(), isTrue);
+      final challengeId = await api.requestPartnerApplicationOtp('9876543210');
+      await api.verifyPartnerApplicationOtp(
+        phone: '9876543210',
+        challengeId: challengeId,
+        otp: '123456',
+      );
+      final receipt = await api.submitPartnerApplication(
+        application: {
+          'businessName': 'North Tankers',
+          'phone': '9876543210',
+          'phoneChallengeId': challengeId,
+        },
+      );
+
+      expect(receipt.reference, 'PA-ABC12345');
+      expect(requests.map((request) => request.url.path), [
+        '/api/config/flags',
+        '/api/auth/partner/request-otp',
+        '/api/auth/partner/verify-otp',
+        '/api/partner/applications',
+      ]);
+      expect(jsonDecode(requests[2].body), {
+        'phone': '9876543210',
+        'challengeId': 'challenge-1',
+        'otp': '123456',
+      });
+    },
+  );
+
   test('a non-JSON response gives a generic message', () async {
-    final client =
-        MockClient((_) async => http.Response('<html>oops</html>', 200));
+    final client = MockClient(
+      (_) async => http.Response('<html>oops</html>', 200),
+    );
 
     await expectLater(
       _SignedInApiClient(client: client).bookingsPage(),
@@ -319,71 +515,85 @@ void main() {
     );
   });
 
-  test('logout sends the refresh token in the body for a mobile client',
-      () async {
-    http.Request? captured;
-    final client = MockClient((request) async {
-      captured = request;
-      return http.Response('', 204);
-    });
+  test(
+    'logout sends the refresh token in the body for a mobile client',
+    () async {
+      http.Request? captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response('', 204);
+      });
 
-    await _SignedInApiClient(client: client).logout('refresh-token-value');
+      await _SignedInApiClient(client: client).logout('refresh-token-value');
 
-    expect(captured?.method, 'POST');
-    expect(captured?.url.path, '/api/auth/logout');
-    expect(captured?.headers['X-Client-Platform'], 'mobile');
-    expect(jsonDecode(captured!.body), {'refreshToken': 'refresh-token-value'});
-  });
+      expect(captured?.method, 'POST');
+      expect(captured?.url.path, '/api/auth/logout');
+      expect(captured?.headers['X-Client-Platform'], 'mobile');
+      expect(jsonDecode(captured!.body), {
+        'refreshToken': 'refresh-token-value',
+      });
+    },
+  );
 
-  test('admin-access review uses the shared pending and decision endpoints',
-      () async {
-    final requests = <http.Request>[];
-    final client = MockClient((request) async {
-      requests.add(request);
-      if (request.method == 'GET') {
+  test(
+    'admin-access review uses the shared pending and decision endpoints',
+    () async {
+      final requests = <http.Request>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        if (request.method == 'GET') {
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'request-1',
+                'name': 'Jordan Smith',
+                'email': 'jordan@example.com',
+                'phone_e164': '+919876543210',
+                'reason': 'Manage regional operations.',
+                'status': 'pending',
+                'requested_at': '2026-02-01T10:00:00.000Z',
+              },
+            ]),
+            200,
+          );
+        }
         return http.Response(
-          jsonEncode([
-            {
-              'id': 'request-1',
-              'name': 'Jordan Smith',
-              'email': 'jordan@example.com',
-              'phone_e164': '+919876543210',
-              'reason': 'Manage regional operations.',
-              'status': 'pending',
-              'requested_at': '2026-02-01T10:00:00.000Z',
-            },
-          ]),
+          jsonEncode({'id': 'request-1', 'status': 'approved'}),
           200,
         );
-      }
-      return http.Response(
-          jsonEncode({'id': 'request-1', 'status': 'approved'}), 200);
-    });
-    final api = _SignedInApiClient(client: client);
+      });
+      final api = _SignedInApiClient(client: client);
 
-    final rows = await api.adminUsers();
-    await api.reviewAdminAccessRequest('request-1', decision: 'approved');
-    await api.reviewAdminAccessRequest('request-2', decision: 'rejected');
-    await api.setAdminUserActive('admin-1', isActive: false);
+      final rows = await api.adminUsers();
+      await api.reviewAdminAccessRequest('request-1', decision: 'approved');
+      await api.reviewAdminAccessRequest('request-2', decision: 'rejected');
+      await api.setAdminUserActive('admin-1', isActive: false);
 
-    expect(rows.single['email'], 'jordan@example.com');
-    expect(requests.map((request) => request.url.path), [
-      '/api/admin-access/admins',
-      '/api/admin-access/requests/request-1',
-      '/api/admin-access/requests/request-2',
-      '/api/admin-access/admins/admin-1/status',
-    ]);
-    expect(requests.map((request) => request.method),
-        ['GET', 'PATCH', 'PATCH', 'PATCH']);
-    expect(jsonDecode(requests[1].body), {'decision': 'approved'});
-    expect(jsonDecode(requests[2].body), {'decision': 'rejected'});
-    expect(jsonDecode(requests[3].body), {'isActive': false});
-    expect(
-      requests.every((request) =>
-          request.headers['authorization'] == 'Bearer access-token'),
-      isTrue,
-    );
-  });
+      expect(rows.single['email'], 'jordan@example.com');
+      expect(requests.map((request) => request.url.path), [
+        '/api/admin-access/admins',
+        '/api/admin-access/requests/request-1',
+        '/api/admin-access/requests/request-2',
+        '/api/admin-access/admins/admin-1/status',
+      ]);
+      expect(requests.map((request) => request.method), [
+        'GET',
+        'PATCH',
+        'PATCH',
+        'PATCH',
+      ]);
+      expect(jsonDecode(requests[1].body), {'decision': 'approved'});
+      expect(jsonDecode(requests[2].body), {'decision': 'rejected'});
+      expect(jsonDecode(requests[3].body), {'isActive': false});
+      expect(
+        requests.every(
+          (request) =>
+              request.headers['authorization'] == 'Bearer access-token',
+        ),
+        isTrue,
+      );
+    },
+  );
 
   test('MPIN enrollment sends the PIN only to the authenticated API', () async {
     http.Request? captured;
@@ -414,32 +624,41 @@ void main() {
     expect(captured?.headers['authorization'], 'Bearer access-token');
   });
 
-  test('registered booking email fallback never accepts a client email',
-      () async {
-    http.Request? captured;
-    final client = MockClient((request) async {
-      captured = request;
-      return http.Response(
-        jsonEncode({'emailChallengeId': 'email-challenge'}),
-        202,
-      );
-    });
+  test(
+    'registered booking email fallback never accepts a client email',
+    () async {
+      http.Request? captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({'emailChallengeId': 'email-challenge'}),
+          202,
+        );
+      });
 
-    final challengeId = await _SignedInApiClient(client: client)
-        .requestRegisteredBookingEmailOtp(phone: '+91 98765 43210');
+      final challengeId = await _SignedInApiClient(
+        client: client,
+      ).requestRegisteredBookingEmailOtp(phone: '+91 98765 43210');
 
-    expect(challengeId, 'email-challenge');
-    expect(captured?.method, 'POST');
-    expect(captured?.url.path, '/api/auth/booking/email-fallback');
-    expect(captured?.headers['authorization'], 'Bearer access-token');
-    expect(jsonDecode(captured!.body), {'phone': '9876543210'});
-  });
+      expect(challengeId, 'email-challenge');
+      expect(captured?.method, 'POST');
+      expect(captured?.url.path, '/api/auth/booking/email-fallback');
+      expect(captured?.headers['authorization'], 'Bearer access-token');
+      expect(jsonDecode(captured!.body), {'phone': '9876543210'});
+    },
+  );
 
   test('phone verification reads the backend booking policy', () async {
-    final client = MockClient((_) async => http.Response(
-        jsonEncode(
-            {'phone': '9876543210', 'verified': true, 'required': false}),
-        200));
+    final client = MockClient(
+      (_) async => http.Response(
+        jsonEncode({
+          'phone': '9876543210',
+          'verified': true,
+          'required': false,
+        }),
+        200,
+      ),
+    );
 
     final state = await _SignedInApiClient(client: client).phoneVerification();
 
@@ -448,34 +667,34 @@ void main() {
     expect(state.required, isFalse);
   });
 
-  test('coupon validation returns the details used by the booking UI',
-      () async {
-    final client = MockClient((request) async {
-      expect(request.url.path, '/api/customer/coupons/validate');
-      return http.Response(
-        jsonEncode({
-          'valid': true,
-          'coupon': {
-            'id': 'coupon-1',
-            'code': 'SAVE10',
-            'title': 'Ten percent off',
-            'discountType': 'percentage',
-            'discountValue': 10,
-          },
-        }),
-        200,
-      );
-    });
+  test(
+    'coupon validation returns the details used by the booking UI',
+    () async {
+      final client = MockClient((request) async {
+        expect(request.url.path, '/api/customer/coupons/validate');
+        return http.Response(
+          jsonEncode({
+            'valid': true,
+            'coupon': {
+              'id': 'coupon-1',
+              'code': 'SAVE10',
+              'title': 'Ten percent off',
+              'discountType': 'percentage',
+              'discountValue': 10,
+            },
+          }),
+          200,
+        );
+      });
 
-    final coupon = await _SignedInApiClient(client: client).validateCoupon(
-      code: 'SAVE10',
-      serviceCode: 'water_tanker',
-      amount: 0,
-    );
+      final coupon = await _SignedInApiClient(
+        client: client,
+      ).validateCoupon(code: 'SAVE10', serviceCode: 'water_tanker', amount: 0);
 
-    expect(coupon['code'], 'SAVE10');
-    expect(coupon['title'], 'Ten percent off');
-  });
+      expect(coupon['code'], 'SAVE10');
+      expect(coupon['title'], 'Ten percent off');
+    },
+  );
 
   test('idempotency keys are random RFC 4122 version 4 UUIDs', () {
     final pattern = RegExp(

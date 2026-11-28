@@ -6,7 +6,7 @@ the REST and Socket.IO contracts.
 
 ## Requirements
 
-- Flutter stable with Dart 3.4 or newer
+- Flutter stable with Dart 3.9 or newer
 - Android SDK with API 30 installed for the Android target
 - macOS/Xcode for iOS builds (the iOS deployment target is 15.0)
 
@@ -33,6 +33,9 @@ the device. The production API defaults to
 `https://api.urbantanker.in/api`; Socket.IO derives its origin from
 `API_BASE_URL`. To roll back to Render, pass
 `--dart-define=API_BASE_URL=https://urban-tanker-backend.onrender.com/api`.
+Set `--dart-define=API_BASE_URL=<backend-url>/api` when running or building to
+choose another backend. Admin Platform diagnostics is shown in Settings by
+default; hide it with `--dart-define=SHOW_PLATFORM_DIAGNOSTICS=false`.
 
 The multi-service order experience is opt-in in both the backend and mobile
 build. Enable the backend `MULTI_SERVICE_ORDERS_ENABLED` setting and build the
@@ -57,6 +60,11 @@ State is coordinated with Riverpod, using the existing `ChangeNotifier`
 controller as the single session/theme source. FlexColorScheme provides the
 open-source Material 3 theme foundation while preserving the Urban Tanker
 palette and semantic light/dark surfaces.
+
+The redesigned UI is enabled by default. To use the legacy theme and routes,
+run with `--dart-define=NEW_UI_ENABLED=false`. The redesign applies the new
+design tokens and light/dark theme, and shows the branded splash during local
+app initialization.
 
 Native authentication uses the `/api/auth/mobile-refresh` endpoint. Access and
 rotated refresh tokens are stored separately in secure platform storage. The

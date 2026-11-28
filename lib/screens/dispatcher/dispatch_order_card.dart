@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/auth_feature_flags.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/dispatcher.dart';
 import '../common/booking_format.dart';
 import 'dispatch_actions.dart';
+import 'dispatch_assignment_screen.dart';
+import 'delayed_order_screen.dart';
 import 'dispatch_urgency.dart';
 
 /// One order in the dispatch queue. An unassigned order gets a one-tap assign
@@ -21,29 +24,54 @@ class DispatchOrderCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final order = DispatcherOrder.fromJson(raw);
     final urgency = dispatchUrgency(order);
-    final (label, tone, icon) = switch (urgency) {
-      DispatchUrgency.urgent => ('Urgent', colors.danger, Icons.priority_high),
-      DispatchUrgency.needsVendor => (
-          'Needs vendor',
-          colors.warning,
-          Icons.assignment_late_outlined,
-        ),
-      DispatchUrgency.inProgress => (
-          'In progress',
-          colors.info,
-          Icons.local_shipping_outlined,
-        ),
-      DispatchUrgency.scheduled => (
-          'Scheduled',
-          colors.neutral,
-          Icons.schedule,
-        ),
-      DispatchUrgency.done => ('Done', colors.success, Icons.check),
-    };
+    final delayed =
+        AuthFeatureFlags.newUiEnabled &&
+        order.scheduledFor?.isBefore(DateTime.now()) == true &&
+        !const {
+          'delivered',
+          'cancelled',
+          'canceled',
+          'rejected',
+        }.contains(order.status.toLowerCase());
+    final (label, tone, icon) = delayed
+        ? ('Delayed', colors.danger, Icons.schedule_outlined)
+        : switch (urgency) {
+            DispatchUrgency.urgent => (
+              'Urgent',
+              colors.danger,
+              Icons.priority_high,
+            ),
+            DispatchUrgency.needsVendor => (
+              'Needs vendor',
+              colors.warning,
+              Icons.assignment_late_outlined,
+            ),
+            DispatchUrgency.inProgress => (
+              'In progress',
+              colors.info,
+              Icons.local_shipping_outlined,
+            ),
+            DispatchUrgency.scheduled => (
+              'Scheduled',
+              colors.neutral,
+              Icons.schedule,
+            ),
+            DispatchUrgency.done => ('Done', colors.success, Icons.check),
+          };
     final canAssign = !order.isAssigned && order.status == 'pending_vendor';
     return SurfaceCard(
       padding: AppPageInsets.card,
-      onTap: () => showOrderDetails(context, raw),
+      onTap: () {
+        if (delayed) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => DelayedOrderScreen(rawOrder: raw),
+            ),
+          );
+        } else {
+          showOrderDetails(context, raw);
+        }
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -88,7 +116,13 @@ class DispatchOrderCard extends ConsumerWidget {
                   label: 'Assign',
                   icon: Icons.assignment_ind_outlined,
                   expand: false,
-                  onPressed: () => assignOrder(context, ref, raw),
+                  onPressed: () {
+                    if (AuthFeatureFlags.newUiEnabled) {
+                      openDispatchAssignment(context, raw);
+                    } else {
+                      assignOrder(context, ref, raw);
+                    }
+                  },
                 ),
               IconButton(
                 tooltip: 'More actions',

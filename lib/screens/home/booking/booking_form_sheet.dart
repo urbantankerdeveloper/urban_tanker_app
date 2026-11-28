@@ -22,7 +22,18 @@ import '../../booking_details_screen.dart';
 import '../../common/booking_format.dart';
 import '../../auth/phone_verify_dialog.dart';
 import 'booking_fields.dart';
+import 'booking_biometric_confirmation_screen.dart';
 import 'live_quote_summary.dart';
+
+bool _isNoVendorAvailableError(Object error) {
+  if (error is! ApiException) return false;
+  final code = error.code?.toLowerCase();
+  final message = error.message.toLowerCase();
+  return code == 'no_vendor_available' ||
+      code == 'vendor_unavailable' ||
+      message.contains('no vendor available') ||
+      message.contains('no delivery partner available');
+}
 
 typedef _VerifiedBookingContact = ({String phone, String? challengeId});
 
@@ -60,8 +71,9 @@ class _BookingPhoneVerificationDialog extends StatefulWidget {
 
 class _BookingPhoneVerificationDialogState
     extends State<_BookingPhoneVerificationDialog> {
-  late final TextEditingController _phone =
-      TextEditingController(text: widget.initialPhone);
+  late final TextEditingController _phone = TextEditingController(
+    text: widget.initialPhone,
+  );
   final _digits = List.generate(6, (_) => TextEditingController());
   final _focusNodes = List.generate(6, (_) => FocusNode());
   Timer? _resendTimer;
@@ -122,9 +134,11 @@ class _BookingPhoneVerificationDialogState
   void _onDigitChanged(int index, String value) {
     final digits = value.replaceAll(RegExp(r'\D'), '');
     if (digits.length > 1) {
-      for (var offset = 0;
-          offset < digits.length && index + offset < 6;
-          offset++) {
+      for (
+        var offset = 0;
+        offset < digits.length && index + offset < 6;
+        offset++
+      ) {
         _digits[index + offset].text = digits[offset];
       }
       final nextIndex = (index + digits.length).clamp(0, 5).toInt();
@@ -161,7 +175,8 @@ class _BookingPhoneVerificationDialogState
       });
       _startResendTimer(result.resendAfterSeconds);
     } catch (error) {
-      final canUseEmailFallback = widget.fallbackEmail != null &&
+      final canUseEmailFallback =
+          widget.fallbackEmail != null &&
           widget.fallbackEmail!.trim().isNotEmpty &&
           error is ApiException &&
           error.statusCode == 503 &&
@@ -172,8 +187,8 @@ class _BookingPhoneVerificationDialogState
         return;
       }
       try {
-        final emailChallengeId =
-            await widget.api.requestRegisteredBookingEmailOtp(phone: phone);
+        final emailChallengeId = await widget.api
+            .requestRegisteredBookingEmailOtp(phone: phone);
         if (!mounted) return;
         setState(() {
           _challengeId = null;
@@ -217,16 +232,35 @@ class _BookingPhoneVerificationDialogState
         emailOtp: _usingEmailFallback ? _otp : null,
       );
       if (mounted) {
-        Navigator.pop(
-          context,
-          (
-            phone: phone,
-            challengeId: challengeId,
-          ),
-        );
+        Navigator.pop(context, (phone: phone, challengeId: challengeId));
       }
     } catch (error) {
-      if (mounted) setState(() => _error = friendlyError(error));
+      final statusCode = error is ApiException ? error.statusCode : null;
+      if (mounted &&
+          AuthFeatureFlags.newUiEnabled &&
+          (statusCode == 400 || statusCode == 401 || statusCode == 422)) {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (screenContext) => FailureStateScreen(
+              kind: FailureScreenKind.wrongOtp,
+              onPrimary: () => Navigator.of(screenContext).pop(),
+              onSecondary: () {
+                Navigator.of(screenContext).pop();
+                if (!mounted) return;
+                setState(() {
+                  _challengeId = null;
+                  _emailChallengeId = null;
+                  _channel = null;
+                  _usingEmailFallback = false;
+                  _clearCode();
+                });
+              },
+            ),
+          ),
+        );
+      } else if (mounted) {
+        setState(() => _error = friendlyError(error));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -234,142 +268,143 @@ class _BookingPhoneVerificationDialogState
 
   @override
   Widget build(BuildContext context) => AppDialog(
-        title: 'Verify booking phone',
-        message: 'Verify the contact number before confirming your booking.',
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _phone,
-              enabled: _challengeId == null && !_busy,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'Mobile number'),
-              onChanged: (_) => setState(() {
-                _resendTimer?.cancel();
-                _resendSeconds = 0;
-                _challengeId = null;
-                _emailChallengeId = null;
-                _channel = null;
-                _usingEmailFallback = false;
-                _clearCode();
-                _error = null;
-              }),
-            ),
-            if (_challengeId != null || _emailChallengeId != null) ...[
-              const SizedBox(height: AppSpace.sm),
-              Row(
-                children: [
-                  Icon(
-                    _channel == PhoneOtpChannel.whatsapp
-                        ? Icons.chat_outlined
-                        : Icons.sms_outlined,
-                    color: _channel == PhoneOtpChannel.whatsapp
-                        ? const Color(0xFF25D366)
-                        : context.colors.primary,
-                  ),
-                  const SizedBox(width: AppSpace.sm),
-                  Expanded(
-                    child: Text(
-                      _usingEmailFallback
-                          ? 'Phone delivery is unavailable. We sent a code to ${widget.fallbackEmail}.'
-                          : 'We sent a code${_channel == null ? '' : ' via ${_channel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS'}'} to +91 ${maskPhone(_phone.text)}.',
-                    ),
-                  ),
-                ],
+    title: 'Verify booking phone',
+    message: 'Verify the contact number before confirming your booking.',
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _phone,
+          enabled: _challengeId == null && !_busy,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(labelText: 'Mobile number'),
+          onChanged: (_) => setState(() {
+            _resendTimer?.cancel();
+            _resendSeconds = 0;
+            _challengeId = null;
+            _emailChallengeId = null;
+            _channel = null;
+            _usingEmailFallback = false;
+            _clearCode();
+            _error = null;
+          }),
+        ),
+        if (_challengeId != null || _emailChallengeId != null) ...[
+          const SizedBox(height: AppSpace.sm),
+          Row(
+            children: [
+              Icon(
+                _channel == PhoneOtpChannel.whatsapp
+                    ? Icons.chat_outlined
+                    : Icons.sms_outlined,
+                color: _channel == PhoneOtpChannel.whatsapp
+                    ? const Color(0xFF25D366)
+                    : context.colors.primary,
               ),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() {
-                            _challengeId = null;
-                            _emailChallengeId = null;
-                            _channel = null;
-                            _usingEmailFallback = false;
-                            _error = null;
-                            _resendTimer?.cancel();
-                            _resendSeconds = 0;
-                            _clearCode();
-                          }),
-                  child: const Text('Change number'),
+              const SizedBox(width: AppSpace.sm),
+              Expanded(
+                child: Text(
+                  _usingEmailFallback
+                      ? 'Phone delivery is unavailable. We sent a code to ${widget.fallbackEmail}.'
+                      : 'We sent a code${_channel == null ? '' : ' via ${_channel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS'}'} to +91 ${maskPhone(_phone.text)}.',
                 ),
               ),
-              const SizedBox(height: AppSpace.sm),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  for (var index = 0; index < _digits.length; index++)
-                    SizedBox(
-                      width: 42,
-                      child: TextField(
-                        key: Key('booking-otp-digit-$index'),
-                        controller: _digits[index],
-                        focusNode: _focusNodes[index],
-                        enabled: !_busy,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        autofillHints:
-                            index == 0 && _channel == PhoneOtpChannel.sms
-                                ? const [AutofillHints.oneTimeCode]
-                                : null,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(6),
-                        ],
-                        decoration: const InputDecoration(
-                          counterText: '',
-                          contentPadding: EdgeInsets.symmetric(
-                            vertical: AppSpace.md,
-                          ),
-                        ),
-                        onChanged: (value) => _onDigitChanged(index, value),
+            ],
+          ),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _challengeId = null;
+                      _emailChallengeId = null;
+                      _channel = null;
+                      _usingEmailFallback = false;
+                      _error = null;
+                      _resendTimer?.cancel();
+                      _resendSeconds = 0;
+                      _clearCode();
+                    }),
+              child: const Text('Change number'),
+            ),
+          ),
+          const SizedBox(height: AppSpace.sm),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (var index = 0; index < _digits.length; index++)
+                SizedBox(
+                  width: 42,
+                  child: TextField(
+                    key: Key('booking-otp-digit-$index'),
+                    controller: _digits[index],
+                    focusNode: _focusNodes[index],
+                    enabled: !_busy,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    autofillHints: index == 0 && _channel == PhoneOtpChannel.sms
+                        ? const [AutofillHints.oneTimeCode]
+                        : null,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
+                    decoration: const InputDecoration(
+                      counterText: '',
+                      contentPadding: EdgeInsets.symmetric(
+                        vertical: AppSpace.md,
                       ),
                     ),
-                ],
-              ),
-              Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: TextButton(
-                  onPressed: _busy || _resendSeconds > 0 ? null : _sendCode,
-                  child: Text(_resendSeconds > 0
-                      ? 'Resend in $_resendSeconds s'
-                      : 'Resend code'),
+                    onChanged: (value) => _onDigitChanged(index, value),
+                  ),
                 ),
-              ),
             ],
-            if (_error != null) ...[
-              const SizedBox(height: AppSpace.sm),
-              Text(
-                _error!,
-                style: TextStyle(color: context.colors.danger.fg),
+          ),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: TextButton(
+              onPressed: _busy || _resendSeconds > 0 ? null : _sendCode,
+              child: Text(
+                _resendSeconds > 0
+                    ? 'Resend in $_resendSeconds s'
+                    : 'Resend code',
               ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: _busy ? null : () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          OutlinedButton(
-            onPressed: _busy ||
-                    _resendSeconds > 0 ||
-                    (_challengeId != null || _emailChallengeId != null)
-                ? null
-                : _sendCode,
-            child: Text(_challengeId == null && _emailChallengeId == null
-                ? 'Send code'
-                : 'Code sent'),
-          ),
-          PrimaryButton(
-            label: 'Verify number',
-            loading: _busy,
-            onPressed: _busy ? null : _verify,
+            ),
           ),
         ],
-      );
+        if (_error != null) ...[
+          const SizedBox(height: AppSpace.sm),
+          Text(_error!, style: TextStyle(color: context.colors.danger.fg)),
+        ],
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: _busy ? null : () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      OutlinedButton(
+        onPressed:
+            _busy ||
+                _resendSeconds > 0 ||
+                (_challengeId != null || _emailChallengeId != null)
+            ? null
+            : _sendCode,
+        child: Text(
+          _challengeId == null && _emailChallengeId == null
+              ? 'Send code'
+              : 'Code sent',
+        ),
+      ),
+      PrimaryButton(
+        label: 'Verify number',
+        loading: _busy,
+        onPressed: _busy ? null : _verify,
+      ),
+    ],
+  );
 }
 
 class _BookingFormControllerScope extends StatefulWidget {
@@ -401,10 +436,10 @@ class _BookingFormControllerScopeState
 }
 
 String _paymentMethodLabel(String method) => switch (method) {
-      'wallet' => 'Wallet',
-      'gateway' => 'Online payment',
-      _ => 'Cash on delivery',
-    };
+  'wallet' => 'Wallet',
+  'gateway' => 'Online payment',
+  _ => 'Cash on delivery',
+};
 
 Future<void> openBookingForm(
   BuildContext context, {
@@ -423,8 +458,9 @@ Future<void> openBookingForm(
   }
   if (!context.mounted) return;
   final couponController = TextEditingController();
-  final notesController =
-      TextEditingController(text: previousBooking?.notes ?? '');
+  final notesController = TextEditingController(
+    text: previousBooking?.notes ?? '',
+  );
   final phoneController = TextEditingController();
   String? selectedAddress;
   final previousDetails = {
@@ -434,19 +470,24 @@ Future<void> openBookingForm(
   final serviceFields = {
     for (final service in serviceCatalog)
       service.id: BookingServiceFields(
-        quantity: previousDetails[service.id]?.quantity ??
+        quantity:
+            previousDetails[service.id]?.quantity ??
             (previousBooking == null && service.capacityOptions.isNotEmpty
                 ? service.capacityOptions.first
                 : AuthFeatureFlags.multiServiceOrders &&
-                        service.minQuantity != null
-                    ? service.minQuantity!.toString()
-                    : ''),
+                      service.minQuantity != null
+                ? service.minQuantity!.toString()
+                : ''),
         details: previousDetails[service.id]?.details ?? '',
-        location: previousDetails[service.id]?.location ??
+        location:
+            previousDetails[service.id]?.location ??
             (previousBooking?.location ?? selectedAddress ?? ''),
-        deliveryDate: previousDetails[service.id]?.deliveryDate ??
-            dateOnly(previousBooking?.deliveryDate ??
-                DateTime.now().add(const Duration(days: 1))),
+        deliveryDate:
+            previousDetails[service.id]?.deliveryDate ??
+            dateOnly(
+              previousBooking?.deliveryDate ??
+                  DateTime.now().add(const Duration(days: 1)),
+            ),
         latitude: previousDetails[service.id]?.latitude,
         longitude: previousDetails[service.id]?.longitude,
         waterType: previousDetails[service.id]?.waterType ?? '',
@@ -458,8 +499,9 @@ Future<void> openBookingForm(
       .toSet();
   if (previousServiceIds.isEmpty &&
       previousBooking?.serviceId != null &&
-      serviceCatalog
-          .any((service) => service.id == previousBooking!.serviceId)) {
+      serviceCatalog.any(
+        (service) => service.id == previousBooking!.serviceId,
+      )) {
     previousServiceIds.add(previousBooking!.serviceId!);
     final previousService = previousDetails[previousBooking.serviceId];
     if (previousService != null) {
@@ -471,8 +513,9 @@ Future<void> openBookingForm(
           previousBooking.capacity;
     }
   }
-  final selectedServices =
-      previousServiceIds.isNotEmpty ? previousServiceIds : <String>{};
+  final selectedServices = previousServiceIds.isNotEmpty
+      ? previousServiceIds
+      : <String>{};
   for (final address in addresses) {
     if (address.detail == previousBooking?.location) {
       selectedAddress = address.detail;
@@ -552,15 +595,15 @@ Future<void> openBookingForm(
     final service = serviceCatalog.firstWhere((item) => item.id == id);
     final serviceSpecificMissing = id == 'water_tanker'
         ? fields.waterType.text.trim().isEmpty ||
-            fields.tankerCount.text.trim().isEmpty
+              fields.tankerCount.text.trim().isEmpty
         : fields.details.text.trim().isEmpty;
     final quantity = double.tryParse(fields.quantity.text.trim());
     final quantityValid = service.capacityOptions.isNotEmpty
         ? service.capacityOptions.contains(fields.quantity.text)
         : AuthFeatureFlags.multiServiceOrders &&
-            quantity != null &&
-            quantity >= (service.minQuantity ?? 1) &&
-            quantity <= (service.maxQuantity ?? double.infinity);
+              quantity != null &&
+              quantity >= (service.minQuantity ?? 1) &&
+              quantity <= (service.maxQuantity ?? double.infinity);
     return !quantityValid ||
         serviceSpecificMissing ||
         fields.location.text.trim().isEmpty ||
@@ -575,8 +618,8 @@ Future<void> openBookingForm(
                 !service.tankerCountOptions.contains(fields.tankerCount.text)));
   }
 
-  List<BookingServiceDetails> buildServiceDetails() =>
-      selectedServices.map((serviceId) {
+  List<BookingServiceDetails> buildServiceDetails() => selectedServices
+      .map((serviceId) {
         final fields = serviceFields[serviceId]!;
         return BookingServiceDetails(
           serviceId: serviceId,
@@ -589,7 +632,8 @@ Future<void> openBookingForm(
           latitude: fields.latitude,
           longitude: fields.longitude,
         );
-      }).toList(growable: false);
+      })
+      .toList(growable: false);
 
   final steps = [
     'Contact',
@@ -602,7 +646,7 @@ Future<void> openBookingForm(
   // One form per step. Next validates only the step on screen, and every
   // field is checked again before a booking is submitted.
   final stepKeys = [
-    for (var i = 0; i < steps.length; i++) GlobalKey<FormState>()
+    for (var i = 0; i < steps.length; i++) GlobalKey<FormState>(),
   ];
   var step = 0;
   double? quoteTotal;
@@ -630,9 +674,9 @@ Future<void> openBookingForm(
           final lastStep = steps.length - 1;
 
           void goTo(int next) => setSheetState(() {
-                step = next;
-                bookingFormError = null;
-              });
+            step = next;
+            bookingFormError = null;
+          });
 
           void goNext() {
             final form = stepKeys[step].currentState;
@@ -646,11 +690,12 @@ Future<void> openBookingForm(
             goTo(step + 1);
           }
 
-          bool canSubmit() => !(submittingBooking ||
-              paymentMethod == null ||
-              selectedServices.isEmpty ||
-              !phoneVerified ||
-              selectedServices.any(serviceHasMissingFields));
+          bool canSubmit() =>
+              !(submittingBooking ||
+                  paymentMethod == null ||
+                  selectedServices.isEmpty ||
+                  !phoneVerified ||
+                  selectedServices.any(serviceHasMissingFields));
 
           Future<void> submit() async {
             if (selectedServices.isEmpty) {
@@ -711,9 +756,11 @@ Future<void> openBookingForm(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          for (var index = 0;
-                              index < services.length;
-                              index++) ...[
+                          for (
+                            var index = 0;
+                            index < services.length;
+                            index++
+                          ) ...[
                             Text(
                               selectedServiceNames.elementAt(index),
                               style: theme.textTheme.titleSmall,
@@ -725,13 +772,13 @@ Future<void> openBookingForm(
                             if (services[index].waterType?.trim().isNotEmpty ==
                                 true)
                               Text('Water type: ${services[index].waterType}'),
-                            if (services[index]
-                                    .tankerCount
+                            if (services[index].tankerCount
                                     ?.trim()
                                     .isNotEmpty ==
                                 true)
                               Text(
-                                  'Tanker count: ${services[index].tankerCount}'),
+                                'Tanker count: ${services[index].tankerCount}',
+                              ),
                             Text('Details: ${services[index].details.trim()}'),
                             const SizedBox(height: AppSpace.sm),
                           ],
@@ -757,6 +804,32 @@ Future<void> openBookingForm(
                 );
                 if (confirmed != true || !context.mounted) return;
 
+                final biometricConfirmed =
+                    AuthFeatureFlags.newUiEnabled &&
+                        controller.bookingBiometricEnabled
+                    ? await Navigator.of(context).push<bool>(
+                            MaterialPageRoute<bool>(
+                              builder: (_) =>
+                                  BookingBiometricConfirmationScreen(
+                                    serviceNames: selectedServiceNames.toList(),
+                                    quoteSummary: formatQuoteSummary(quote),
+                                    authorize:
+                                        controller.authorizeBookingConfirmation,
+                                  ),
+                            ),
+                          ) ==
+                          true
+                    : await controller.authorizeBookingConfirmation();
+                if (!context.mounted) return;
+                if (!biometricConfirmed) {
+                  showAppSnack(
+                    context,
+                    'Booking confirmation was not completed.',
+                    variant: AppSnackVariant.error,
+                  );
+                  return;
+                }
+
                 final keyFingerprint = jsonEncode([
                   for (final service in services) service.toJson(),
                   notesController.text,
@@ -775,49 +848,51 @@ Future<void> openBookingForm(
                     controller: controller,
                     action: () async {
                       if (AuthFeatureFlags.multiServiceOrders) {
-                        final order =
-                            await controller.api.createMultiServiceOrder(
-                          idempotencyKey: bookingKey!,
-                          paymentMethod: method,
-                          phone: phoneController.text,
-                          phoneVerificationChallengeId: phoneChallengeId,
-                          couponCode: validatedCoupon == null
-                              ? null
-                              : couponController.text.trim(),
-                          items: [
-                            for (final service in services)
-                              {
-                                'serviceId': service.serviceId,
-                                'quantity': int.tryParse(
-                                      service.tankerCount ?? service.quantity,
-                                    ) ??
-                                    1,
-                                'capacity': service.quantity,
-                                'location': service.location ?? '',
-                                'deliveryDate': service.deliveryDate ?? '',
-                                if (service.preferredTime != null &&
-                                    service.preferredTime!.isNotEmpty)
-                                  'slot': service.preferredTime,
-                                if (service.latitude != null)
-                                  'latitude': service.latitude,
-                                if (service.longitude != null)
-                                  'longitude': service.longitude,
-                                'details': {
-                                  'details': service.details,
-                                  if (service.waterType != null)
-                                    'waterType': service.waterType,
-                                  if (service.tankerCount != null)
-                                    'tankerCount': service.tankerCount,
-                                },
-                                if (service.waterType != null)
-                                  'waterType': service.waterType,
-                                if (service.tankerCount != null)
-                                  'quantityText': service.tankerCount,
-                              },
-                          ],
-                        );
-                        final compatibilityId =
-                            order['legacyBookingId']?.toString();
+                        final order = await controller.api
+                            .createMultiServiceOrder(
+                              idempotencyKey: bookingKey!,
+                              paymentMethod: method,
+                              phone: phoneController.text,
+                              phoneVerificationChallengeId: phoneChallengeId,
+                              couponCode: validatedCoupon == null
+                                  ? null
+                                  : couponController.text.trim(),
+                              items: [
+                                for (final service in services)
+                                  {
+                                    'serviceId': service.serviceId,
+                                    'quantity':
+                                        int.tryParse(
+                                          service.tankerCount ??
+                                              service.quantity,
+                                        ) ??
+                                        1,
+                                    'capacity': service.quantity,
+                                    'location': service.location ?? '',
+                                    'deliveryDate': service.deliveryDate ?? '',
+                                    if (service.preferredTime != null &&
+                                        service.preferredTime!.isNotEmpty)
+                                      'slot': service.preferredTime,
+                                    if (service.latitude != null)
+                                      'latitude': service.latitude,
+                                    if (service.longitude != null)
+                                      'longitude': service.longitude,
+                                    'details': {
+                                      'details': service.details,
+                                      if (service.waterType != null)
+                                        'waterType': service.waterType,
+                                      if (service.tankerCount != null)
+                                        'tankerCount': service.tankerCount,
+                                    },
+                                    if (service.waterType != null)
+                                      'waterType': service.waterType,
+                                    if (service.tankerCount != null)
+                                      'quantityText': service.tankerCount,
+                                  },
+                              ],
+                            );
+                        final compatibilityId = order['legacyBookingId']
+                            ?.toString();
                         if (compatibilityId == null ||
                             compatibilityId.isEmpty) {
                           throw const FormatException(
@@ -849,8 +924,9 @@ Future<void> openBookingForm(
                       );
                     },
                   );
-                  booking['service_details'] =
-                      services.map((service) => service.toJson()).toList();
+                  booking['service_details'] = services
+                      .map((service) => service.toJson())
+                      .toList();
                   booking['service_names'] = {
                     for (final serviceId in selectedServices)
                       serviceId: serviceCatalog
@@ -901,11 +977,24 @@ Future<void> openBookingForm(
               }
             } catch (error) {
               if (context.mounted) {
-                showAppSnack(
-                  context,
-                  friendlyError(error),
-                  variant: AppSnackVariant.error,
-                );
+                if (AuthFeatureFlags.newUiEnabled &&
+                    _isNoVendorAvailableError(error)) {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (screenContext) => FailureStateScreen(
+                        kind: FailureScreenKind.noVendor,
+                        onPrimary: () => Navigator.of(screenContext).pop(),
+                        onSecondary: () => Navigator.of(screenContext).pop(),
+                      ),
+                    ),
+                  );
+                } else {
+                  showAppSnack(
+                    context,
+                    friendlyError(error),
+                    variant: AppSnackVariant.error,
+                  );
+                }
               }
             } finally {
               if (context.mounted) {
@@ -958,58 +1047,57 @@ Future<void> openBookingForm(
           }
 
           Widget couponEntry() => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Coupon', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: AppSpace.sm),
-                  TextFormField(
-                    controller: couponController,
-                    textCapitalization: TextCapitalization.characters,
-                    onChanged: (_) => setSheetState(() {
-                      validatedCoupon = null;
-                      couponMessage = null;
-                    }),
-                    decoration: InputDecoration(
-                      labelText: 'Coupon code',
-                      hintText: 'Enter code',
-                      suffixIcon: validatingCoupon
-                          ? const Padding(
-                              padding: EdgeInsets.all(AppSpace.md),
-                              child: SizedBox.square(
-                                dimension: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            )
-                          : validatedCoupon != null
-                              ? IconButton(
-                                  tooltip: 'Remove coupon',
-                                  onPressed: () => setSheetState(() {
-                                    couponController.clear();
-                                    validatedCoupon = null;
-                                    couponMessage = null;
-                                  }),
-                                  icon: const Icon(Icons.close),
-                                )
-                              : TextButton(
-                                  onPressed: applyCoupon,
-                                  child: const Text('Apply'),
-                                ),
-                    ),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Coupon', style: theme.textTheme.titleSmall),
+              const SizedBox(height: AppSpace.sm),
+              TextFormField(
+                controller: couponController,
+                textCapitalization: TextCapitalization.characters,
+                onChanged: (_) => setSheetState(() {
+                  validatedCoupon = null;
+                  couponMessage = null;
+                }),
+                decoration: InputDecoration(
+                  labelText: 'Coupon code',
+                  hintText: 'Enter code',
+                  suffixIcon: validatingCoupon
+                      ? const Padding(
+                          padding: EdgeInsets.all(AppSpace.md),
+                          child: SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : validatedCoupon != null
+                      ? IconButton(
+                          tooltip: 'Remove coupon',
+                          onPressed: () => setSheetState(() {
+                            couponController.clear();
+                            validatedCoupon = null;
+                            couponMessage = null;
+                          }),
+                          icon: const Icon(Icons.close),
+                        )
+                      : TextButton(
+                          onPressed: applyCoupon,
+                          child: const Text('Apply'),
+                        ),
+                ),
+              ),
+              if (couponMessage != null) ...[
+                const SizedBox(height: AppSpace.xs),
+                Text(
+                  couponMessage!,
+                  style: TextStyle(
+                    color: validatedCoupon == null
+                        ? colors.danger.fg
+                        : colors.success.fg,
                   ),
-                  if (couponMessage != null) ...[
-                    const SizedBox(height: AppSpace.xs),
-                    Text(
-                      couponMessage!,
-                      style: TextStyle(
-                        color: validatedCoupon == null
-                            ? colors.danger.fg
-                            : colors.success.fg,
-                      ),
-                    ),
-                  ],
-                ],
-              );
+                ),
+              ],
+            ],
+          );
 
           Widget serviceEditor(TankerService service) {
             final fields = serviceFields[service.id]!;
@@ -1047,11 +1135,13 @@ Future<void> openBookingForm(
                       service.capacityOptions.isEmpty)
                     TextFormField(
                       controller: fields.quantity,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       decoration: InputDecoration(
                         labelText: quantityLabel,
-                        helperText: service.minQuantity == null &&
+                        helperText:
+                            service.minQuantity == null &&
                                 service.maxQuantity == null
                             ? null
                             : 'Allowed range: ${service.minQuantity ?? 1} to ${service.maxQuantity ?? 'no maximum'}',
@@ -1112,217 +1202,214 @@ Future<void> openBookingForm(
           }
 
           Widget contactStep() => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Your mobile number', style: theme.textTheme.titleMedium),
+              const SizedBox(height: AppSpace.xs),
+              Text(
+                'This number is shared across all selected services.',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: AppSpace.md),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Your mobile number',
-                      style: theme.textTheme.titleMedium),
-                  const SizedBox(height: AppSpace.xs),
-                  Text(
-                    'This number is shared across all selected services.',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: AppSpace.md),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          key: const Key('booking-phone-number'),
-                          controller: phoneController,
-                          keyboardType: TextInputType.phone,
-                          decoration: InputDecoration(
-                            labelText: 'Booking phone number',
-                            helperText: 'Shared across all selected services',
-                            suffixIcon: phoneVerified
-                                ? Icon(Icons.verified, color: colors.success.fg)
-                                : null,
-                          ),
-                          onChanged: (_) => setSheetState(() {
-                            final normalized =
-                                normalizeIndianPhone(phoneController.text);
-                            phoneVerified = verifiedPhone != null &&
-                                normalized == verifiedPhone;
-                            if (!phoneVerified) {
-                              phoneChallengeId = null;
-                              bookingFormNotice = null;
-                            }
-                            bookingFormError = null;
-                          }),
-                          validator: (value) {
-                            final normalized =
-                                normalizeIndianPhone(value ?? '');
-                            return RegExp(r'^\d{10}$').hasMatch(normalized)
-                                ? null
-                                : 'Enter a valid 10-digit mobile number.';
-                          },
-                        ),
+                  Expanded(
+                    child: TextFormField(
+                      key: const Key('booking-phone-number'),
+                      controller: phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: InputDecoration(
+                        labelText: 'Booking phone number',
+                        helperText: 'Shared across all selected services',
+                        suffixIcon: phoneVerified
+                            ? Icon(Icons.verified, color: colors.success.fg)
+                            : null,
                       ),
-                      const SizedBox(width: AppSpace.sm),
-                      Padding(
-                        padding: const EdgeInsets.only(top: AppSpace.xs),
-                        child: OutlinedButton(
-                          onPressed: requestingPhoneCode
-                              ? null
-                              : () async {
-                                  setSheetState(
-                                    () => requestingPhoneCode = true,
-                                  );
-                                  try {
-                                    final verified =
-                                        await _showBookingPhoneVerificationDialog(
+                      onChanged: (_) => setSheetState(() {
+                        final normalized = normalizeIndianPhone(
+                          phoneController.text,
+                        );
+                        phoneVerified =
+                            verifiedPhone != null &&
+                            normalized == verifiedPhone;
+                        if (!phoneVerified) {
+                          phoneChallengeId = null;
+                          bookingFormNotice = null;
+                        }
+                        bookingFormError = null;
+                      }),
+                      validator: (value) {
+                        final normalized = normalizeIndianPhone(value ?? '');
+                        return RegExp(r'^\d{10}$').hasMatch(normalized)
+                            ? null
+                            : 'Enter a valid 10-digit mobile number.';
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: AppSpace.sm),
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpace.xs),
+                    child: OutlinedButton(
+                      onPressed: requestingPhoneCode
+                          ? null
+                          : () async {
+                              setSheetState(() => requestingPhoneCode = true);
+                              try {
+                                final verified =
+                                    await _showBookingPhoneVerificationDialog(
                                       context,
                                       controller.api,
                                       phoneController.text,
                                       controller.user?.email,
                                     );
-                                    if (verified != null && context.mounted) {
-                                      setSheetState(() {
-                                        phoneController.text = verified.phone;
-                                        phoneChallengeId = verified.challengeId;
-                                        phoneVerified = true;
-                                        verifiedPhone = verified.phone;
-                                        bookingFormError = null;
-                                        bookingFormNotice =
-                                            'Phone number verified.';
-                                      });
-                                    }
-                                  } finally {
-                                    if (context.mounted) {
-                                      setSheetState(
-                                        () => requestingPhoneCode = false,
-                                      );
-                                    }
-                                  }
-                                },
-                          child: Text(
-                            requestingPhoneCode ? 'Sending...' : 'Send code',
-                          ),
+                                if (verified != null && context.mounted) {
+                                  setSheetState(() {
+                                    phoneController.text = verified.phone;
+                                    phoneChallengeId = verified.challengeId;
+                                    phoneVerified = true;
+                                    verifiedPhone = verified.phone;
+                                    bookingFormError = null;
+                                    bookingFormNotice =
+                                        'Phone number verified.';
+                                  });
+                                }
+                              } finally {
+                                if (context.mounted) {
+                                  setSheetState(
+                                    () => requestingPhoneCode = false,
+                                  );
+                                }
+                              }
+                            },
+                      child: Text(
+                        requestingPhoneCode ? 'Sending...' : 'Send code',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (phoneVerified)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpace.md),
+                  child: Row(
+                    children: [
+                      Icon(Icons.verified_outlined, color: colors.success.fg),
+                      const SizedBox(width: AppSpace.sm),
+                      Text(
+                        'Number verified',
+                        style: TextStyle(
+                          color: colors.success.fg,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
                   ),
-                  if (phoneVerified)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpace.md),
-                      child: Row(
-                        children: [
-                          Icon(Icons.verified_outlined,
-                              color: colors.success.fg),
-                          const SizedBox(width: AppSpace.sm),
-                          Text(
-                            'Number verified',
-                            style: TextStyle(
-                              color: colors.success.fg,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (!phoneVerified) ...[
-                    if (bookingFormError != null) ...[
-                      const SizedBox(height: AppSpace.sm),
-                      Text(
-                        bookingFormError!,
-                        style: TextStyle(color: colors.danger.fg),
-                      ),
-                    ],
-                    if (bookingFormNotice != null) ...[
-                      const SizedBox(height: AppSpace.sm),
-                      Text(
-                        bookingFormNotice!,
-                        style: TextStyle(color: colors.success.fg),
-                      ),
-                    ],
-                    const SizedBox(height: AppSpace.xs),
-                    Text(
-                      'Verify this shared number before reviewing your booking.',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
+                ),
+              if (!phoneVerified) ...[
+                if (bookingFormError != null) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  Text(
+                    bookingFormError!,
+                    style: TextStyle(color: colors.danger.fg),
+                  ),
                 ],
-              );
+                if (bookingFormNotice != null) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  Text(
+                    bookingFormNotice!,
+                    style: TextStyle(color: colors.success.fg),
+                  ),
+                ],
+                const SizedBox(height: AppSpace.xs),
+                Text(
+                  'Verify this shared number before reviewing your booking.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ],
+          );
 
           Widget servicesStep() => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Select services', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: AppSpace.xs),
-                  Text(
-                    'Add each service you need, then choose its quantity.',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: AppSpace.md),
-                  for (final service in serviceCatalog.where(
-                    (service) => selectedServices.contains(service.id),
-                  ))
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpace.md),
-                      child: serviceEditor(service),
-                    ),
-                  Builder(
-                    builder: (context) {
-                      final availableServices = serviceCatalog
-                          .where((service) =>
-                              !selectedServices.contains(service.id))
-                          .toList();
-                      if (availableServices.isEmpty) {
-                        return const SizedBox.shrink();
-                      }
-                      return OutlinedButton.icon(
-                        onPressed: () async {
-                          final pickedId = await showAppBottomSheet<String>(
-                            context,
-                            builder: (pickerContext) => SafeArea(
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: availableServices.length,
-                                itemBuilder: (_, index) {
-                                  final service = availableServices[index];
-                                  return AppListRow(
-                                    title: service.name,
-                                    subtitle: service.description,
-                                    onTap: () => Navigator.of(pickerContext)
-                                        .pop(service.id),
-                                  );
-                                },
-                              ),
-                            ),
-                          );
-                          if (pickedId == null) return;
-                          setSheetState(() {
-                            selectedServices.add(pickedId);
-                            validatedCoupon = null;
-                            couponMessage = null;
-                            bookingFormError = null;
-                          });
-                        },
-                        icon: const Icon(Icons.add),
-                        label: Text(
-                          selectedServices.isEmpty
-                              ? 'Add service'
-                              : 'Add another service',
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Select services', style: theme.textTheme.titleMedium),
+              const SizedBox(height: AppSpace.xs),
+              Text(
+                'Add each service you need, then choose its quantity.',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: AppSpace.md),
+              for (final service in serviceCatalog.where(
+                (service) => selectedServices.contains(service.id),
+              ))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpace.md),
+                  child: serviceEditor(service),
+                ),
+              Builder(
+                builder: (context) {
+                  final availableServices = serviceCatalog
+                      .where(
+                        (service) => !selectedServices.contains(service.id),
+                      )
+                      .toList();
+                  if (availableServices.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return OutlinedButton.icon(
+                    onPressed: () async {
+                      final pickedId = await showAppBottomSheet<String>(
+                        context,
+                        builder: (pickerContext) => SafeArea(
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: availableServices.length,
+                            itemBuilder: (_, index) {
+                              final service = availableServices[index];
+                              return AppListRow(
+                                title: service.name,
+                                subtitle: service.description,
+                                onTap: () =>
+                                    Navigator.of(pickerContext).pop(service.id),
+                              );
+                            },
+                          ),
                         ),
                       );
+                      if (pickedId == null) return;
+                      setSheetState(() {
+                        selectedServices.add(pickedId);
+                        validatedCoupon = null;
+                        couponMessage = null;
+                        bookingFormError = null;
+                      });
                     },
-                  ),
-                  if (bookingFormError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpace.md),
-                      child: Text(
-                        bookingFormError!,
-                        style: TextStyle(color: colors.danger.fg),
-                      ),
+                    icon: const Icon(Icons.add),
+                    label: Text(
+                      selectedServices.isEmpty
+                          ? 'Add service'
+                          : 'Add another service',
                     ),
-                ],
-              );
+                  );
+                },
+              ),
+              if (bookingFormError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpace.md),
+                  child: Text(
+                    bookingFormError!,
+                    style: TextStyle(color: colors.danger.fg),
+                  ),
+                ),
+            ],
+          );
 
           Widget perServiceStep(
-              String heading,
-              String hint,
-              Widget Function(
-                BookingServiceFields fields,
-              ) field) {
+            String heading,
+            String hint,
+            Widget Function(BookingServiceFields fields) field,
+          ) {
             final chosen = serviceCatalog
                 .where((service) => selectedServices.contains(service.id))
                 .toList();
@@ -1353,179 +1440,162 @@ Future<void> openBookingForm(
           }
 
           Widget paymentStep() => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Payment', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: AppSpace.md),
-                  TextFormField(
-                    controller: notesController,
-                    maxLength: 500,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Delivery access notes (optional)',
-                      hintText: 'Gate, parking, timing, or access instructions',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpace.md),
-                  Text('Want to pay online', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: AppSpace.sm),
-                  FormField<String>(
-                    initialValue: paymentMethod,
-                    validator: (value) =>
-                        value == null ? 'Choose a payment method.' : null,
-                    builder: (field) => LayoutBuilder(
-                      builder: (context, constraints) {
-                        final columns = constraints.maxWidth >= 600 ? 2 : 1;
-                        const methods = [
-                          ('wallet', 'Wallet', 'Use your Urban Tanker balance'),
-                          ('gateway', 'Online payment', 'Pay securely online'),
-                          (
-                            'cod',
-                            'Cash on delivery',
-                            'Pay when the service arrives'
-                          ),
-                        ];
-                        return RadioGroup<String>(
-                          groupValue: paymentMethod,
-                          onChanged: (next) {
-                            setSheetState(() {
-                              paymentMethod = next;
-                              field.didChange(next);
-                            });
-                          },
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Payment', style: theme.textTheme.titleMedium),
+              const SizedBox(height: AppSpace.md),
+              TextFormField(
+                controller: notesController,
+                maxLength: 500,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Delivery access notes (optional)',
+                  hintText: 'Gate, parking, timing, or access instructions',
+                  alignLabelWithHint: true,
+                ),
+              ),
+              const SizedBox(height: AppSpace.md),
+              Text('Want to pay online', style: theme.textTheme.titleSmall),
+              const SizedBox(height: AppSpace.sm),
+              FormField<String>(
+                initialValue: paymentMethod,
+                validator: (value) =>
+                    value == null ? 'Choose a payment method.' : null,
+                builder: (field) => LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.maxWidth >= 600 ? 2 : 1;
+                    const methods = [
+                      ('wallet', 'Wallet', 'Use your Urban Tanker balance'),
+                      ('gateway', 'Online payment', 'Pay securely online'),
+                      (
+                        'cod',
+                        'Cash on delivery',
+                        'Pay when the service arrives',
+                      ),
+                    ];
+                    return RadioGroup<String>(
+                      groupValue: paymentMethod,
+                      onChanged: (next) {
+                        setSheetState(() {
+                          paymentMethod = next;
+                          field.didChange(next);
+                        });
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          GridView.count(
+                            crossAxisCount: columns,
+                            childAspectRatio: columns == 1 ? 4.2 : 3.8,
+                            mainAxisSpacing: AppSpace.sm,
+                            crossAxisSpacing: AppSpace.sm,
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
                             children: [
-                              GridView.count(
-                                crossAxisCount: columns,
-                                childAspectRatio: columns == 1 ? 4.2 : 3.8,
-                                mainAxisSpacing: AppSpace.sm,
-                                crossAxisSpacing: AppSpace.sm,
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                children: [
-                                  for (final (value, label, description)
-                                      in methods)
-                                    Card(
-                                      margin: EdgeInsets.zero,
-                                      child: RadioListTile<String>(
-                                        value: value,
-                                        title: Text(label),
-                                        subtitle: Text(description),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              if (field.hasError)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.only(top: AppSpace.xs),
-                                  child: Text(
-                                    field.errorText!,
-                                    style: TextStyle(color: colors.danger.fg),
+                              for (final (value, label, description) in methods)
+                                Card(
+                                  margin: EdgeInsets.zero,
+                                  child: RadioListTile<String>(
+                                    value: value,
+                                    title: Text(label),
+                                    subtitle: Text(description),
                                   ),
                                 ),
                             ],
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
+                          if (field.hasError)
+                            Padding(
+                              padding: const EdgeInsets.only(top: AppSpace.xs),
+                              child: Text(
+                                field.errorText!,
+                                style: TextStyle(color: colors.danger.fg),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
 
           Widget reviewStep() => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    bookingReviewTitle(selectedServices.length),
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: AppSpace.md),
-                  for (final service in serviceCatalog.where(
-                    (service) => selectedServices.contains(service.id),
-                  ))
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpace.sm),
-                      child: SurfaceCard(
-                        padding: const EdgeInsets.all(AppSpace.md),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(service.name,
-                                style: theme.textTheme.titleSmall),
-                            Text(
-                              [
-                                if (serviceFields[service.id]!
-                                    .quantity
-                                    .text
-                                    .trim()
-                                    .isNotEmpty)
-                                  serviceFields[service.id]!
-                                      .quantity
-                                      .text
-                                      .trim(),
-                                if (serviceFields[service.id]!
-                                    .location
-                                    .text
-                                    .trim()
-                                    .isNotEmpty)
-                                  serviceFields[service.id]!
-                                      .location
-                                      .text
-                                      .trim(),
-                                if (serviceFields[service.id]!
-                                    .deliveryDate
-                                    .text
-                                    .trim()
-                                    .isNotEmpty)
-                                  serviceFields[service.id]!
-                                      .deliveryDate
-                                      .text
-                                      .trim(),
-                              ].join(' • '),
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ],
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                bookingReviewTitle(selectedServices.length),
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSpace.md),
+              for (final service in serviceCatalog.where(
+                (service) => selectedServices.contains(service.id),
+              ))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpace.sm),
+                  child: SurfaceCard(
+                    padding: const EdgeInsets.all(AppSpace.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(service.name, style: theme.textTheme.titleSmall),
+                        Text(
+                          [
+                            if (serviceFields[service.id]!.quantity.text
+                                .trim()
+                                .isNotEmpty)
+                              serviceFields[service.id]!.quantity.text.trim(),
+                            if (serviceFields[service.id]!.location.text
+                                .trim()
+                                .isNotEmpty)
+                              serviceFields[service.id]!.location.text.trim(),
+                            if (serviceFields[service.id]!.deliveryDate.text
+                                .trim()
+                                .isNotEmpty)
+                              serviceFields[service.id]!.deliveryDate.text
+                                  .trim(),
+                          ].join(' • '),
+                          style: theme.textTheme.bodyMedium,
                         ),
-                      ),
+                      ],
                     ),
-                  const SizedBox(height: AppSpace.md),
-                  couponEntry(),
-                  if (!phoneVerified)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpace.md),
-                      child: Text(
-                        'Verify your mobile number on the first step to submit.',
-                        style: TextStyle(color: colors.danger.fg),
-                      ),
-                    ),
-                ],
-              );
+                  ),
+                ),
+              const SizedBox(height: AppSpace.md),
+              couponEntry(),
+              if (!phoneVerified)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpace.md),
+                  child: Text(
+                    'Verify your mobile number on the first step to submit.',
+                    style: TextStyle(color: colors.danger.fg),
+                  ),
+                ),
+            ],
+          );
 
           Widget stepContent() => switch (step) {
-                0 => contactStep(),
-                1 => servicesStep(),
-                2 => perServiceStep(
-                    'Delivery location',
-                    'Choose where each service should be delivered.',
-                    (fields) => DeliveryLocationField(
-                      fields: fields,
-                      onChanged: () => setSheetState(() {}),
-                    ),
-                  ),
-                3 => perServiceStep(
-                    'Delivery date',
-                    'Pick a date for each service.',
-                    (fields) => DeliveryDateField(
-                      controller: fields.deliveryDate,
-                      onChanged: () => setSheetState(() {}),
-                    ),
-                  ),
-                4 => paymentStep(),
-                _ => reviewStep(),
-              };
+            0 => contactStep(),
+            1 => servicesStep(),
+            2 => perServiceStep(
+              'Delivery location',
+              'Choose where each service should be delivered.',
+              (fields) => DeliveryLocationField(
+                fields: fields,
+                onChanged: () => setSheetState(() {}),
+              ),
+            ),
+            3 => perServiceStep(
+              'Delivery date',
+              'Pick a date for each service.',
+              (fields) => DeliveryDateField(
+                controller: fields.deliveryDate,
+                onChanged: () => setSheetState(() {}),
+              ),
+            ),
+            4 => paymentStep(),
+            _ => reviewStep(),
+          };
 
           final isLast = step == lastStep;
           return PopScope(
@@ -1590,20 +1660,20 @@ Future<void> openBookingForm(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpace.xl,
                       ),
-                      child: Form(
-                        key: stepKeys[step],
-                        child: stepContent(),
-                      ),
+                      child: Form(key: stepKeys[step], child: stepContent()),
                     ),
                   ),
                   Offstage(
                     offstage: !isLast,
                     child: Padding(
-                      padding:
-                          AppPageInsets.section.copyWith(top: 0, bottom: 0),
+                      padding: AppPageInsets.section.copyWith(
+                        top: 0,
+                        bottom: 0,
+                      ),
                       child: LiveQuoteSummary(
                         api: controller.api,
-                        services: phoneVerified &&
+                        services:
+                            phoneVerified &&
                                 paymentMethod != null &&
                                 selectedServices.isNotEmpty &&
                                 !selectedServices.any(serviceHasMissingFields)
@@ -1718,9 +1788,9 @@ Future<void> openBookingForm(
       final paidBooking = payment.booking;
       if (paidBooking == null) {
         if (payment.note != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(payment.note!)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(payment.note!)));
         }
         return;
       }
@@ -1754,7 +1824,7 @@ enum _PaymentChoice {
 /// the customer can retry or switch to cash on delivery. Returns a null
 /// [booking] when no booking was kept.
 Future<({Map<String, dynamic>? booking, String method, String? note})>
-    _runOnlinePaymentStep(
+_runOnlinePaymentStep(
   BuildContext context,
   ApiClient api,
   Map<String, dynamic> booking,
@@ -1768,12 +1838,12 @@ Future<({Map<String, dynamic>? booking, String method, String? note})>
   final flow = OnlinePaymentFlow(api: api, checkout: RazorpayPaymentCheckout());
 
   Future<OnlinePaymentOutcome> startPayment() => flow.pay(
-        bookingId: bookingId,
-        name: 'Urban Tanker',
-        description: 'Urban Tanker booking',
-        contact: phone.isEmpty ? null : phone,
-        email: email.isEmpty ? null : email,
-      );
+    bookingId: bookingId,
+    name: 'Urban Tanker',
+    description: 'Urban Tanker booking',
+    contact: phone.isEmpty ? null : phone,
+    email: email.isEmpty ? null : email,
+  );
 
   var outcome = await startPayment();
 
@@ -1830,7 +1900,8 @@ Future<({Map<String, dynamic>? booking, String method, String? note})>
         final choice = await _showPaymentRecoveryDialog(
           context,
           title: 'Payment not completed',
-          message: outcome.message ??
+          message:
+              outcome.message ??
               'Your booking is saved. Try again or choose cash on delivery.',
           options: const [
             (_PaymentChoice.retryPayment, 'Try again'),
@@ -1846,9 +1917,9 @@ Future<({Map<String, dynamic>? booking, String method, String? note})>
             return (booking: booking, method: 'cod', note: null);
           } on Object catch (error) {
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(friendlyError(error))),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
             }
           }
         } else {
@@ -1992,7 +2063,7 @@ Future<void> showBookingSuccess(
                             'Customer',
                             (booking['customer_name'] ??
                                     booking['customerName'])
-                                .toString()
+                                .toString(),
                           ),
                         if ((booking['customer_phone'] ??
                                     booking['customer_phone_e164'] ??
@@ -2006,7 +2077,7 @@ Future<void> showBookingSuccess(
                             (booking['customer_phone'] ??
                                     booking['customer_phone_e164'] ??
                                     booking['phone'])
-                                .toString()
+                                .toString(),
                           ),
                         if ((booking['customer_email'] ??
                                     booking['customerEmail'] ??
@@ -2020,7 +2091,7 @@ Future<void> showBookingSuccess(
                             (booking['customer_email'] ??
                                     booking['customerEmail'] ??
                                     booking['email'])
-                                .toString()
+                                .toString(),
                           ),
                         if ((booking['location'] ??
                                     booking['delivery_location'])
@@ -2032,7 +2103,7 @@ Future<void> showBookingSuccess(
                             'Delivery location',
                             (booking['location'] ??
                                     booking['delivery_location'])
-                                .toString()
+                                .toString(),
                           ),
                         if ((booking['scheduled_for'] ??
                                     booking['delivery_date'])
@@ -2044,7 +2115,7 @@ Future<void> showBookingSuccess(
                             'Delivery schedule',
                             (booking['scheduled_for'] ??
                                     booking['delivery_date'])
-                                .toString()
+                                .toString(),
                           ),
                       ];
                       return Padding(
@@ -2061,9 +2132,9 @@ Future<void> showBookingSuccess(
                                   children: [
                                     Text(
                                       label,
-                                      style: Theme.of(sheetContext)
-                                          .textTheme
-                                          .labelSmall,
+                                      style: Theme.of(
+                                        sheetContext,
+                                      ).textTheme.labelSmall,
                                     ),
                                     const SizedBox(height: AppSpace.xs),
                                     Text(value),
@@ -2141,8 +2212,9 @@ Future<void> showBookingSuccess(
                 icon: Icons.share_outlined,
                 onPressed: () async {
                   try {
-                    final trackingUrl =
-                        await api.bookingTrackingLink(tracked.id);
+                    final trackingUrl = await api.bookingTrackingLink(
+                      tracked.id,
+                    );
                     await SharePlus.instance.share(
                       ShareParams(
                         text:

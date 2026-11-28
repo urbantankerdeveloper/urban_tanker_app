@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
+import '../app/auth_feature_flags.dart';
 import '../core/design_system/design_system.dart';
 import '../models/notification.dart';
 
@@ -46,8 +47,9 @@ class _NotificationInboxState extends State<NotificationInbox> {
             icon: const Icon(Icons.done_all),
             onPressed: () async {
               try {
-                await widget.controller.api
-                    .markAllNotificationsRead(widget.role);
+                await widget.controller.api.markAllNotificationsRead(
+                  widget.role,
+                );
                 if (mounted) _reload();
               } catch (error) {
                 _showError(error);
@@ -66,11 +68,17 @@ class _NotificationInboxState extends State<NotificationInbox> {
           }
           final groups = groupNotificationsByDay(snapshot.data ?? const []);
           if (groups.isEmpty) {
-            return const EmptyState(
-              icon: Icons.notifications_none_outlined,
-              title: 'Nothing new',
-              message: 'You are all caught up.',
-            );
+            return AuthFeatureFlags.newUiEnabled
+                ? const NewUiEmptyState(
+                    icon: Icons.notifications_none_outlined,
+                    title: 'You are all caught up',
+                    message: 'New notifications will appear here.',
+                  )
+                : const EmptyState(
+                    icon: Icons.notifications_none_outlined,
+                    title: 'Nothing new',
+                    message: 'You are all caught up.',
+                  );
           }
           return RefreshIndicator(
             onRefresh: () async => _reload(),
@@ -178,10 +186,7 @@ class _GroupCard extends StatelessWidget {
           children: [
             for (final item in group.items)
               AppListRow(
-                leading: _TypeIcon(
-                  icon: _iconFor(item),
-                  unread: !item.read,
-                ),
+                leading: _TypeIcon(icon: _iconFor(item), unread: !item.read),
                 title: item.title,
                 subtitle: _subtitle(item),
                 onTap: () => onOpen(item),
@@ -203,10 +208,10 @@ class _GroupCard extends StatelessWidget {
     final target = item.bookingId != null
         ? 'Open booking'
         : item.invoiceId != null
-            ? 'Open invoice'
-            : item.supportRequestId != null
-                ? 'Open support request'
-                : '';
+        ? 'Open invoice'
+        : item.supportRequestId != null
+        ? 'Open support request'
+        : '';
     final timestamp = item.createdAt == null
         ? ''
         : item.createdAt!.toLocal().toString().substring(0, 16);

@@ -36,4 +36,13 @@ abstract final class AppSize {
 
   /// Height of primary, secondary and ghost buttons.
   static const buttonHeight = 52.0;
+
+  static const splashLogo = 104.0;
+  static const stateIcon = 48.0;
+  static const progressIndicator = 24.0;
+  static const progressBarHeight = 3.0;
+  static const activeOrderMapHeight = 144.0;
+  static const incomingOrderTimer = 132.0;
+  static const incomingOrderTimerStroke = 8.0;
+  static const reportChartHeight = 120.0;
 }

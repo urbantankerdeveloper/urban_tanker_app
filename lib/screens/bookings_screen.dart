@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../app/auth_feature_flags.dart';
 import '../app/providers.dart';
 import '../core/design_system/design_system.dart';
 import '../models/booking.dart';
@@ -12,9 +13,10 @@ import 'common/booking_format.dart';
 /// Bookings tab. Active and Past filter the bookings loaded so far. More pages
 /// load as the list nears its end.
 class BookingsScreen extends ConsumerStatefulWidget {
-  const BookingsScreen({this.onBookAgain, super.key});
+  const BookingsScreen({this.onBookAgain, this.onBook, super.key});
 
   final Future<void> Function(Booking booking)? onBookAgain;
+  final Future<void> Function()? onBook;
 
   @override
   ConsumerState<BookingsScreen> createState() => _BookingsScreenState();
@@ -50,18 +52,34 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
   Widget build(BuildContext context) {
     final bookings = ref.watch(bookingsProvider);
     return bookings.when(
-      loading: () => const LoadingState(message: 'Loading your bookings...'),
+      loading: () => AuthFeatureFlags.newUiEnabled
+          ? const ListLoadingState()
+          : const LoadingState(message: 'Loading your bookings...'),
       error: (error, _) => ErrorState(
         error: error,
         onRetry: () => ref.invalidate(bookingsProvider),
       ),
       data: (page) {
         if (page.items.isEmpty) {
-          return const EmptyState(
-            icon: Icons.receipt_long_outlined,
-            title: 'No bookings yet',
-            message: 'Your bookings will appear here.',
-          );
+          return AuthFeatureFlags.newUiEnabled
+              ? NewUiEmptyState(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'No orders yet',
+                  message: 'Your bookings will appear here after you book.',
+                  action: widget.onBook == null
+                      ? null
+                      : PrimaryButton(
+                          label: 'Book service',
+                          icon: Icons.local_shipping_outlined,
+                          onPressed: widget.onBook,
+                          expand: false,
+                        ),
+                )
+              : const EmptyState(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'No bookings yet',
+                  message: 'Your bookings will appear here.',
+                );
         }
         final shown = [
           for (final booking in page.items)
@@ -84,15 +102,33 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
             ),
             Expanded(
               child: shown.isEmpty && !page.hasMore
-                  ? EmptyState(
-                      icon: Icons.receipt_long_outlined,
-                      title: _filter == 0
-                          ? 'No active bookings'
-                          : 'No past bookings',
-                      message: _filter == 0
-                          ? 'Bookings show here until they are delivered.'
-                          : 'Finished and cancelled bookings show here.',
-                    )
+                  ? AuthFeatureFlags.newUiEnabled
+                        ? NewUiEmptyState(
+                            icon: Icons.receipt_long_outlined,
+                            title: _filter == 0
+                                ? 'No active bookings'
+                                : 'No past bookings',
+                            message: _filter == 0
+                                ? 'Bookings show here until they are delivered.'
+                                : 'Finished and cancelled bookings show here.',
+                            action: _filter == 0 && widget.onBook != null
+                                ? PrimaryButton(
+                                    label: 'Book service',
+                                    icon: Icons.local_shipping_outlined,
+                                    onPressed: widget.onBook,
+                                    expand: false,
+                                  )
+                                : null,
+                          )
+                        : EmptyState(
+                            icon: Icons.receipt_long_outlined,
+                            title: _filter == 0
+                                ? 'No active bookings'
+                                : 'No past bookings',
+                            message: _filter == 0
+                                ? 'Bookings show here until they are delivered.'
+                                : 'Finished and cancelled bookings show here.',
+                          )
                   : RefreshIndicator(
                       onRefresh: () async => ref.invalidate(bookingsProvider),
                       child: ListView.separated(
@@ -194,10 +230,7 @@ class _BookingsFooterState extends State<_BookingsFooter> {
 }
 
 class _BookingCard extends StatelessWidget {
-  const _BookingCard({
-    required this.booking,
-    required this.onOpen,
-  });
+  const _BookingCard({required this.booking, required this.onOpen});
 
   final Booking booking;
   final VoidCallback onOpen;

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
+import '../app/auth_feature_flags.dart';
 import '../core/design_system/design_system.dart';
 import '../services/mpin_service.dart';
 
@@ -33,8 +34,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
     if (_attemptedAutomatically) return;
     _attemptedAutomatically = true;
     if (widget.controller.biometricEnabled) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _unlockWithFingerprint());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _unlockWithFingerprint(),
+      );
     }
   }
 
@@ -66,7 +68,8 @@ class _AppLockScreenState extends State<AppLockScreen> {
       } else {
         _shakeSignal++;
         if (check.isLocked) {
-          _error = 'Too many wrong attempts. Wait for the cooldown to finish, '
+          _error =
+              'Too many wrong attempts. Wait for the cooldown to finish, '
               'or sign in again with your phone number and OTP.';
         } else {
           final left = check.attemptsLeft;
@@ -75,6 +78,27 @@ class _AppLockScreenState extends State<AppLockScreen> {
         }
       }
     });
+    if (AuthFeatureFlags.newUiEnabled && !check.isAccepted && mounted) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (screenContext) => FailureStateScreen(
+            kind: check.isLocked
+                ? FailureScreenKind.mpinLocked
+                : FailureScreenKind.wrongMpin,
+            message: check.isLocked
+                ? null
+                : 'Incorrect MPIN. ${check.attemptsLeft} '
+                      '${check.attemptsLeft == 1 ? 'attempt' : 'attempts'} left.',
+            onPrimary: () {
+              Navigator.of(screenContext).pop();
+              if (check.isLocked) {
+                unawaited(widget.controller.usePhoneOtpRecovery());
+              }
+            },
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _unlockWithFingerprint() async {
@@ -91,21 +115,50 @@ class _AppLockScreenState extends State<AppLockScreen> {
       if (authenticated) {
         widget.controller.unlockSession();
       } else {
-        setState(() => _error = 'Biometric verification was not completed.');
+        if (AuthFeatureFlags.newUiEnabled) {
+          await _showBiometricFailure();
+        } else {
+          setState(() => _error = 'Biometric verification was not completed.');
+        }
       }
     } on PlatformException catch (error) {
       if (mounted) {
-        setState(() =>
-            _error = error.message ?? 'Biometric verification is unavailable.');
+        if (AuthFeatureFlags.newUiEnabled) {
+          await _showBiometricFailure();
+        } else {
+          setState(
+            () => _error =
+                error.message ?? 'Biometric verification is unavailable.',
+          );
+        }
       }
     } on Exception {
       if (mounted) {
-        setState(() => _error =
-            'Biometric verification failed. Try again, or use your MPIN.');
+        if (AuthFeatureFlags.newUiEnabled) {
+          await _showBiometricFailure();
+        } else {
+          setState(
+            () => _error =
+                'Biometric verification failed. Try again, or use your MPIN.',
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => _authenticating = false);
     }
+  }
+
+  Future<void> _showBiometricFailure() async {
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (screenContext) => FailureStateScreen(
+          kind: FailureScreenKind.biometric,
+          onPrimary: () => Navigator.of(screenContext).pop(),
+          onSecondary: () => Navigator.of(screenContext).pop(),
+        ),
+      ),
+    );
   }
 
   @override
@@ -146,8 +199,8 @@ class _AppLockScreenState extends State<AppLockScreen> {
                       Text(
                         mpinOn
                             ? fingerprintOn
-                                ? 'Enter your MPIN or use your fingerprint.'
-                                : 'Enter your MPIN to continue.'
+                                  ? 'Enter your MPIN or use your fingerprint.'
+                                  : 'Enter your MPIN to continue.'
                             : 'Verify your fingerprint to continue.',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyLarge?.copyWith(

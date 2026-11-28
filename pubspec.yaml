@@ -4,7 +4,7 @@ publish_to: "none"
 version: 1.1.0+2
 
 environment:
-  sdk: ">=3.4.0 <4.0.0"
+  sdk: ">=3.9.0 <4.0.0"
 
 dependencies:
   flutter:
@@ -36,6 +36,8 @@ dependencies:
   cryptography: ^2.9.0
   razorpay_flutter: ^1.4.7
   google_maps_flutter: ^2.19.0
+  google_fonts: 8.0.0
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
@@ -48,6 +50,10 @@ flutter:
     - assets/images/logo.png
     - assets/images/logo_white.png
     - assets/lottie/
+    - assets/fonts/PlusJakartaSans-400.ttf
+    - assets/fonts/PlusJakartaSans-600.ttf
+    - assets/fonts/PlusJakartaSans-700.ttf
+    - assets/fonts/PlusJakartaSans-800.ttf
   fonts:
     - family: Manrope
       fonts:

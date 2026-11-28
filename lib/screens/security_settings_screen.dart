@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
+import '../app/auth_feature_flags.dart';
 import '../core/design_system/design_system.dart';
 import 'unlock_setup_screen.dart';
 
@@ -39,6 +40,33 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       showAppSnack(
         context,
         error.message ?? 'Fingerprint unlock could not be enabled.',
+        variant: AppSnackVariant.error,
+      );
+    }
+  }
+
+  Future<void> _setBookingFingerprint(bool enable) async {
+    if (!enable) {
+      await widget.controller.setBookingBiometricEnabled(false);
+      return;
+    }
+    try {
+      final authenticated = await widget.controller.biometricAuth.authenticate(
+        'Confirm fingerprint booking confirmation for Urban Tanker',
+      );
+      if (!mounted) return;
+      if (authenticated) {
+        await widget.controller.setBookingBiometricEnabled(true);
+      } else {
+        showAppSnack(
+            context, 'Fingerprint booking confirmation was not enabled.');
+      }
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        error.message ??
+            'Fingerprint booking confirmation could not be enabled.',
         variant: AppSnackVariant.error,
       );
     }
@@ -110,16 +138,35 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
                 future: _fingerprintAvailable,
                 builder: (context, snapshot) {
                   final available = snapshot.data ?? false;
-                  return AppListRow(
-                    leading: const Icon(Icons.fingerprint),
-                    title: 'Fingerprint unlock',
-                    subtitle: available
-                        ? 'Unlock with your fingerprint or device biometric.'
-                        : 'No fingerprint or device biometric is set up on this device.',
-                    trailing: Switch(
-                      value: controller.biometricEnabled,
-                      onChanged: available ? _setFingerprint : null,
-                    ),
+                  return Column(
+                    children: [
+                      AppListRow(
+                        leading: const Icon(Icons.fingerprint),
+                        title: 'Fingerprint unlock',
+                        subtitle: available
+                            ? 'Unlock with your fingerprint or device biometric.'
+                            : 'No fingerprint or device biometric is set up on this device.',
+                        trailing: Switch(
+                          value: controller.biometricEnabled,
+                          onChanged: available ? _setFingerprint : null,
+                        ),
+                      ),
+                      if (AuthFeatureFlags.newUiEnabled) ...[
+                        const Divider(height: 1),
+                        AppListRow(
+                          leading: const Icon(Icons.verified_user_outlined),
+                          title: 'Confirm bookings with fingerprint',
+                          subtitle: available
+                              ? 'Use biometrics before confirming a booking.'
+                              : 'No fingerprint or device biometric is set up on this device.',
+                          trailing: Switch(
+                            value: controller.bookingBiometricEnabled,
+                            onChanged:
+                                available ? _setBookingFingerprint : null,
+                          ),
+                        ),
+                      ],
+                    ],
                   );
                 },
               ),

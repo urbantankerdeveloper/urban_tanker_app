@@ -357,7 +357,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('admin users can review requests and toggle approved accounts',
+  testWidgets('admin users hide pending requests and open row actions',
       (tester) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
@@ -369,9 +369,6 @@ void main() {
     addTearDown(controller.dispose);
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          adminApprovalRequiredProvider.overrideWith((ref) async => true),
-        ],
         child: MaterialApp(
           theme: buildLightTheme(),
           home: AdminUsersScreen(controller: controller),
@@ -381,48 +378,36 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Admin Users'), findsOneWidget);
-    expect(find.text('Jordan Smith'), findsOneWidget);
-    expect(find.text('jordan@example.com'), findsOneWidget);
-    expect(find.text('+919876543210'), findsOneWidget);
-    expect(find.text('Manage regional operations.'), findsOneWidget);
+    expect(find.text('Jordan Smith'), findsNothing);
+    expect(find.text('Riley Patel'), findsNothing);
     expect(find.text('Asha Kumar'), findsOneWidget);
     expect(find.text('Rejected Admin'), findsOneWidget);
-    expect(find.textContaining('Requested '), findsNWidgets(4));
-
-    await tester.tap(find.text('Approve').first);
+    final rejectedRow = find.ancestor(
+      of: find.text('Rejected Admin'),
+      matching: find.byType(SurfaceCard),
+    );
+    await tester.tap(
+      find.descendant(of: rejectedRow, matching: find.byIcon(Icons.more_vert)),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('Approve admin access?'), findsOneWidget);
-    await tester.tap(find.text('Approve').last);
+    expect(find.text('Activate'), findsOneWidget);
+    expect(find.text('Approve'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
 
-    expect(api.reviewedRequests, [('request-1', 'approved')]);
-    expect(find.text('Jordan Smith'), findsOneWidget);
-    expect(find.text('Riley Patel'), findsOneWidget);
-
-    await tester.tap(find.text('Reject').last);
+    final approvedRow = find.ancestor(
+      of: find.text('Asha Kumar'),
+      matching: find.byType(SurfaceCard),
+    );
+    await tester.tap(
+      find.descendant(of: approvedRow, matching: find.byIcon(Icons.more_vert)),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('Reject admin request?'), findsOneWidget);
-    await tester.tap(find.text('Reject').last);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(api.reviewedRequests, [
-      ('request-1', 'approved'),
-      ('request-2', 'rejected'),
-    ]);
-    expect(find.text('Riley Patel'), findsOneWidget);
-    expect(api.reviewedRequests, [
-      ('request-1', 'approved'),
-      ('request-2', 'rejected'),
-    ]);
-
-    await tester.tap(find.text('Deactivate').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Deactivate admin access?'), findsOneWidget);
-    await tester.tap(find.text('Deactivate').last);
-    await tester.pumpAndSettle();
-    expect(api.adminActiveChanges, [('admin-1', false)]);
-    expect(find.text('Reactivate'), findsOneWidget);
+    expect(find.text('Set inactive'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

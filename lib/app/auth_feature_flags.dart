@@ -1,5 +1,19 @@
 /// Switches for auth features that depend on backend endpoints.
 abstract final class AuthFeatureFlags {
+  /// Enables the phased visual redesign by default. Set to false to use the
+  /// legacy interface with `--dart-define=NEW_UI_ENABLED=false`.
+  static const newUiEnabled = bool.fromEnvironment(
+    'NEW_UI_ENABLED',
+    defaultValue: true,
+  );
+
+  /// Shows Platform diagnostics in admin Settings by default.
+  /// Configure with `--dart-define=SHOW_PLATFORM_DIAGNOSTICS=false`.
+  static const showPlatformDiagnostics = bool.fromEnvironment(
+    'SHOW_PLATFORM_DIAGNOSTICS',
+    defaultValue: false,
+  );
+
   /// Sign-in and sign-up with a one-time code sent by email. If the server
   /// answers 404 or 501 for the code endpoints, the app switches the option off
   /// at runtime and keeps password sign-in working.

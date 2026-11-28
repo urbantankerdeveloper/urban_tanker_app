@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../app/auth_feature_flags.dart';
 import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/dispatcher.dart';
@@ -52,21 +53,26 @@ class _DispatcherLiveScreenState extends ConsumerState<DispatcherLiveScreen> {
       dispatcherOrdersProvider(const DispatcherOrderFilter()),
     );
     return orders.when(
-      loading: () => const LoadingState(message: 'Loading live operations...'),
+      loading: () => AuthFeatureFlags.newUiEnabled
+          ? const TrackingLoadingState()
+          : const LoadingState(message: 'Loading live operations...'),
       error: (error, _) => ErrorState(
         error: error,
         message: friendlyError(error),
         onRetry: () => ref.invalidate(dispatcherOrdersProvider),
       ),
       data: (page) {
-        final rows = (page['rows'] as List?)
+        final rows =
+            (page['rows'] as List?)
                 ?.whereType<Map<String, dynamic>>()
                 .toList() ??
             const <Map<String, dynamic>>[];
         final active = [
           for (final raw in rows)
-            if (!['delivered', 'cancelled']
-                .contains((raw['status'] ?? '').toString()))
+            if (![
+              'delivered',
+              'cancelled',
+            ].contains((raw['status'] ?? '').toString()))
               DispatcherOrder.fromJson(raw),
         ];
         final statuses = _liveFilters[_filterIndex].$2;
@@ -129,10 +135,8 @@ class _DispatcherLiveScreenState extends ConsumerState<DispatcherLiveScreen> {
               builder: (context, controller) => _ListSheet(
                 controller: controller,
                 orders: shown,
-                onFocus: (order) => _map.move(
-                  LatLng(order.latitude!, order.longitude!),
-                  15,
-                ),
+                onFocus: (order) =>
+                    _map.move(LatLng(order.latitude!, order.longitude!), 15),
               ),
             ),
           ],
@@ -145,7 +149,8 @@ class _DispatcherLiveScreenState extends ConsumerState<DispatcherLiveScreen> {
   static List<_Cluster> _cluster(List<DispatcherOrder> orders) {
     final cells = <String, List<DispatcherOrder>>{};
     for (final order in orders) {
-      final key = '${(order.latitude! / _clusterCell).round()}:'
+      final key =
+          '${(order.latitude! / _clusterCell).round()}:'
           '${(order.longitude! / _clusterCell).round()}';
       cells.putIfAbsent(key, () => []).add(order);
     }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../app/auth_feature_flags.dart';
 import '../core/design_system/design_system.dart';
 import '../models/booking.dart';
 import '../services/api_client.dart';
@@ -36,6 +37,7 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen>
 
   PublicTrackingSnapshot? _tracking;
   String? _error;
+  Object? _errorObject;
   Timer? _timer;
   bool _loading = true;
 
@@ -78,6 +80,7 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen>
       setState(() {
         _loading = true;
         _error = null;
+        _errorObject = null;
       });
     }
     try {
@@ -86,10 +89,16 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen>
         setState(() {
           _tracking = result;
           _error = null;
+          _errorObject = null;
         });
       }
     } catch (error) {
-      if (mounted) setState(() => _error = friendlyError(error));
+      if (mounted) {
+        setState(() {
+          _error = friendlyError(error);
+          _errorObject = error;
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -102,20 +111,27 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen>
       return AppScaffold(
         title: 'Track your booking',
         body: _error != null
-            ? ErrorState(error: _error!, message: _error, onRetry: _refresh)
+            ? ErrorState(
+                error: _errorObject ?? _error!,
+                message: _error,
+                onRetry: _refresh,
+              )
             : _loading
-                ? const LoadingState(
-                    message: 'Loading your tracking details...')
-                : EmptyState(
-                    icon: Icons.link_off_outlined,
-                    title: 'Tracking link unavailable',
-                    message: 'This tracking link is invalid or expired.',
-                    action: SecondaryButton(
-                      label: 'Refresh',
-                      onPressed: _refresh,
-                      expand: false,
-                    ),
-                  ),
+            ? AuthFeatureFlags.newUiEnabled
+                  ? const TrackingLoadingState()
+                  : const LoadingState(
+                      message: 'Loading your tracking details...',
+                    )
+            : EmptyState(
+                icon: Icons.link_off_outlined,
+                title: 'Tracking link unavailable',
+                message: 'This tracking link is invalid or expired.',
+                action: SecondaryButton(
+                  label: 'Refresh',
+                  onPressed: _refresh,
+                  expand: false,
+                ),
+              ),
       );
     }
     return Scaffold(
@@ -149,10 +165,8 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen>
             minChildSize: 0.26,
             maxChildSize: 0.92,
             snap: true,
-            builder: (context, scrollController) => _Sheet(
-              controller: scrollController,
-              tracking: tracking,
-            ),
+            builder: (context, scrollController) =>
+                _Sheet(controller: scrollController, tracking: tracking),
           ),
         ],
       ),
@@ -280,13 +294,13 @@ class _MapArea extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LiveFleetMap(
-        vehicle: _location(tracking),
-        destination: null,
-        timeline: tracking.events.map((event) => event.status).toList(),
-        status: tracking.status,
-        lastUpdated: tracking.lastLocation?.recordedAt,
-        accuracyMeters: _accuracy(tracking),
-      );
+    vehicle: _location(tracking),
+    destination: null,
+    timeline: tracking.events.map((event) => event.status).toList(),
+    status: tracking.status,
+    lastUpdated: tracking.lastLocation?.recordedAt,
+    accuracyMeters: _accuracy(tracking),
+  );
 }
 
 /// Draggable bottom sheet: ETA, status, vehicle and driver, and the timeline.
@@ -366,13 +380,13 @@ class _Sheet extends StatelessWidget {
                   ),
                   title: hasVehicleLocation
                       ? isRegisteredLocation
-                          ? 'Registered driver location'
-                          : 'Vehicle location shared'
+                            ? 'Registered driver location'
+                            : 'Vehicle location shared'
                       : 'Location not available yet',
                   subtitle: !hasVehicleLocation || location?.recordedAt == null
                       ? isRegisteredLocation
-                          ? 'This is an approximate fixed pin, not live GPS. Live location appears when shared.'
-                          : 'The latest vehicle location will appear here when shared.'
+                            ? 'This is an approximate fixed pin, not live GPS. Live location appears when shared.'
+                            : 'The latest vehicle location will appear here when shared.'
                       : 'Updated ${_formatDateTime(location!.recordedAt)}',
                 ),
               ],
@@ -400,10 +414,7 @@ class _Sheet extends StatelessWidget {
               ],
             ),
           const SizedBox(height: AppSpace.lg),
-          Text(
-            'Refreshes every 30 seconds.',
-            style: theme.textTheme.bodySmall,
-          ),
+          Text('Refreshes every 30 seconds.', style: theme.textTheme.bodySmall),
         ],
       ),
     );

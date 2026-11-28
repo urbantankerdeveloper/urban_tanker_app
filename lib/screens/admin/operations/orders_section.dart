@@ -152,9 +152,9 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
     final cancellable =
         row['status'] != 'cancelled' && row['status'] != 'delivered';
     final fulfilments = isMultiService && row['order_fulfilments'] is List
-        ? (row['order_fulfilments'] as List)
-            .whereType<Map>()
-            .toList(growable: false)
+        ? (row['order_fulfilments'] as List).whereType<Map>().toList(
+            growable: false,
+          )
         : const <Map>[];
     showDetailSheet<void>(
       context,
@@ -218,41 +218,45 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
   }
 
   Map<String, dynamic> _details(Map row) => {
-        'Reference': row['reference'] ?? row['id'],
-        'Status': row['status'] ?? '—',
-        if (AuthFeatureFlags.multiServiceOrders && row['items'] is List)
-          'Order items': (row['items'] as List)
-              .whereType<Map>()
-              .map((item) =>
-                  '${item['service_type_name'] ?? item['service_type_id'] ?? item['id']}: ${item['status'] ?? 'pending'}')
-              .join('\n'),
-        if (AuthFeatureFlags.multiServiceOrders &&
-            (row['fulfilments'] ?? row['fulfillments']) is List)
-          'Fulfilments': ((row['fulfilments'] ?? row['fulfillments']) as List)
-              .whereType<Map>()
-              .map((item) => item['status']?.toString() ?? 'pending_vendor')
-              .join(', '),
-        'Service': row['service_code'] ?? '—',
-        'Address': row['address_text'] ?? row['location'] ?? '—',
-        'Coordinates': row['latitude'] == null || row['longitude'] == null
-            ? 'Not provided'
-            : '${row['latitude']}, ${row['longitude']}',
-        'Delivery date': row['scheduled_for'] ?? '—',
-        'Cancellation reason':
-            row['cancellation_reason'] ?? row['cancellationReason'] ?? '—',
-        'Vendor': row['vendor_id'] ?? 'Unassigned',
-        'Vehicle': row['vehicle_id'] ?? 'Unassigned',
-        'Driver': row['driver_id'] ?? 'Unassigned',
-      };
+    'Reference': row['reference'] ?? row['id'],
+    'Status': row['status'] ?? '—',
+    if (AuthFeatureFlags.multiServiceOrders && row['items'] is List)
+      'Order items': (row['items'] as List)
+          .whereType<Map>()
+          .map(
+            (item) =>
+                '${item['service_type_name'] ?? item['service_type_id'] ?? item['id']}: ${item['status'] ?? 'pending'}',
+          )
+          .join('\n'),
+    if (AuthFeatureFlags.multiServiceOrders &&
+        (row['fulfilments'] ?? row['fulfillments']) is List)
+      'Fulfilments': ((row['fulfilments'] ?? row['fulfillments']) as List)
+          .whereType<Map>()
+          .map((item) => item['status']?.toString() ?? 'pending_vendor')
+          .join(', '),
+    'Service': row['service_code'] ?? '—',
+    'Address': row['address_text'] ?? row['location'] ?? '—',
+    'Coordinates': row['latitude'] == null || row['longitude'] == null
+        ? 'Not provided'
+        : '${row['latitude']}, ${row['longitude']}',
+    'Delivery date': row['scheduled_for'] ?? '—',
+    'Cancellation reason':
+        row['cancellation_reason'] ?? row['cancellationReason'] ?? '—',
+    'Vendor': row['vendor_id'] ?? 'Unassigned',
+    'Vehicle': row['vehicle_id'] ?? 'Unassigned',
+    'Driver': row['driver_id'] ?? 'Unassigned',
+  };
 
   Future<void> _assignOrder(Map row) async {
     final api = ref.read(appControllerProvider).api;
     try {
       final vendors = (await api.adminVendors())
-          .where((vendor) =>
-              vendor.status.toLowerCase() == 'approved' ||
-              vendor.data['verification']?.toString().toLowerCase() ==
-                  'approved')
+          .where(
+            (vendor) =>
+                vendor.status.toLowerCase() == 'approved' ||
+                vendor.data['verification']?.toString().toLowerCase() ==
+                    'approved',
+          )
           .toList(growable: false);
       final vehicles = await api.adminVehicles();
       final drivers = await api.adminDrivers();
@@ -265,15 +269,24 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
         );
         return;
       }
-      final saved = await showAppBottomSheet<_Assignment>(
-        context,
-        builder: (_) => _AssignSheet(
-          row: row,
-          vendors: vendors,
-          vehicles: vehicles,
-          drivers: drivers,
-        ),
+      final form = _AssignSheet(
+        row: row,
+        vendors: vendors,
+        vehicles: vehicles,
+        drivers: drivers,
+        fullScreen: AuthFeatureFlags.newUiEnabled,
       );
+      final saved = AuthFeatureFlags.newUiEnabled
+          ? await Navigator.of(context).push<_Assignment>(
+              MaterialPageRoute<_Assignment>(
+                builder: (_) =>
+                    AppScaffold(title: 'Manual assignment', body: form),
+              ),
+            )
+          : await showAppBottomSheet<_Assignment>(
+              context,
+              builder: (_) => form,
+            );
       if (saved == null || !mounted) return;
       await api.assignAdminOrder(
         row['id'].toString(),
@@ -332,10 +345,12 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
     final api = ref.read(appControllerProvider).api;
     try {
       final vendors = (await api.adminVendors())
-          .where((vendor) =>
-              vendor.status.toLowerCase() == 'approved' ||
-              vendor.data['verification']?.toString().toLowerCase() ==
-                  'approved')
+          .where(
+            (vendor) =>
+                vendor.status.toLowerCase() == 'approved' ||
+                vendor.data['verification']?.toString().toLowerCase() ==
+                    'approved',
+          )
           .toList(growable: false);
       if (!mounted) return;
       if (vendors.isEmpty) {
@@ -384,7 +399,10 @@ class _AdminOrdersSectionState extends ConsumerState<AdminOrdersSection> {
     );
     if (reason == null || !mounted) return;
     try {
-      await ref.read(appControllerProvider).api.completeMultiServiceFulfilment(
+      await ref
+          .read(appControllerProvider)
+          .api
+          .completeMultiServiceFulfilment(
             fulfilmentId: fulfilment['id'].toString(),
             reason: reason,
           );
@@ -439,53 +457,50 @@ class _MultiServiceReassignDialogState
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Reassign fulfilment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DropdownButtonFormField<String>(
-              initialValue: _vendorId,
-              decoration: const InputDecoration(labelText: 'Approved vendor'),
-              items: [
-                for (final vendor in widget.vendors)
-                  DropdownMenuItem(
-                    value: vendor.id,
-                    child: Text(vendor.title),
-                  ),
-              ],
-              onChanged: (value) {
-                if (value != null) setState(() => _vendorId = value);
-              },
-            ),
-            const SizedBox(height: AppSpace.md),
-            TextField(
-              controller: _reason,
-              minLines: 2,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'Audit reason',
-                helperText: 'Enter at least 5 characters.',
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
+    title: const Text('Reassign fulfilment'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: _vendorId,
+          decoration: const InputDecoration(labelText: 'Approved vendor'),
+          items: [
+            for (final vendor in widget.vendors)
+              DropdownMenuItem(value: vendor.id, child: Text(vendor.title)),
           ],
+          onChanged: (value) {
+            if (value != null) setState(() => _vendorId = value);
+          },
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+        const SizedBox(height: AppSpace.md),
+        TextField(
+          controller: _reason,
+          minLines: 2,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Audit reason',
+            helperText: 'Enter at least 5 characters.',
           ),
-          FilledButton(
-            onPressed: _reason.text.trim().length < 5
-                ? null
-                : () => Navigator.pop(
-                      context,
-                      (vendorId: _vendorId, reason: _reason.text.trim()),
-                    ),
-            child: const Text('Reassign'),
-          ),
-        ],
-      );
+          onChanged: (_) => setState(() {}),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _reason.text.trim().length < 5
+            ? null
+            : () => Navigator.pop(context, (
+                vendorId: _vendorId,
+                reason: _reason.text.trim(),
+              )),
+        child: const Text('Reassign'),
+      ),
+    ],
+  );
 }
 
 class _CompletionReasonDialog extends StatefulWidget {
@@ -507,39 +522,35 @@ class _CompletionReasonDialogState extends State<_CompletionReasonDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Manually complete fulfilment'),
-        content: TextField(
-          controller: _reason,
-          minLines: 2,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            labelText: 'Audit reason',
-            helperText: 'Enter at least 5 characters.',
-          ),
-          onChanged: (_) => setState(() {}),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: _reason.text.trim().length < 5
-                ? null
-                : () => Navigator.pop(context, _reason.text.trim()),
-            child: const Text('Complete'),
-          ),
-        ],
-      );
+    title: const Text('Manually complete fulfilment'),
+    content: TextField(
+      controller: _reason,
+      minLines: 2,
+      maxLines: 4,
+      decoration: const InputDecoration(
+        labelText: 'Audit reason',
+        helperText: 'Enter at least 5 characters.',
+      ),
+      onChanged: (_) => setState(() {}),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _reason.text.trim().length < 5
+            ? null
+            : () => Navigator.pop(context, _reason.text.trim()),
+        child: const Text('Complete'),
+      ),
+    ],
+  );
 }
 
 /// The vendor, vehicle and driver chosen for an order.
 class _Assignment {
-  const _Assignment({
-    required this.vendorId,
-    this.vehicleId,
-    this.driverId,
-  });
+  const _Assignment({required this.vendorId, this.vehicleId, this.driverId});
 
   final String vendorId;
   final String? vehicleId;
@@ -554,12 +565,14 @@ class _AssignSheet extends StatefulWidget {
     required this.vendors,
     required this.vehicles,
     required this.drivers,
+    required this.fullScreen,
   });
 
   final Map row;
   final List<AccountRecord> vendors;
   final List<AdminFleetVehicle> vehicles;
   final List<AdminFleetDriver> drivers;
+  final bool fullScreen;
 
   @override
   State<_AssignSheet> createState() => _AssignSheetState();
@@ -592,23 +605,30 @@ class _AssignSheetState extends State<_AssignSheet> {
         .where((item) => item.id == widget.row['driver_id'])
         .map((item) => item.id)
         .firstOrNull;
-    final ready = vehicles.isNotEmpty &&
+    final ready =
+        vehicles.isNotEmpty &&
         drivers.isNotEmpty &&
         _vehicle != null &&
         _driver != null;
     return Padding(
-      padding:
-          const EdgeInsets.fromLTRB(AppSpace.xl, 0, AppSpace.xl, AppSpace.xl),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.xl,
+        0,
+        AppSpace.xl,
+        AppSpace.xl,
+      ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Assign booking',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpace.lg),
+            if (!widget.fullScreen) ...[
+              Text(
+                'Assign booking',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpace.lg),
+            ],
             DropdownButtonFormField<String>(
               initialValue: _vendor,
               decoration: const InputDecoration(labelText: 'Approved vendor'),
@@ -680,13 +700,13 @@ class _AssignSheetState extends State<_AssignSheet> {
                     label: 'Assign',
                     onPressed: ready
                         ? () => Navigator.pop(
-                              context,
-                              _Assignment(
-                                vendorId: _vendor,
-                                vehicleId: _vehicle,
-                                driverId: _driver,
-                              ),
-                            )
+                            context,
+                            _Assignment(
+                              vendorId: _vendor,
+                              vehicleId: _vehicle,
+                              driverId: _driver,
+                            ),
+                          )
                         : null,
                   ),
                 ),
@@ -720,52 +740,53 @@ class _CancelOrderSheetState extends State<_CancelOrderSheet> {
 
   @override
   Widget build(BuildContext context) => Form(
-        key: _formKey,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpace.xl, 0, AppSpace.xl, AppSpace.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    key: _formKey,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.xl,
+        0,
+        AppSpace.xl,
+        AppSpace.xl,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Cancel booking', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: AppSpace.lg),
+          AppTextField(
+            controller: _reason,
+            label: 'Cancellation reason',
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 500,
+            validator: (value) => (value?.trim().length ?? 0) < 2
+                ? 'Enter a cancellation reason.'
+                : null,
+          ),
+          const SizedBox(height: AppSpace.lg),
+          Row(
             children: [
-              Text(
-                'Cancel booking',
-                style: Theme.of(context).textTheme.titleLarge,
+              Expanded(
+                child: SecondaryButton(
+                  label: 'Keep booking',
+                  onPressed: () => Navigator.pop(context),
+                ),
               ),
-              const SizedBox(height: AppSpace.lg),
-              AppTextField(
-                controller: _reason,
-                label: 'Cancellation reason',
-                minLines: 2,
-                maxLines: 4,
-                maxLength: 500,
-                validator: (value) => (value?.trim().length ?? 0) < 2
-                    ? 'Enter a cancellation reason.'
-                    : null,
-              ),
-              const SizedBox(height: AppSpace.lg),
-              Row(
-                children: [
-                  Expanded(
-                    child: SecondaryButton(
-                      label: 'Keep booking',
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpace.md),
-                  Expanded(
-                    child: PrimaryButton(
-                      label: 'Cancel booking',
-                      onPressed: () {
-                        if (!_formKey.currentState!.validate()) return;
-                        Navigator.pop(context, _reason.text.trim());
-                      },
-                    ),
-                  ),
-                ],
+              const SizedBox(width: AppSpace.md),
+              Expanded(
+                child: PrimaryButton(
+                  label: 'Cancel booking',
+                  onPressed: () {
+                    if (!_formKey.currentState!.validate()) return;
+                    Navigator.pop(context, _reason.text.trim());
+                  },
+                ),
               ),
             ],
           ),
-        ),
-      );
+        ],
+      ),
+    ),
+  );
 }

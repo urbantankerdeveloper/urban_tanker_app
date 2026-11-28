@@ -24,9 +24,9 @@ class AppController extends ChangeNotifier {
     required SharedPreferences preferences,
     BiometricAuthService? biometricAuth,
     MpinService? mpin,
-  })  : _preferences = preferences,
-        biometricAuth = biometricAuth ?? BiometricAuthService(),
-        mpin = mpin ?? MpinService(store: const SecureMpinStore());
+  }) : _preferences = preferences,
+       biometricAuth = biometricAuth ?? BiometricAuthService(),
+       mpin = mpin ?? MpinService(store: const SecureMpinStore());
 
   final ApiClient api;
   final SharedPreferences _preferences;
@@ -37,6 +37,7 @@ class AppController extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   bool busy = false;
   bool biometricEnabled = false;
+  bool bookingBiometricEnabled = false;
   bool mpinEnabled = false;
   bool sessionLocked = false;
   bool biometricPromptOffered = false;
@@ -62,9 +63,9 @@ class AppController extends ChangeNotifier {
   String? successMessage;
   late final PushNotificationService pushNotifications =
       PushNotificationService(
-    api: api,
-    appId: const String.fromEnvironment('ONESIGNAL_APP_ID'),
-  );
+        api: api,
+        appId: const String.fromEnvironment('ONESIGNAL_APP_ID'),
+      );
 
   bool get isSignedIn => user != null;
 
@@ -78,9 +79,11 @@ class AppController extends ChangeNotifier {
     );
     controller.themeMode =
         themeModeFromName(preferences.getString('theme_mode')) ??
-            ThemeMode.system;
+        ThemeMode.system;
     controller.biometricEnabled =
         preferences.getBool('biometric_enabled') ?? false;
+    controller.bookingBiometricEnabled =
+        preferences.getBool('booking_biometric_enabled') ?? false;
     controller.biometricPromptOffered =
         preferences.getBool('biometric_prompt_offered') ?? false;
     controller.mpinEnabled = await controller.mpin.isSet();
@@ -125,8 +128,9 @@ class AppController extends ChangeNotifier {
       final request = await api.requestPhoneAuthOtp(phone);
       phoneOtpChallengeId = request.challengeId;
       phoneOtpChannel = request.channel;
-      final channel =
-          request.channel == PhoneOtpChannel.whatsapp ? 'WhatsApp' : 'SMS';
+      final channel = request.channel == PhoneOtpChannel.whatsapp
+          ? 'WhatsApp'
+          : 'SMS';
       successMessage =
           'Verification code sent via $channel. It expires in 10 minutes.';
     });
@@ -235,6 +239,17 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setBookingBiometricEnabled(bool enabled) async {
+    bookingBiometricEnabled = enabled;
+    await _preferences.setBool('booking_biometric_enabled', enabled);
+    notifyListeners();
+  }
+
+  Future<bool> authorizeBookingConfirmation() async {
+    if (!bookingBiometricEnabled) return true;
+    return biometricAuth.authenticate('Confirm your Urban Tanker booking');
+  }
+
   void lockSession() {
     if (user == null || !quickUnlockEnabled || sessionLocked) return;
     sessionLocked = true;
@@ -274,7 +289,7 @@ class AppController extends ChangeNotifier {
     final check = await mpin.verify(pin);
     if (check.isAccepted) {
       unlockSession();
-    } else if (check.isLocked) {
+    } else if (check.isLocked && !AuthFeatureFlags.newUiEnabled) {
       await usePhoneOtpRecovery();
     }
     return check;
@@ -373,8 +388,15 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  /// Signs out. Each remote step is best effort; local state is always cleared.
+  /// Shows the sign-in screen immediately. Remote cleanup is best effort.
   Future<void> signOut() async {
+    busy = true;
+    realtime?.dispose();
+    realtime = null;
+    user = null;
+    sessionLocked = false;
+    notifyListeners();
+
     String? refreshToken;
     try {
       refreshToken = await api.readRefreshToken();
@@ -398,10 +420,6 @@ class AppController extends ChangeNotifier {
     } catch (_) {
       // OneSignal keeps its own state; the app session is still cleared.
     }
-    realtime?.dispose();
-    realtime = null;
-    user = null;
-    sessionLocked = false;
     try {
       await api.clearSession();
     } catch (_) {
@@ -412,8 +430,12 @@ class AppController extends ChangeNotifier {
     } catch (_) {
       // Only a legacy key lives here, so a failure is harmless.
     }
-    await deleteSavedInvoiceFiles();
-    notifyListeners();
+    try {
+      await deleteSavedInvoiceFiles();
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
@@ -436,11 +458,11 @@ class AppController extends ChangeNotifier {
   }
 
   static ThemeMode? themeModeFromName(String? name) => switch (name) {
-        'light' => ThemeMode.light,
-        'dark' => ThemeMode.dark,
-        'system' => ThemeMode.system,
-        _ => null,
-      };
+    'light' => ThemeMode.light,
+    'dark' => ThemeMode.dark,
+    'system' => ThemeMode.system,
+    _ => null,
+  };
 
   void markSelfieCaptured() {
     final current = user;
@@ -529,7 +551,8 @@ class AppController extends ChangeNotifier {
     try {
       await operation();
     } catch (error) {
-      errorMessage = error is ApiException &&
+      errorMessage =
+          error is ApiException &&
               (error.code == 'ADMIN_ACCESS_PENDING' ||
                   error.code == 'ADMIN_ACCESS_REJECTED' ||
                   error.code == 'ADMIN_ACCESS_DEACTIVATED')

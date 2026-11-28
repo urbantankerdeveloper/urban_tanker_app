@@ -13,6 +13,8 @@ import 'theme.dart';
 import '../screens/auth_screen.dart';
 import '../screens/home/home_shell.dart';
 import '../screens/selfie_capture_screen.dart';
+import 'auth_feature_flags.dart';
+import '../core/design_system/new_ui_theme.dart';
 
 class UrbanTankerApp extends ConsumerStatefulWidget {
   const UrbanTankerApp({super.key});
@@ -85,8 +87,12 @@ class _UrbanTankerAppState extends ConsumerState<UrbanTankerApp>
       navigatorKey: _navigatorKey,
       title: 'Urban Tanker',
       debugShowCheckedModeBanner: false,
-      theme: buildLightTheme(),
-      darkTheme: buildDarkTheme(),
+      theme: AuthFeatureFlags.newUiEnabled
+          ? buildNewUiLightTheme()
+          : buildLightTheme(),
+      darkTheme: AuthFeatureFlags.newUiEnabled
+          ? buildNewUiDarkTheme()
+          : buildDarkTheme(),
       themeMode: controller.themeMode,
       // The lock sits above the Navigator so that pushed routes are covered too.
       builder: (context, child) => Stack(

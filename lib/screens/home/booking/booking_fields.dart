@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../app/auth_feature_flags.dart';
 import '../../../core/design_system/design_system.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -26,12 +27,12 @@ class BookingServiceFields {
     String tankerCount = '',
     this.latitude,
     this.longitude,
-  })  : quantity = TextEditingController(text: quantity),
-        waterType = TextEditingController(text: waterType),
-        tankerCount = TextEditingController(text: tankerCount),
-        details = TextEditingController(text: details),
-        location = TextEditingController(text: location),
-        deliveryDate = TextEditingController(text: deliveryDate);
+  }) : quantity = TextEditingController(text: quantity),
+       waterType = TextEditingController(text: waterType),
+       tankerCount = TextEditingController(text: tankerCount),
+       details = TextEditingController(text: details),
+       location = TextEditingController(text: location),
+       deliveryDate = TextEditingController(text: deliveryDate);
 
   final TextEditingController quantity;
   final TextEditingController waterType;
@@ -79,10 +80,10 @@ class ServiceDropdownField extends StatelessWidget {
         helperText: options.isEmpty ? emptyMessage : null,
       ),
       items: options
-          .map((option) => DropdownMenuItem<String>(
-                value: option,
-                child: Text(option),
-              ))
+          .map(
+            (option) =>
+                DropdownMenuItem<String>(value: option, child: Text(option)),
+          )
           .toList(growable: false),
       onChanged: options.isEmpty
           ? null
@@ -93,8 +94,8 @@ class ServiceDropdownField extends StatelessWidget {
       validator: (value) => options.isEmpty
           ? emptyMessage
           : value == null || value.trim().isEmpty
-              ? 'Select $label.'
-              : null,
+          ? 'Select $label.'
+          : null,
     );
   }
 }
@@ -111,113 +112,148 @@ class DeliveryLocationField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TextFormField(
-        controller: fields.location,
-        maxLength: 200,
-        decoration: InputDecoration(
-          labelText: 'Delivery location',
-          helperText: fields.latitude == null
-              ? 'Chennai addresses only'
-              : 'Chennai location selected',
-          prefixIcon: IconButton(
-            tooltip: 'Choose delivery location',
-            onPressed: () async {
-              final coordinate = await showDialog<LatLng>(
-                context: context,
-                builder: (context) => MapLocationPicker(
-                  latitude: fields.latitude,
-                  longitude: fields.longitude,
-                ),
+    controller: fields.location,
+    maxLength: 200,
+    decoration: InputDecoration(
+      labelText: 'Delivery location',
+      helperText: fields.latitude == null
+          ? 'Chennai addresses only'
+          : 'Chennai location selected',
+      prefixIcon: IconButton(
+        tooltip: 'Choose delivery location',
+        onPressed: () async {
+          final coordinate = await showDialog<LatLng>(
+            context: context,
+            builder: (context) => MapLocationPicker(
+              latitude: fields.latitude,
+              longitude: fields.longitude,
+            ),
+          );
+          if (coordinate == null) return;
+          fields.latitude = coordinate.latitude;
+          fields.longitude = coordinate.longitude;
+          onChanged();
+        },
+        icon: const Icon(Icons.map_outlined),
+      ),
+      suffixIcon: IconButton(
+        tooltip: 'Use current location',
+        onPressed: () async {
+          try {
+            if (!await Geolocator.isLocationServiceEnabled()) {
+              if (!context.mounted) return;
+              if (AuthFeatureFlags.newUiEnabled) {
+                _showLocationFailure(context, openAppSettings: false);
+                return;
+              }
+              await showAppPermissionDialog(
+                context,
+                message:
+                    'Turn on location services to use your current location.',
+                onOpenSettings: () {
+                  unawaited(Geolocator.openLocationSettings());
+                },
               );
-              if (coordinate == null) return;
-              fields.latitude = coordinate.latitude;
-              fields.longitude = coordinate.longitude;
-              onChanged();
-            },
-            icon: const Icon(Icons.map_outlined),
-          ),
-          suffixIcon: IconButton(
-            tooltip: 'Use current location',
-            onPressed: () async {
-              try {
-                if (!await Geolocator.isLocationServiceEnabled()) {
-                  if (!context.mounted) return;
-                  await showAppPermissionDialog(
-                    context,
-                    message:
-                        'Turn on location services to use your current location.',
-                    onOpenSettings: () {
-                      unawaited(Geolocator.openLocationSettings());
-                    },
-                  );
-                  return;
-                }
-                var permission = await Geolocator.checkPermission();
-                if (permission == LocationPermission.denied) {
-                  permission = await Geolocator.requestPermission();
-                }
-                if (permission == LocationPermission.deniedForever) {
-                  if (!context.mounted) return;
-                  await showAppPermissionDialog(
-                    context,
-                    message:
-                        'Allow location access in device settings to use your current location.',
-                    onOpenSettings: () {
-                      unawaited(Geolocator.openAppSettings());
-                    },
-                  );
-                  return;
-                }
-                if (permission == LocationPermission.denied) {
-                  if (context.mounted) {
-                    showAppSnack(context,
-                        'Location permission is needed to use your current location.');
-                  }
-                  return;
-                }
-                final position = await Geolocator.getCurrentPosition();
-                if (!isChennaiLocation(
-                  latitude: position.latitude,
-                  longitude: position.longitude,
-                )) {
-                  throw const FormatException(
-                    'This location is undeliverable. Select a location inside Chennai.',
-                  );
-                }
-                fields.latitude = position.latitude;
-                fields.longitude = position.longitude;
-                onChanged();
-              } catch (error) {
-                if (context.mounted) {
+              return;
+            }
+            var permission = await Geolocator.checkPermission();
+            if (permission == LocationPermission.denied) {
+              permission = await Geolocator.requestPermission();
+            }
+            if (permission == LocationPermission.deniedForever) {
+              if (!context.mounted) return;
+              if (AuthFeatureFlags.newUiEnabled) {
+                _showLocationFailure(context, openAppSettings: true);
+                return;
+              }
+              await showAppPermissionDialog(
+                context,
+                message:
+                    'Allow location access in device settings to use your current location.',
+                onOpenSettings: () {
+                  unawaited(Geolocator.openAppSettings());
+                },
+              );
+              return;
+            }
+            if (permission == LocationPermission.denied) {
+              if (context.mounted) {
+                if (AuthFeatureFlags.newUiEnabled) {
+                  _showLocationFailure(context, openAppSettings: true);
+                } else {
                   showAppSnack(
                     context,
-                    friendlyError(error),
-                    variant: AppSnackVariant.error,
+                    'Location permission is needed to use your current location.',
                   );
                 }
               }
-            },
-            icon: const Icon(Icons.my_location_outlined),
-          ),
-          errorMaxLines: 2,
-        ),
-        validator: (value) {
-          final text = value?.trim() ?? '';
-          if (text.length < 3) return 'Enter a delivery location.';
-          if (!isChennaiLocation(
-            address: text,
-            latitude: fields.latitude,
-            longitude: fields.longitude,
-          )) {
-            return 'This location is undeliverable. Choose Chennai.';
+              return;
+            }
+            final position = await Geolocator.getCurrentPosition();
+            if (!isChennaiLocation(
+              latitude: position.latitude,
+              longitude: position.longitude,
+            )) {
+              throw const FormatException(
+                'This location is undeliverable. Select a location inside Chennai.',
+              );
+            }
+            fields.latitude = position.latitude;
+            fields.longitude = position.longitude;
+            onChanged();
+          } catch (error) {
+            if (context.mounted) {
+              showAppSnack(
+                context,
+                friendlyError(error),
+                variant: AppSnackVariant.error,
+              );
+            }
           }
-          return null;
         },
-        onChanged: (_) {
-          fields.latitude = null;
-          fields.longitude = null;
-          onChanged();
+        icon: const Icon(Icons.my_location_outlined),
+      ),
+      errorMaxLines: 2,
+    ),
+    validator: (value) {
+      final text = value?.trim() ?? '';
+      if (text.length < 3) return 'Enter a delivery location.';
+      if (!isChennaiLocation(
+        address: text,
+        latitude: fields.latitude,
+        longitude: fields.longitude,
+      )) {
+        return 'This location is undeliverable. Choose Chennai.';
+      }
+      return null;
+    },
+    onChanged: (_) {
+      fields.latitude = null;
+      fields.longitude = null;
+      onChanged();
+    },
+  );
+}
+
+void _showLocationFailure(
+  BuildContext context, {
+  required bool openAppSettings,
+}) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (screenContext) => FailureStateScreen(
+        kind: FailureScreenKind.locationOff,
+        onPrimary: () {
+          Navigator.of(screenContext).pop();
+          unawaited(
+            openAppSettings
+                ? Geolocator.openAppSettings()
+                : Geolocator.openLocationSettings(),
+          );
         },
-      );
+      ),
+    ),
+  );
 }
 
 class DeliveryDateField extends StatelessWidget {
@@ -232,35 +268,41 @@ class DeliveryDateField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TextFormField(
-        controller: controller,
-        readOnly: true,
-        onTap: () async {
-          final now = DateTime.now();
-          final firstDate = DateTime(now.year, now.month, now.day)
-              .add(const Duration(days: 1));
-          final picked = await showDatePicker(
-            context: context,
-            initialDate: DateTime.tryParse(controller.text) ?? firstDate,
-            firstDate: firstDate,
-            lastDate: firstDate.add(const Duration(days: 365)),
-          );
-          if (picked != null) {
-            controller.text = dateOnly(picked);
-            onChanged();
-          }
-        },
-        decoration: const InputDecoration(
-          labelText: 'Delivery date',
-          suffixIcon: Icon(Icons.calendar_today_outlined),
-        ),
-        validator: (value) {
-          final selected = DateTime.tryParse(value?.trim() ?? '');
-          final today = DateTime.now();
-          final firstDate = DateTime(today.year, today.month, today.day)
-              .add(const Duration(days: 1));
-          return selected == null || selected.isBefore(firstDate)
-              ? 'Choose a future delivery date.'
-              : null;
-        },
+    controller: controller,
+    readOnly: true,
+    onTap: () async {
+      final now = DateTime.now();
+      final firstDate = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).add(const Duration(days: 1));
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: DateTime.tryParse(controller.text) ?? firstDate,
+        firstDate: firstDate,
+        lastDate: firstDate.add(const Duration(days: 365)),
       );
+      if (picked != null) {
+        controller.text = dateOnly(picked);
+        onChanged();
+      }
+    },
+    decoration: const InputDecoration(
+      labelText: 'Delivery date',
+      suffixIcon: Icon(Icons.calendar_today_outlined),
+    ),
+    validator: (value) {
+      final selected = DateTime.tryParse(value?.trim() ?? '');
+      final today = DateTime.now();
+      final firstDate = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      ).add(const Duration(days: 1));
+      return selected == null || selected.isBefore(firstDate)
+          ? 'Choose a future delivery date.'
+          : null;
+    },
+  );
 }

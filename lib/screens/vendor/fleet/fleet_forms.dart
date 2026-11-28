@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/auth_feature_flags.dart';
 import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/vendor.dart';
@@ -19,17 +20,22 @@ Future<bool> showRecordSheet(
   Widget? afterFields,
   bool requireAll = false,
 }) async {
-  final saved = await showAppBottomSheet<bool>(
-    context,
-    builder: (_) => _RecordSheet(
-      title: title,
-      fields: fields,
-      submit: submit,
-      extra: extra,
-      afterFields: afterFields,
-      requireAll: requireAll,
-    ),
+  final form = _RecordSheet(
+    title: title,
+    fields: fields,
+    submit: submit,
+    extra: extra,
+    afterFields: afterFields,
+    requireAll: requireAll,
+    fullScreen: AuthFeatureFlags.newUiEnabled,
   );
+  final saved = AuthFeatureFlags.newUiEnabled
+      ? await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (_) => AppScaffold(title: title, body: form),
+          ),
+        )
+      : await showAppBottomSheet<bool>(context, builder: (_) => form);
   return saved == true;
 }
 
@@ -39,6 +45,7 @@ class _RecordSheet extends StatefulWidget {
     required this.fields,
     required this.submit,
     required this.requireAll,
+    required this.fullScreen,
     this.extra,
     this.afterFields,
   });
@@ -49,6 +56,7 @@ class _RecordSheet extends StatefulWidget {
   final Widget? extra;
   final Widget? afterFields;
   final bool requireAll;
+  final bool fullScreen;
 
   @override
   State<_RecordSheet> createState() => _RecordSheetState();
@@ -85,18 +93,21 @@ class _RecordSheetState extends State<_RecordSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Padding(
-      padding:
-          const EdgeInsets.fromLTRB(AppSpace.xl, 0, AppSpace.xl, AppSpace.xl),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.xl,
+        0,
+        AppSpace.xl,
+        AppSpace.xl,
+      ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              widget.title,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpace.lg),
+            if (!widget.fullScreen) ...[
+              Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: AppSpace.lg),
+            ],
             if (widget.extra != null) ...[
               widget.extra!,
               const SizedBox(height: AppSpace.md),
@@ -106,7 +117,8 @@ class _RecordSheetState extends State<_RecordSheet> {
                 controller: field.$2,
                 label: field.$1,
                 maxLines: field.$1 == 'Message' ? 4 : 1,
-                keyboardType: field.$1.startsWith('Latitude') ||
+                keyboardType:
+                    field.$1.startsWith('Latitude') ||
                         field.$1.startsWith('Longitude')
                     ? const TextInputType.numberWithOptions(
                         decimal: true,
@@ -123,10 +135,7 @@ class _RecordSheetState extends State<_RecordSheet> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpace.md),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: colors.danger.fg),
-                ),
+                child: Text(_error!, style: TextStyle(color: colors.danger.fg)),
               ),
             Row(
               children: [
@@ -172,10 +181,10 @@ Future<void> setVehicleActive(
   bool active,
 ) async {
   try {
-    await ref.read(appControllerProvider).api.updateVendorVehicle(
-          vehicle.id,
-          isActive: active,
-        );
+    await ref
+        .read(appControllerProvider)
+        .api
+        .updateVendorVehicle(vehicle.id, isActive: active);
     invalidateVendorFleet(ref);
     if (context.mounted) {
       showAppSnack(
@@ -202,10 +211,10 @@ Future<void> setDriverAttendance(
   String status,
 ) async {
   try {
-    await ref.read(appControllerProvider).api.updateVendorAttendance(
-          driverId: driver.id,
-          status: status,
-        );
+    await ref
+        .read(appControllerProvider)
+        .api
+        .updateVendorAttendance(driverId: driver.id, status: status);
     if (context.mounted) {
       showAppSnack(
         context,
@@ -239,7 +248,10 @@ Future<void> addVehicle(BuildContext context, WidgetRef ref) async {
       if (litres == null || litres <= 0) {
         throw const FormatException('Enter a valid capacity.');
       }
-      await ref.read(appControllerProvider).api.createVendorVehicle(
+      await ref
+          .read(appControllerProvider)
+          .api
+          .createVendorVehicle(
             registrationNumber: registration.text.trim(),
             capacityLitres: litres,
           );
@@ -273,9 +285,14 @@ Future<void> addDriver(BuildContext context, WidgetRef ref) async {
       if (!RegExp(r'^\d{10}$').hasMatch(mobile.text.trim())) {
         throw const FormatException('Enter a valid 10-digit mobile number.');
       }
-      final coordinates =
-          parseOptionalCoordinates(latitude.text, longitude.text);
-      await ref.read(appControllerProvider).api.createVendorDriver(
+      final coordinates = parseOptionalCoordinates(
+        latitude.text,
+        longitude.text,
+      );
+      await ref
+          .read(appControllerProvider)
+          .api
+          .createVendorDriver(
             name: name.text.trim(),
             mobile: mobile.text.trim(),
             licenceNumber: licence.text.trim(),
@@ -311,7 +328,10 @@ Future<void> editVehicle(
       if (litres == null || litres <= 0) {
         throw const FormatException('Enter a valid capacity.');
       }
-      await ref.read(appControllerProvider).api.updateVendorVehicle(
+      await ref
+          .read(appControllerProvider)
+          .api
+          .updateVendorVehicle(
             vehicle.id,
             registrationNumber: registration.text.trim(),
             capacityLitres: litres,
@@ -354,14 +374,20 @@ Future<void> editDriver(
       if (!RegExp(r'^\d{10}$').hasMatch(mobile.text.trim())) {
         throw const FormatException('Enter a valid 10-digit mobile number.');
       }
-      final coordinates =
-          parseOptionalCoordinates(latitude.text, longitude.text);
-      await ref.read(appControllerProvider).api.updateVendorDriver(
+      final coordinates = parseOptionalCoordinates(
+        latitude.text,
+        longitude.text,
+      );
+      await ref
+          .read(appControllerProvider)
+          .api
+          .updateVendorDriver(
             driver.id,
             name: name.text.trim(),
             mobile: mobile.text.trim(),
-            licenceNumber:
-                licence.text.trim().isEmpty ? null : licence.text.trim(),
+            licenceNumber: licence.text.trim().isEmpty
+                ? null
+                : licence.text.trim(),
             latitude: coordinates['latitude'],
             longitude: coordinates['longitude'],
           );

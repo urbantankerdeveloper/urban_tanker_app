@@ -11,6 +11,7 @@ import '../../../models/workspace_navigation.dart';
 import '../../security_settings_screen.dart';
 import '../../profile_dialog.dart';
 import '../../admin/admin_access_requests_screen.dart';
+import '../../admin/admin_settings_screen.dart';
 import 'appearance.dart';
 
 /// Menu tab for vendor, dispatcher and admin. Replaces the old drawer: the
@@ -22,6 +23,7 @@ class MenuScreen extends ConsumerWidget {
     required this.notifications,
     required this.onDestination,
     required this.onNotifications,
+    required this.onHome,
     super.key,
   });
 
@@ -30,6 +32,7 @@ class MenuScreen extends ConsumerWidget {
   final Future<List<NotificationItem>>? notifications;
   final ValueChanged<WorkspaceNavigationDestination> onDestination;
   final VoidCallback onNotifications;
+  final VoidCallback onHome;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -57,6 +60,61 @@ class MenuScreen extends ConsumerWidget {
           ref.invalidate(profileSelfieProvider);
           await controller.refreshUserProfile();
         },
+      );
+    }
+
+    if (AuthFeatureFlags.newUiEnabled) {
+      return ListView(
+        padding: AppPageInsets.withSafeAreaBottom(
+          context,
+          AppPageInsets.standard,
+        ),
+        children: [
+          if (user != null)
+            _NewUiMenuProfileHeader(
+              name: user.name,
+              role: role,
+              imageUrl: profilePhotoUrl,
+              onTap: openProfile,
+            ),
+          const SizedBox(height: AppSpace.xl),
+          SurfaceCard(
+            padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
+            child: _Rows([
+              AppListRow(
+                leading: const Icon(Icons.person_outline),
+                title: 'Profile',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: openProfile,
+              ),
+              AppListRow(
+                leading: _NotificationIcon(notifications: notifications),
+                title: 'Notifications',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onNotifications,
+              ),
+              AppListRow(
+                leading: const Icon(Icons.settings_outlined),
+                title: 'Settings',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => role == WorkspaceRole.admin
+                    ? _openAdminSettings(context)
+                    : _openSecurity(context),
+              ),
+            ]),
+          ),
+          const SizedBox(height: AppSpace.xl),
+          SurfaceCard(
+            padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
+            child: _DarkModeRow(controller: controller),
+          ),
+          const SizedBox(height: AppSpace.xxl),
+          SecondaryButton(
+            label: 'Sign out',
+            icon: Icons.logout,
+            onPressed: () => _confirmSignOut(context),
+          ),
+        ],
       );
     }
 
@@ -110,9 +168,7 @@ class MenuScreen extends ConsumerWidget {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => AdminUsersScreen(
-                      controller: controller,
-                    ),
+                    builder: (_) => AdminUsersScreen(controller: controller),
                   ),
                 ),
               ),
@@ -148,6 +204,15 @@ class MenuScreen extends ConsumerWidget {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SecuritySettingsScreen(controller: controller),
+      ),
+    );
+  }
+
+  void _openAdminSettings(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            AdminSettingsScreen(controller: controller, onBackToHome: onHome),
       ),
     );
   }
@@ -215,8 +280,10 @@ class _ProfileHeader extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleLarge,
                     ),
-                    Text(maskUsername(username),
-                        style: theme.textTheme.bodyMedium),
+                    Text(
+                      maskUsername(username),
+                      style: theme.textTheme.bodyMedium,
+                    ),
                     if (email?.isNotEmpty == true)
                       Text(
                         'Email: $email',
@@ -251,6 +318,57 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
+class _NewUiMenuProfileHeader extends StatelessWidget {
+  const _NewUiMenuProfileHeader({
+    required this.name,
+    required this.role,
+    required this.imageUrl,
+    required this.onTap,
+  });
+
+  final String name;
+  final WorkspaceRole role;
+  final String? imageUrl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => AppListRow(
+    leading: AppAvatar(name: name, imageUrl: imageUrl, size: 56),
+    title: name,
+    subtitle: StatusChip.statusLabel(role.name),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: onTap,
+  );
+}
+
+class _DarkModeRow extends StatelessWidget {
+  const _DarkModeRow({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) {
+      final systemDark =
+          MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+      final isDark =
+          controller.themeMode == ThemeMode.dark ||
+          (controller.themeMode == ThemeMode.system && systemDark);
+      return AppListRow(
+        leading: const Icon(Icons.dark_mode_outlined),
+        title: 'Dark mode',
+        trailing: Switch(
+          value: isDark,
+          onChanged: (enabled) => controller.setThemeMode(
+            enabled ? ThemeMode.dark : ThemeMode.light,
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _GroupLabel extends StatelessWidget {
   const _GroupLabel(this.text);
 
@@ -258,12 +376,12 @@ class _GroupLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: AppSpace.sm),
-        child: Text(
-          text.toUpperCase(),
-          style: Theme.of(context).textTheme.labelSmall,
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: AppSpace.sm),
+    child: Text(
+      text.toUpperCase(),
+      style: Theme.of(context).textTheme.labelSmall,
+    ),
+  );
 }
 
 /// Rows separated by hairline dividers.
@@ -274,13 +392,13 @@ class _Rows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        children: [
-          for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) const Divider(height: 1),
-            rows[i],
-          ],
-        ],
-      );
+    children: [
+      for (var i = 0; i < rows.length; i++) ...[
+        if (i > 0) const Divider(height: 1),
+        rows[i],
+      ],
+    ],
+  );
 }
 
 class _NotificationIcon extends StatelessWidget {
@@ -290,14 +408,14 @@ class _NotificationIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FutureBuilder<List<NotificationItem>>(
-        future: notifications,
-        builder: (context, snapshot) {
-          final unread = snapshot.data?.where((item) => !item.read).length ?? 0;
-          return Badge(
-            isLabelVisible: unread > 0,
-            label: Text(unread > 99 ? '99+' : '$unread'),
-            child: const Icon(Icons.notifications_none_outlined),
-          );
-        },
+    future: notifications,
+    builder: (context, snapshot) {
+      final unread = snapshot.data?.where((item) => !item.read).length ?? 0;
+      return Badge(
+        isLabelVisible: unread > 0,
+        label: Text(unread > 99 ? '99+' : '$unread'),
+        child: const Icon(Icons.notifications_none_outlined),
       );
+    },
+  );
 }

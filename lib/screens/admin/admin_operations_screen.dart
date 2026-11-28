@@ -53,11 +53,11 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
   }
 
   static int _sectionIndex(OperationsSection section) => switch (section) {
-        OperationsSection.orders => 0,
-        OperationsSection.people => 1,
-        OperationsSection.finance => 2,
-        OperationsSection.setup => 3,
-      };
+    OperationsSection.orders => 0,
+    OperationsSection.people => 1,
+    OperationsSection.finance => 2,
+    OperationsSection.setup => 3,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -71,10 +71,31 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
             AppSpace.gutter,
             0,
           ),
-          child: SegmentedTabs(
-            labels: _sections,
-            selectedIndex: _section,
-            onChanged: (index) => setState(() => _section = index),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Previous section',
+                onPressed: _section > 0
+                    ? () => setState(() => _section--)
+                    : null,
+                icon: const Icon(Icons.chevron_left),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    _sections[_section],
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Next section',
+                onPressed: _section < _sections.length - 1
+                    ? () => setState(() => _section++)
+                    : null,
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -82,14 +103,15 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
             onSwipeLeft: _section < _sections.length - 1
                 ? () => setState(() => _section++)
                 : null,
-            onSwipeRight:
-                _section > 0 ? () => setState(() => _section--) : null,
+            onSwipeRight: _section > 0
+                ? () => setState(() => _section--)
+                : null,
             child: IndexedStack(
               index: _section,
-              children: const [
+              children: [
                 AdminOrdersSection(),
-                AdminPeopleSection(),
-                AdminFinanceSection(),
+                AdminPeopleSection(focus: widget.focus),
+                AdminFinanceSection(focus: widget.focus),
                 AdminSetupSection(),
               ],
             ),

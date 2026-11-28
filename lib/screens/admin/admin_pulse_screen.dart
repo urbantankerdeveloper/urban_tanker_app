@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/auth_feature_flags.dart';
 import '../../app/providers.dart';
 import '../../core/design_system/design_system.dart';
 import '../../services/friendly_error.dart';
@@ -8,129 +9,162 @@ import '../../services/friendly_error.dart';
 /// Platform health: the system, realtime, storage and configuration as status
 /// tiles, then migration checks and storage cleanup.
 class AdminPulseScreen extends ConsumerWidget {
-  const AdminPulseScreen({super.key});
+  const AdminPulseScreen({this.onBackToHome, super.key});
+
+  final VoidCallback? onBackToHome;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final healthState = ref.watch(adminHealthProvider);
-    return healthState.when(
-      loading: () => const LoadingState(message: 'Checking the platform...'),
-      error: (error, _) => ErrorState(
-        error: error,
-        message: friendlyError(error),
-        onRetry: () => ref.invalidate(adminHealthProvider),
-      ),
-      data: (health) {
-        final ok = health['ok'] == true;
-        final realtimeConfigured =
-            (health['realtime'] as Map?)?['configured'] == true;
-        final storage = (health['storage'] as Map?)?['configured'] == true;
-        final configWarnings = (health['configuration'] as Map?)
-                ?.values
-                .where((value) => value != true)
-                .length ??
-            0;
-        final migrations = health['migrations'] is List
-            ? (health['migrations'] as List).whereType<Map>().toList()
-            : const <Map>[];
-        final theme = Theme.of(context);
-        return RefreshIndicator(
-          onRefresh: () async => ref.invalidate(adminHealthProvider),
-          child: ListView(
-            padding: AppPageInsets.withSafeAreaBottom(
-              context,
-              AppPageInsets.standard,
+    return Column(
+      children: [
+        if (onBackToHome != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpace.gutter,
+              AppSpace.xs,
+              AppSpace.gutter,
+              0,
             ),
-            children: [
-              Text('Platform pulse', style: theme.textTheme.headlineMedium),
-              const SizedBox(height: AppSpace.lg),
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: AppSpace.md,
-                crossAxisSpacing: AppSpace.md,
-                childAspectRatio: 1.45,
-                children: [
-                  _HealthTile(
-                    label: 'System',
-                    value: ok ? 'Healthy' : 'Attention required',
-                    healthy: ok,
-                  ),
-                  _HealthTile(
-                    label: 'Realtime',
-                    value: realtimeConfigured ? 'Available' : 'Not configured',
-                    healthy: realtimeConfigured,
-                  ),
-                  _HealthTile(
-                    label: 'Storage',
-                    value: storage ? 'Configured' : 'Not configured',
-                    healthy: storage,
-                  ),
-                  _HealthTile(
-                    label: 'Configuration',
-                    value: configWarnings == 0
-                        ? 'Complete'
-                        : '$configWarnings to review',
-                    healthy: configWarnings == 0,
-                  ),
-                ],
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: onBackToHome,
+                icon: const Icon(Icons.home_outlined),
+                label: const Text('Back to home'),
               ),
-              const SizedBox(height: AppSpace.xl),
-              Text(
-                'MIGRATION CHECKS',
-                style: theme.textTheme.labelSmall,
-              ),
-              const SizedBox(height: AppSpace.md),
-              if (migrations.isEmpty)
-                const EmptyState(
-                  icon: Icons.storage_outlined,
-                  title: 'No migration checks reported.',
-                ),
-              for (final item in migrations)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpace.md),
-                  child: SurfaceCard(
-                    padding: EdgeInsets.zero,
-                    child: AppListRow(
-                      leading: StatusDot(healthy: item['applied'] == true),
-                      title: (item['table'] ?? 'Table').toString(),
-                      subtitle: item['applied'] == true
-                          ? 'Available'
-                          : (item['error'] ?? 'Unavailable').toString(),
-                      trailing: item['applied'] == true
-                          ? null
-                          : TextButton(
-                              onPressed: () =>
-                                  ref.invalidate(adminHealthProvider),
-                              child: const Text('Retry'),
-                            ),
-                    ),
-                  ),
-                ),
-              if (configWarnings > 0) ...[
-                const SizedBox(height: AppSpace.md),
-                SurfaceCard(
-                  child: AppListRow(
-                    leading: Icon(
-                      Icons.warning_amber_outlined,
-                      color: context.colors.warning.fg,
-                    ),
-                    title: 'Configuration warnings',
-                    subtitle: 'One or more integrations are not configured.',
-                  ),
-                ),
-              ],
-              const SizedBox(height: AppSpace.xl),
-              SecondaryButton(
-                label: 'Run storage cleanup',
-                icon: Icons.cleaning_services_outlined,
-                onPressed: () => _cleanup(context, ref),
-              ),
-            ],
+            ),
           ),
-        );
-      },
+        Expanded(
+          child: healthState.when(
+            loading: () => AuthFeatureFlags.newUiEnabled
+                ? const HomeLoadingState()
+                : const LoadingState(message: 'Checking the platform...'),
+            error: (error, _) => ErrorState(
+              error: error,
+              message: friendlyError(error),
+              onRetry: () => ref.invalidate(adminHealthProvider),
+            ),
+            data: (health) {
+              final ok = health['ok'] == true;
+              final realtimeConfigured =
+                  (health['realtime'] as Map?)?['configured'] == true;
+              final storage =
+                  (health['storage'] as Map?)?['configured'] == true;
+              final configWarnings =
+                  (health['configuration'] as Map?)?.values
+                      .where((value) => value != true)
+                      .length ??
+                  0;
+              final migrations = health['migrations'] is List
+                  ? (health['migrations'] as List).whereType<Map>().toList()
+                  : const <Map>[];
+              final theme = Theme.of(context);
+              return RefreshIndicator(
+                onRefresh: () async => ref.invalidate(adminHealthProvider),
+                child: ListView(
+                  padding: AppPageInsets.withSafeAreaBottom(
+                    context,
+                    AppPageInsets.standard,
+                  ),
+                  children: [
+                    Text(
+                      'Platform diagnostics',
+                      style: theme.textTheme.headlineMedium,
+                    ),
+                    const SizedBox(height: AppSpace.lg),
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: AppSpace.md,
+                      crossAxisSpacing: AppSpace.md,
+                      childAspectRatio: 1.45,
+                      children: [
+                        _HealthTile(
+                          label: 'System',
+                          value: ok ? 'Healthy' : 'Attention required',
+                          healthy: ok,
+                        ),
+                        _HealthTile(
+                          label: 'Realtime',
+                          value: realtimeConfigured
+                              ? 'Available'
+                              : 'Not configured',
+                          healthy: realtimeConfigured,
+                        ),
+                        _HealthTile(
+                          label: 'Storage',
+                          value: storage ? 'Configured' : 'Not configured',
+                          healthy: storage,
+                        ),
+                        _HealthTile(
+                          label: 'Configuration',
+                          value: configWarnings == 0
+                              ? 'Complete'
+                              : '$configWarnings to review',
+                          healthy: configWarnings == 0,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpace.xl),
+                    Text('MIGRATION CHECKS', style: theme.textTheme.labelSmall),
+                    const SizedBox(height: AppSpace.md),
+                    if (migrations.isEmpty)
+                      const EmptyState(
+                        icon: Icons.storage_outlined,
+                        title: 'No migration checks reported.',
+                      ),
+                    for (final item in migrations)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpace.md),
+                        child: SurfaceCard(
+                          padding: EdgeInsets.zero,
+                          child: AppListRow(
+                            leading: StatusDot(
+                              healthy: item['applied'] == true,
+                            ),
+                            title: (item['table'] ?? 'Table').toString(),
+                            subtitle: item['applied'] == true
+                                ? 'Available'
+                                : (item['error'] ?? 'Unavailable').toString(),
+                            trailing: item['applied'] == true
+                                ? null
+                                : TextButton(
+                                    onPressed: () =>
+                                        ref.invalidate(adminHealthProvider),
+                                    child: const Text('Retry'),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    if (configWarnings > 0) ...[
+                      const SizedBox(height: AppSpace.md),
+                      SurfaceCard(
+                        child: AppListRow(
+                          leading: Icon(
+                            Icons.warning_amber_outlined,
+                            color: context.colors.warning.fg,
+                          ),
+                          title: 'Configuration warnings',
+                          subtitle:
+                              'One or more integrations are not configured.',
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpace.xl),
+                    SecondaryButton(
+                      label: 'Run storage cleanup',
+                      icon: Icons.cleaning_services_outlined,
+                      onPressed: () => _cleanup(context, ref),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 

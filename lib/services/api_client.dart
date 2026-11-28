@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 
 import '../app/auth_feature_flags.dart';
 import '../models/account.dart';
+import '../models/admin_dashboard_summary.dart';
 import '../models/admin_enquiry_page.dart';
 import '../models/booking.dart';
 import '../models/booking_service_details.dart';
@@ -19,6 +20,7 @@ import 'api/api_types.dart';
 import 'api/auth_api.dart';
 import 'api/customer_api.dart';
 import 'api/notification_api.dart';
+import 'api/partner_api.dart';
 import 'api/vendor_api.dart';
 import 'api_base.dart';
 
@@ -57,6 +59,7 @@ class ApiClient implements ApiTransport {
   late final CustomerApi _customer = CustomerApi(this);
   late final VendorApi _vendor = VendorApi(this);
   late final AdminApi _admin = AdminApi(this);
+  late final PartnerApi _partner = PartnerApi(this);
   late final NotificationApi _notificationApi = NotificationApi(this);
 
   String get baseUrl => _core.baseUrl;
@@ -71,22 +74,20 @@ class ApiClient implements ApiTransport {
     List<int>? bodyBytes,
     String contentType = 'application/json',
     bool retry = true,
-  }) =>
-      _core.request(
-        method,
-        path,
-        body: body,
-        bodyBytes: bodyBytes,
-        contentType: contentType,
-        retry: retry,
-      );
+  }) => _core.request(
+    method,
+    path,
+    body: body,
+    bodyBytes: bodyBytes,
+    contentType: contentType,
+    retry: retry,
+  );
 
   @override
   Future<http.Response> sendRequest(
     http.BaseRequest request, {
     Duration timeout = const Duration(seconds: 20),
-  }) =>
-      _core.sendRequest(request, timeout: timeout);
+  }) => _core.sendRequest(request, timeout: timeout);
 
   /// Evicts cached read-mostly GET responses, optionally for one endpoint.
   ///
@@ -136,54 +137,50 @@ class ApiClient implements ApiTransport {
     double? latitude,
     double? longitude,
     String? selfieJpegBase64,
-  }) =>
-      _auth.signup(
-        email: email,
-        password: password,
-        name: name,
-        phone: phone,
-        themeMode: themeMode,
-        role: role,
-        businessName: businessName,
-        serviceZone: serviceZone,
-        latitude: latitude,
-        longitude: longitude,
-        selfieJpegBase64: selfieJpegBase64,
-      );
+  }) => _auth.signup(
+    email: email,
+    password: password,
+    name: name,
+    phone: phone,
+    themeMode: themeMode,
+    role: role,
+    businessName: businessName,
+    serviceZone: serviceZone,
+    latitude: latitude,
+    longitude: longitude,
+    selfieJpegBase64: selfieJpegBase64,
+  );
 
   Future<void> requestPasswordReset(String email) =>
       _auth.requestPasswordReset(email);
 
   Future<({String challengeId, PhoneOtpChannel channel})> requestPhoneAuthOtp(
-          String phone) =>
-      _auth.requestPhoneAuthOtp(phone);
+    String phone,
+  ) => _auth.requestPhoneAuthOtp(phone);
 
   Future<AuthResult> verifyPhoneAuthOtp({
     required String phone,
     required String challengeId,
     required String otp,
     String? name,
-  }) =>
-      _auth.verifyPhoneAuthOtp(
-        phone: phone,
-        challengeId: challengeId,
-        otp: otp,
-        name: name,
-      );
+  }) => _auth.verifyPhoneAuthOtp(
+    phone: phone,
+    challengeId: challengeId,
+    otp: otp,
+    name: name,
+  );
 
   Future<PhoneVerificationState> phoneVerification() =>
       _auth.phoneVerification();
 
   Future<PhoneVerificationChallenge> requestAccountPhoneVerification(
     String phone,
-  ) =>
-      _auth.requestAccountPhoneVerification(phone);
+  ) => _auth.requestAccountPhoneVerification(phone);
 
   Future<PhoneVerificationResult> confirmAccountPhoneVerification({
     required String phone,
     required String code,
-  }) =>
-      _auth.confirmAccountPhoneVerification(phone: phone, code: code);
+  }) => _auth.confirmAccountPhoneVerification(phone: phone, code: code);
 
   Future<String> requestEmailLinkCode(String email) =>
       _auth.requestEmailLinkCode(email);
@@ -192,25 +189,25 @@ class ApiClient implements ApiTransport {
     required String email,
     required String challengeId,
     required String otp,
-  }) =>
-      _auth.confirmEmailLinkCode(
-        email: email,
-        challengeId: challengeId,
-        otp: otp,
-      );
+  }) => _auth.confirmEmailLinkCode(
+    email: email,
+    challengeId: challengeId,
+    otp: otp,
+  );
 
   Future<SessionUser> currentUserProfile() => _auth.currentUserProfile();
 
   Future<String> requestPhoneOtp(String phone) => _auth.requestPhoneOtp(phone);
 
   Future<
-      ({
-        String? challengeId,
-        PhoneOtpChannel? channel,
-        String? emailChallengeId,
-        int resendAfterSeconds
-      })> requestBookingOtp(
-          {required String phone, String? email}) =>
+    ({
+      String? challengeId,
+      PhoneOtpChannel? channel,
+      String? emailChallengeId,
+      int resendAfterSeconds,
+    })
+  >
+  requestBookingOtp({required String phone, String? email}) =>
       _auth.requestBookingOtp(phone: phone, email: email);
 
   Future<String> requestRegisteredBookingEmailOtp({required String phone}) =>
@@ -223,15 +220,14 @@ class ApiClient implements ApiTransport {
     String? email,
     String? emailChallengeId,
     String? emailOtp,
-  }) =>
-      _auth.verifyPhoneOtp(
-        phone: phone,
-        challengeId: challengeId,
-        otp: otp,
-        email: email,
-        emailChallengeId: emailChallengeId,
-        emailOtp: emailOtp,
-      );
+  }) => _auth.verifyPhoneOtp(
+    phone: phone,
+    challengeId: challengeId,
+    otp: otp,
+    email: email,
+    emailChallengeId: emailChallengeId,
+    emailOtp: emailOtp,
+  );
 
   Future<String> requestEmailAuthOtp(String email) =>
       _auth.requestEmailAuthOtp(email);
@@ -242,17 +238,36 @@ class ApiClient implements ApiTransport {
     required String otp,
     String? name,
     String? phone,
-  }) =>
-      _auth.verifyEmailAuthOtp(
-        email: email,
-        challengeId: challengeId,
-        otp: otp,
-        name: name,
-        phone: phone,
-      );
+  }) => _auth.verifyEmailAuthOtp(
+    email: email,
+    challengeId: challengeId,
+    otp: otp,
+    name: name,
+    phone: phone,
+  );
 
   Future<void> updateThemePreference(String themeMode) =>
       _auth.updateThemePreference(themeMode);
+
+  Future<bool> partnerApplicationOtpRequired() =>
+      _partner.partnerApplicationOtpRequired();
+
+  Future<String> requestPartnerApplicationOtp(String phone) =>
+      _partner.requestPartnerApplicationOtp(phone);
+
+  Future<void> verifyPartnerApplicationOtp({
+    required String phone,
+    required String challengeId,
+    required String otp,
+  }) => _partner.verifyPartnerApplicationOtp(
+    phone: phone,
+    challengeId: challengeId,
+    otp: otp,
+  );
+
+  Future<PartnerApplicationReceipt> submitPartnerApplication({
+    required Map<String, dynamic> application,
+  }) => _partner.submitPartnerApplication(application: application);
 
   Future<void> saveMpin(String pin) => _auth.saveMpin(pin);
 
@@ -276,22 +291,21 @@ class ApiClient implements ApiTransport {
     double? latitude,
     double? longitude,
     String? idempotencyKey,
-  }) =>
-      _customer.createBooking(
-        serviceId: serviceId,
-        capacity: capacity,
-        location: location,
-        deliveryDate: deliveryDate,
-        services: services,
-        notes: notes,
-        paymentMethod: paymentMethod,
-        couponCode: couponCode,
-        phone: phone,
-        phoneVerificationChallengeId: phoneVerificationChallengeId,
-        latitude: latitude,
-        longitude: longitude,
-        idempotencyKey: idempotencyKey,
-      );
+  }) => _customer.createBooking(
+    serviceId: serviceId,
+    capacity: capacity,
+    location: location,
+    deliveryDate: deliveryDate,
+    services: services,
+    notes: notes,
+    paymentMethod: paymentMethod,
+    couponCode: couponCode,
+    phone: phone,
+    phoneVerificationChallengeId: phoneVerificationChallengeId,
+    latitude: latitude,
+    longitude: longitude,
+    idempotencyKey: idempotencyKey,
+  );
 
   Future<Map<String, dynamic>> createMultiServiceOrder({
     required String idempotencyKey,
@@ -300,15 +314,14 @@ class ApiClient implements ApiTransport {
     String? phone,
     String? phoneVerificationChallengeId,
     String? couponCode,
-  }) =>
-      _customer.createMultiServiceOrder(
-        idempotencyKey: idempotencyKey,
-        paymentMethod: paymentMethod,
-        items: items,
-        phone: phone,
-        phoneVerificationChallengeId: phoneVerificationChallengeId,
-        couponCode: couponCode,
-      );
+  }) => _customer.createMultiServiceOrder(
+    idempotencyKey: idempotencyKey,
+    paymentMethod: paymentMethod,
+    items: items,
+    phone: phone,
+    phoneVerificationChallengeId: phoneVerificationChallengeId,
+    couponCode: couponCode,
+  );
 
   Future<void> cancelUnpaidMultiServiceOrder(
     String orderId, {
@@ -320,41 +333,34 @@ class ApiClient implements ApiTransport {
     required String orderId,
     required String itemId,
     required Map<String, dynamic> changes,
-  }) =>
-      _customer.updateMultiServiceOrderItem(
-        orderId: orderId,
-        itemId: itemId,
-        changes: changes,
-      );
+  }) => _customer.updateMultiServiceOrderItem(
+    orderId: orderId,
+    itemId: itemId,
+    changes: changes,
+  );
 
   Future<Map<String, dynamic>> cancelMultiServiceOrderItem({
     required String orderId,
     required String itemId,
-  }) =>
-      _customer.cancelMultiServiceOrderItem(
-        orderId: orderId,
-        itemId: itemId,
-      );
+  }) => _customer.cancelMultiServiceOrderItem(orderId: orderId, itemId: itemId);
 
   Future<Map<String, dynamic>> requestMultiServiceDeliveryOtp({
     required String orderId,
     required String fulfilmentId,
-  }) =>
-      _customer.requestMultiServiceDeliveryOtp(
-        orderId: orderId,
-        fulfilmentId: fulfilmentId,
-      );
+  }) => _customer.requestMultiServiceDeliveryOtp(
+    orderId: orderId,
+    fulfilmentId: fulfilmentId,
+  );
 
   Future<void> rateMultiServiceFulfilment({
     required String fulfilmentId,
     required int rating,
     String? review,
-  }) =>
-      _customer.rateMultiServiceFulfilment(
-        fulfilmentId: fulfilmentId,
-        rating: rating,
-        review: review,
-      );
+  }) => _customer.rateMultiServiceFulfilment(
+    fulfilmentId: fulfilmentId,
+    rating: rating,
+    review: review,
+  );
 
   Future<RazorpayOrder> createRazorpayOrder(String bookingId) =>
       _customer.createRazorpayOrder(bookingId);
@@ -363,12 +369,11 @@ class ApiClient implements ApiTransport {
     required String orderId,
     required String paymentId,
     required String signature,
-  }) =>
-      _customer.verifyRazorpayPayment(
-        orderId: orderId,
-        paymentId: paymentId,
-        signature: signature,
-      );
+  }) => _customer.verifyRazorpayPayment(
+    orderId: orderId,
+    paymentId: paymentId,
+    signature: signature,
+  );
 
   Future<void> cancelOnlinePayment(String bookingId, {String? couponCode}) =>
       _customer.cancelOnlinePayment(bookingId, couponCode: couponCode);
@@ -395,21 +400,20 @@ class ApiClient implements ApiTransport {
     String? phoneVerificationChallengeId,
     double? latitude,
     double? longitude,
-  }) =>
-      _customer.previewBookingQuote(
-        serviceId: serviceId,
-        capacity: capacity,
-        location: location,
-        deliveryDate: deliveryDate,
-        services: services,
-        notes: notes,
-        paymentMethod: paymentMethod,
-        couponCode: couponCode,
-        phone: phone,
-        phoneVerificationChallengeId: phoneVerificationChallengeId,
-        latitude: latitude,
-        longitude: longitude,
-      );
+  }) => _customer.previewBookingQuote(
+    serviceId: serviceId,
+    capacity: capacity,
+    location: location,
+    deliveryDate: deliveryDate,
+    services: services,
+    notes: notes,
+    paymentMethod: paymentMethod,
+    couponCode: couponCode,
+    phone: phone,
+    phoneVerificationChallengeId: phoneVerificationChallengeId,
+    latitude: latitude,
+    longitude: longitude,
+  );
 
   /// Loads every booking by following `nextOffset` from the server.
   Future<List<Booking>> bookings() => _customer.bookings();
@@ -426,26 +430,21 @@ class ApiClient implements ApiTransport {
   Future<PublicTrackingSnapshot> publicTracking(String token) =>
       _customer.publicTracking(token);
 
-  Future<Booking> cancelBooking(String bookingId) =>
-      _customer.cancelBooking(bookingId);
+  Future<Booking> cancelBooking(String bookingId, {String? reason}) =>
+      _customer.cancelBooking(bookingId, reason: reason);
 
-  Future<Booking> rescheduleBooking(
-    String bookingId,
-    DateTime scheduledFor,
-  ) =>
+  Future<Booking> rescheduleBooking(String bookingId, DateTime scheduledFor) =>
       _customer.rescheduleBooking(bookingId, scheduledFor);
 
   Future<({String otp, DateTime expiresAt, bool smsSent})> requestDeliveryOtp(
     String bookingId,
-  ) =>
-      _customer.requestDeliveryOtp(bookingId);
+  ) => _customer.requestDeliveryOtp(bookingId);
 
   Future<void> rateBooking(
     String bookingId, {
     required int rating,
     String? review,
-  }) =>
-      _customer.rateBooking(bookingId, rating: rating, review: review);
+  }) => _customer.rateBooking(bookingId, rating: rating, review: review);
 
   Future<CustomerProfile> profile() => _customer.profile();
 
@@ -458,15 +457,14 @@ class ApiClient implements ApiTransport {
     String? phoneVerificationChallengeId,
     String? emailVerificationChallengeId,
     String? currentPassword,
-  }) =>
-      _customer.updateProfile(
-        name: name,
-        email: email,
-        phone: phone,
-        phoneVerificationChallengeId: phoneVerificationChallengeId,
-        emailVerificationChallengeId: emailVerificationChallengeId,
-        currentPassword: currentPassword,
-      );
+  }) => _customer.updateProfile(
+    name: name,
+    email: email,
+    phone: phone,
+    phoneVerificationChallengeId: phoneVerificationChallengeId,
+    emailVerificationChallengeId: emailVerificationChallengeId,
+    currentPassword: currentPassword,
+  );
 
   Future<List<AccountRecord>> addresses() => _customer.addresses();
 
@@ -476,14 +474,13 @@ class ApiClient implements ApiTransport {
     required String city,
     required String pincode,
     bool isDefault = false,
-  }) =>
-      _customer.createAddress(
-        label: label,
-        address: address,
-        city: city,
-        pincode: pincode,
-        isDefault: isDefault,
-      );
+  }) => _customer.createAddress(
+    label: label,
+    address: address,
+    city: city,
+    pincode: pincode,
+    isDefault: isDefault,
+  );
 
   Future<AccountRecord> updateAddress(
     String id, {
@@ -492,15 +489,14 @@ class ApiClient implements ApiTransport {
     String? city,
     String? pincode,
     bool? isDefault,
-  }) =>
-      _customer.updateAddress(
-        id,
-        label: label,
-        address: address,
-        city: city,
-        pincode: pincode,
-        isDefault: isDefault,
-      );
+  }) => _customer.updateAddress(
+    id,
+    label: label,
+    address: address,
+    city: city,
+    pincode: pincode,
+    isDefault: isDefault,
+  );
 
   Future<void> deleteAddress(String id) => _customer.deleteAddress(id);
 
@@ -515,8 +511,7 @@ class ApiClient implements ApiTransport {
   Future<AccountRecord> createSupportRequest({
     required String subject,
     required String message,
-  }) =>
-      _customer.createSupportRequest(subject: subject, message: message);
+  }) => _customer.createSupportRequest(subject: subject, message: message);
 
   Future<AccountRecord> supportRequest(String id) =>
       _customer.supportRequest(id);
@@ -532,12 +527,11 @@ class ApiClient implements ApiTransport {
     required String propertyType,
     required String address,
     required double estimate,
-  }) =>
-      _customer.createContract(
-        propertyType: propertyType,
-        address: address,
-        estimate: estimate,
-      );
+  }) => _customer.createContract(
+    propertyType: propertyType,
+    address: address,
+    estimate: estimate,
+  );
 
   Future<CustomerUsage> usage() => _customer.usage();
 
@@ -547,12 +541,11 @@ class ApiClient implements ApiTransport {
     required String code,
     required String serviceCode,
     required double amount,
-  }) =>
-      _customer.validateCoupon(
-        code: code,
-        serviceCode: serviceCode,
-        amount: amount,
-      );
+  }) => _customer.validateCoupon(
+    code: code,
+    serviceCode: serviceCode,
+    amount: amount,
+  );
 
   Future<List<AccountRecord>> membershipPlans() => _customer.membershipPlans();
 
@@ -571,6 +564,8 @@ class ApiClient implements ApiTransport {
 
   Future<VendorDashboard> vendorDashboard() => _vendor.vendorDashboard();
 
+  Future<VendorBusinessProfile> vendorProfile() => _vendor.vendorProfile();
+
   Future<List<VendorOrder>> vendorOrders() async {
     final legacyOrders = await _vendor.vendorOrders();
     if (!AuthFeatureFlags.multiServiceOrders) return legacyOrders;
@@ -581,6 +576,9 @@ class ApiClient implements ApiTransport {
     ];
   }
 
+  Future<Map<String, dynamic>> vendorSalesReport(String period) =>
+      _vendor.vendorSalesReport(period);
+
   Future<void> acceptMultiServiceOffer(String offerId) =>
       _vendor.acceptMultiServiceOffer(offerId);
 
@@ -590,19 +588,17 @@ class ApiClient implements ApiTransport {
   Future<void> transitionMultiServiceFulfilment(
     String fulfilmentId,
     String status,
-  ) =>
-      _vendor.transitionMultiServiceFulfilment(fulfilmentId, status);
+  ) => _vendor.transitionMultiServiceFulfilment(fulfilmentId, status);
 
   Future<void> updateMultiServiceFulfilmentLocation({
     required String fulfilmentId,
     required double latitude,
     required double longitude,
-  }) =>
-      _vendor.updateMultiServiceFulfilmentLocation(
-        fulfilmentId: fulfilmentId,
-        latitude: latitude,
-        longitude: longitude,
-      );
+  }) => _vendor.updateMultiServiceFulfilmentLocation(
+    fulfilmentId: fulfilmentId,
+    latitude: latitude,
+    longitude: longitude,
+  );
 
   Future<void> dropMultiServiceFulfilment(String fulfilmentId) =>
       _vendor.dropMultiServiceFulfilment(fulfilmentId);
@@ -610,11 +606,10 @@ class ApiClient implements ApiTransport {
   Future<void> verifyMultiServiceFulfilmentDelivery({
     required String fulfilmentId,
     required String otp,
-  }) =>
-      _vendor.verifyMultiServiceFulfilmentDelivery(
-        fulfilmentId: fulfilmentId,
-        otp: otp,
-      );
+  }) => _vendor.verifyMultiServiceFulfilmentDelivery(
+    fulfilmentId: fulfilmentId,
+    otp: otp,
+  );
 
   Future<List<VendorVehicle>> vendorVehicles() => _vendor.vendorVehicles();
 
@@ -624,25 +619,23 @@ class ApiClient implements ApiTransport {
     required String registrationNumber,
     required int capacityLitres,
     bool isActive = true,
-  }) =>
-      _vendor.createVendorVehicle(
-        registrationNumber: registrationNumber,
-        capacityLitres: capacityLitres,
-        isActive: isActive,
-      );
+  }) => _vendor.createVendorVehicle(
+    registrationNumber: registrationNumber,
+    capacityLitres: capacityLitres,
+    isActive: isActive,
+  );
 
   Future<VendorVehicle> updateVendorVehicle(
     String id, {
     String? registrationNumber,
     int? capacityLitres,
     bool? isActive,
-  }) =>
-      _vendor.updateVendorVehicle(
-        id,
-        registrationNumber: registrationNumber,
-        capacityLitres: capacityLitres,
-        isActive: isActive,
-      );
+  }) => _vendor.updateVendorVehicle(
+    id,
+    registrationNumber: registrationNumber,
+    capacityLitres: capacityLitres,
+    isActive: isActive,
+  );
 
   Future<VendorDriver> createVendorDriver({
     required String name,
@@ -651,15 +644,14 @@ class ApiClient implements ApiTransport {
     bool isActive = true,
     double? latitude,
     double? longitude,
-  }) =>
-      _vendor.createVendorDriver(
-        name: name,
-        mobile: mobile,
-        licenceNumber: licenceNumber,
-        isActive: isActive,
-        latitude: latitude,
-        longitude: longitude,
-      );
+  }) => _vendor.createVendorDriver(
+    name: name,
+    mobile: mobile,
+    licenceNumber: licenceNumber,
+    isActive: isActive,
+    latitude: latitude,
+    longitude: longitude,
+  );
 
   Future<VendorDriver> updateVendorDriver(
     String id, {
@@ -669,51 +661,47 @@ class ApiClient implements ApiTransport {
     bool? isActive,
     double? latitude,
     double? longitude,
-  }) =>
-      _vendor.updateVendorDriver(
-        id,
-        name: name,
-        mobile: mobile,
-        licenceNumber: licenceNumber,
-        isActive: isActive,
-        latitude: latitude,
-        longitude: longitude,
-      );
+  }) => _vendor.updateVendorDriver(
+    id,
+    name: name,
+    mobile: mobile,
+    licenceNumber: licenceNumber,
+    isActive: isActive,
+    latitude: latitude,
+    longitude: longitude,
+  );
 
   Future<VendorPayout> requestVendorPayout({
     required double amount,
     DateTime? periodStart,
     DateTime? periodEnd,
-  }) =>
-      _vendor.requestVendorPayout(
-        amount: amount,
-        periodStart: periodStart,
-        periodEnd: periodEnd,
-      );
+  }) => _vendor.requestVendorPayout(
+    amount: amount,
+    periodStart: periodStart,
+    periodEnd: periodEnd,
+  );
 
   Future<VendorOrder> verifyVendorDelivery({
     required String orderId,
     String? otp,
     String? proofPath,
-  }) =>
-      _vendor.verifyVendorDelivery(
-        orderId: orderId,
-        otp: otp,
-        proofPath: proofPath,
-      );
+  }) => _vendor.verifyVendorDelivery(
+    orderId: orderId,
+    otp: otp,
+    proofPath: proofPath,
+  );
 
   Future<void> updateVendorLocation({
     required String bookingId,
     required double latitude,
     required double longitude,
     double? accuracy,
-  }) =>
-      _vendor.updateVendorLocation(
-        bookingId: bookingId,
-        latitude: latitude,
-        longitude: longitude,
-        accuracy: accuracy,
-      );
+  }) => _vendor.updateVendorLocation(
+    bookingId: bookingId,
+    latitude: latitude,
+    longitude: longitude,
+    accuracy: accuracy,
+  );
 
   Future<List<VendorPayout>> vendorPayouts() => _vendor.vendorPayouts();
 
@@ -724,23 +712,21 @@ class ApiClient implements ApiTransport {
     required String id,
     required String status,
     String? resolution,
-  }) =>
-      _vendor.updateVendorComplaint(
-        id: id,
-        status: status,
-        resolution: resolution,
-      );
+  }) => _vendor.updateVendorComplaint(
+    id: id,
+    status: status,
+    resolution: resolution,
+  );
 
   Future<Map<String, dynamic>> createVendorComplaint({
     required String bookingId,
     required String subject,
     required String message,
-  }) =>
-      _vendor.createVendorComplaint(
-        bookingId: bookingId,
-        subject: subject,
-        message: message,
-      );
+  }) => _vendor.createVendorComplaint(
+    bookingId: bookingId,
+    subject: subject,
+    message: message,
+  );
 
   Future<List<Map<String, dynamic>>> vendorDocuments() =>
       _vendor.vendorDocuments();
@@ -749,64 +735,58 @@ class ApiClient implements ApiTransport {
     required String documentType,
     required String objectKey,
     String? expiresOn,
-  }) =>
-      _vendor.createVendorDocument(
-        documentType: documentType,
-        objectKey: objectKey,
-        expiresOn: expiresOn,
-      );
+  }) => _vendor.createVendorDocument(
+    documentType: documentType,
+    objectKey: objectKey,
+    expiresOn: expiresOn,
+  );
 
   Future<String> uploadVendorFile({
     required String fileName,
     required String contentType,
     required List<int> bytes,
-  }) =>
-      _vendor.uploadVendorFile(
-        fileName: fileName,
-        contentType: contentType,
-        bytes: bytes,
-      );
+  }) => _vendor.uploadVendorFile(
+    fileName: fileName,
+    contentType: contentType,
+    bytes: bytes,
+  );
 
   Future<Map<String, dynamic>> updateVendorDocument({
     required String id,
     String? objectKey,
     String? documentType,
     String? expiresOn,
-  }) =>
-      _vendor.updateVendorDocument(
-        id: id,
-        objectKey: objectKey,
-        documentType: documentType,
-        expiresOn: expiresOn,
-      );
+  }) => _vendor.updateVendorDocument(
+    id: id,
+    objectKey: objectKey,
+    documentType: documentType,
+    expiresOn: expiresOn,
+  );
 
   Future<Map<String, dynamic>> updateVendorAttendance({
     required String driverId,
     required String status,
     DateTime? date,
-  }) =>
-      _vendor.updateVendorAttendance(
-        driverId: driverId,
-        status: status,
-        date: date,
-      );
+  }) => _vendor.updateVendorAttendance(
+    driverId: driverId,
+    status: status,
+    date: date,
+  );
 
   Future<List<Map<String, dynamic>>> vendorAttendance({
     String? driverId,
     DateTime? date,
-  }) =>
-      _vendor.vendorAttendance(driverId: driverId, date: date);
+  }) => _vendor.vendorAttendance(driverId: driverId, date: date);
 
   Future<List<VendorService>> vendorServices() => _vendor.vendorServices();
 
   Future<Map<String, dynamic>> updateVendorServiceAvailability({
     required String serviceCode,
     required bool enabled,
-  }) =>
-      _vendor.updateVendorServiceAvailability(
-        serviceCode: serviceCode,
-        enabled: enabled,
-      );
+  }) => _vendor.updateVendorServiceAvailability(
+    serviceCode: serviceCode,
+    enabled: enabled,
+  );
 
   Future<VendorOrder> transitionVendorOrder(
     String orderId, {
@@ -815,15 +795,14 @@ class ApiClient implements ApiTransport {
     String? reason,
     String? vehicleId,
     String? driverId,
-  }) =>
-      _vendor.transitionVendorOrder(
-        orderId,
-        action: action,
-        status: status,
-        reason: reason,
-        vehicleId: vehicleId,
-        driverId: driverId,
-      );
+  }) => _vendor.transitionVendorOrder(
+    orderId,
+    action: action,
+    status: status,
+    reason: reason,
+    vehicleId: vehicleId,
+    driverId: driverId,
+  );
 
   Future<List<VendorOfflineMutation>> vendorOfflineMutations() =>
       _vendor.vendorOfflineMutations();
@@ -833,13 +812,12 @@ class ApiClient implements ApiTransport {
     required String entityType,
     String? entityId,
     required Map<String, dynamic> payload,
-  }) =>
-      _vendor.queueVendorMutation(
-        mutationType: mutationType,
-        entityType: entityType,
-        entityId: entityId,
-        payload: payload,
-      );
+  }) => _vendor.queueVendorMutation(
+    mutationType: mutationType,
+    entityType: entityType,
+    entityId: entityId,
+    payload: payload,
+  );
 
   Future<VendorOfflineMutation> retryVendorMutation(String id) =>
       _vendor.retryVendorMutation(id);
@@ -864,13 +842,12 @@ class ApiClient implements ApiTransport {
     required String registrationNumber,
     required int capacityLitres,
     List<String> supportedServices = const [],
-  }) =>
-      _admin.createAdminVehicle(
-        vendorId: vendorId,
-        registrationNumber: registrationNumber,
-        capacityLitres: capacityLitres,
-        supportedServices: supportedServices,
-      );
+  }) => _admin.createAdminVehicle(
+    vendorId: vendorId,
+    registrationNumber: registrationNumber,
+    capacityLitres: capacityLitres,
+    supportedServices: supportedServices,
+  );
 
   Future<AdminFleetDriver> createAdminDriver({
     required String vendorId,
@@ -879,56 +856,61 @@ class ApiClient implements ApiTransport {
     required String licenceNumber,
     double? latitude,
     double? longitude,
-  }) =>
-      _admin.createAdminDriver(
-        vendorId: vendorId,
-        name: name,
-        mobile: mobile,
-        licenceNumber: licenceNumber,
-        latitude: latitude,
-        longitude: longitude,
-      );
+  }) => _admin.createAdminDriver(
+    vendorId: vendorId,
+    name: name,
+    mobile: mobile,
+    licenceNumber: licenceNumber,
+    latitude: latitude,
+    longitude: longitude,
+  );
 
   Future<void> updateAdminVehicleStatus(
     String id, {
     required String verification,
     required bool isActive,
-  }) =>
-      _admin.updateAdminVehicleStatus(
-        id,
-        verification: verification,
-        isActive: isActive,
-      );
+  }) => _admin.updateAdminVehicleStatus(
+    id,
+    verification: verification,
+    isActive: isActive,
+  );
 
   Future<void> updateAdminDriverStatus(
     String id, {
     required String verification,
     required bool isActive,
-  }) =>
-      _admin.updateAdminDriverStatus(
-        id,
-        verification: verification,
-        isActive: isActive,
-      );
+  }) => _admin.updateAdminDriverStatus(
+    id,
+    verification: verification,
+    isActive: isActive,
+  );
 
   Future<Map<String, dynamic>> adminHealth() => _admin.adminHealth();
+
+  Future<AdminDashboardSummary> adminDashboardSummary() =>
+      _admin.adminDashboardSummary();
 
   Future<bool> adminApprovalRequiredEnabled() =>
       _admin.adminApprovalRequiredEnabled();
 
   Future<List<Map<String, dynamic>>> adminUsers() => _admin.adminUsers();
 
-  Future<void> setAdminUserActive(
-    String id, {
-    required bool isActive,
-  }) =>
+  Future<void> setAdminUserActive(String id, {required bool isActive}) =>
       _admin.setAdminUserActive(id, isActive: isActive);
+
+  Future<void> approveRejectedAdminUser(String id) =>
+      _admin.approveRejectedAdminUser(id);
+
+  Future<void> deleteAdminUser(String id, {required String kind}) =>
+      _admin.deleteAdminUser(id, kind: kind);
+
+  Future<void> reactivateAdminAccessRequest(String id) =>
+      _admin.reactivateAdminAccessRequest(id);
 
   Future<void> reviewAdminAccessRequest(
     String id, {
     required String decision,
-  }) =>
-      _admin.reviewAdminAccessRequest(id, decision: decision);
+  }) => _admin.reviewAdminAccessRequest(id, decision: decision);
 
   Future<void> updateVendorVerification(String id, String status) =>
       _admin.updateVendorVerification(id, status);
@@ -955,7 +937,8 @@ class ApiClient implements ApiTransport {
     );
     if (!AuthFeatureFlags.multiServiceOrders) return legacyPage;
 
-    final legacyRows = (legacyPage['rows'] as List?)
+    final legacyRows =
+        (legacyPage['rows'] as List?)
             ?.whereType<Map>()
             .map((row) => Map<String, dynamic>.from(row))
             .toList() ??
@@ -975,25 +958,27 @@ class ApiClient implements ApiTransport {
       }
       final items = row['order_items'];
       if (service != null && service.isNotEmpty) {
-        final hasService = items is List &&
-            items.whereType<Map>().any((item) =>
-                item['service_type_id']?.toString() == service ||
-                (item['service_types'] is Map &&
-                    (item['service_types'] as Map)['code']?.toString() ==
-                        service));
+        final hasService =
+            items is List &&
+            items.whereType<Map>().any(
+              (item) =>
+                  item['service_type_id']?.toString() == service ||
+                  (item['service_types'] is Map &&
+                      (item['service_types'] as Map)['code']?.toString() ==
+                          service),
+            );
         if (!hasService) return false;
       }
       final fulfilments = row['order_fulfilments'];
-      final hasVendor = fulfilments is List &&
+      final hasVendor =
+          fulfilments is List &&
           fulfilments.whereType<Map>().any(
-                (fulfilment) => fulfilment['vendor_id']?.toString() == vendorId,
-              );
+            (fulfilment) => fulfilment['vendor_id']?.toString() == vendorId,
+          );
       if (vendorId != null && vendorId.isNotEmpty && !hasVendor) return false;
       if (assigned == true && !hasVendor) return false;
       if (assigned == false && hasVendor) return false;
-      final createdAt = DateTime.tryParse(
-        (row['created_at'] ?? '').toString(),
-      );
+      final createdAt = DateTime.tryParse((row['created_at'] ?? '').toString());
       if (from != null && from.isNotEmpty) {
         final start = DateTime.tryParse(from);
         if (createdAt != null && start != null && createdAt.isBefore(start)) {
@@ -1008,10 +993,12 @@ class ApiClient implements ApiTransport {
       }
       return true;
     }).toList();
-    final rows = [...legacyRows, ...filteredMultiRows]..sort((left, right) =>
-        (right['created_at'] ?? '')
-            .toString()
-            .compareTo((left['created_at'] ?? '').toString()));
+    final rows = [...legacyRows, ...filteredMultiRows]
+      ..sort(
+        (left, right) => (right['created_at'] ?? '').toString().compareTo(
+          (left['created_at'] ?? '').toString(),
+        ),
+      );
     final start = ((page - 1) * pageSize).clamp(0, rows.length).toInt();
     final end = (start + pageSize).clamp(0, rows.length).toInt();
     return {
@@ -1030,21 +1017,19 @@ class ApiClient implements ApiTransport {
     required String fulfilmentId,
     required String vendorId,
     required String reason,
-  }) =>
-      _admin.reassignMultiServiceFulfilment(
-        fulfilmentId: fulfilmentId,
-        vendorId: vendorId,
-        reason: reason,
-      );
+  }) => _admin.reassignMultiServiceFulfilment(
+    fulfilmentId: fulfilmentId,
+    vendorId: vendorId,
+    reason: reason,
+  );
 
   Future<void> completeMultiServiceFulfilment({
     required String fulfilmentId,
     required String reason,
-  }) =>
-      _admin.completeMultiServiceFulfilment(
-        fulfilmentId: fulfilmentId,
-        reason: reason,
-      );
+  }) => _admin.completeMultiServiceFulfilment(
+    fulfilmentId: fulfilmentId,
+    reason: reason,
+  );
 
   Future<List<DispatcherOrder>> dispatcherOrderRows({
     int page = 1,
@@ -1054,16 +1039,15 @@ class ApiClient implements ApiTransport {
     String? from,
     String? to,
     bool? assigned,
-  }) =>
-      _admin.dispatcherOrderRows(
-        page: page,
-        status: status,
-        service: service,
-        vendorId: vendorId,
-        from: from,
-        to: to,
-        assigned: assigned,
-      );
+  }) => _admin.dispatcherOrderRows(
+    page: page,
+    status: status,
+    service: service,
+    vendorId: vendorId,
+    from: from,
+    to: to,
+    assigned: assigned,
+  );
 
   Future<List<AccountRecord>> adminAlerts({String? status}) =>
       _admin.adminAlerts(status: status);
@@ -1081,13 +1065,20 @@ class ApiClient implements ApiTransport {
     String? vendorId,
     String? vehicleId,
     String? driverId,
-  }) =>
-      _admin.dispatcherAssignOrder(
-        orderId,
-        vendorId: vendorId,
-        vehicleId: vehicleId,
-        driverId: driverId,
-      );
+  }) => _admin.dispatcherAssignOrder(
+    orderId,
+    vendorId: vendorId,
+    vehicleId: vehicleId,
+    driverId: driverId,
+  );
+
+  Future<Map<String, dynamic>> dispatcherDriverContact(String orderId) =>
+      _admin.dispatcherDriverContact(orderId);
+
+  Future<bool> dispatcherNotifyCustomer({
+    required String orderId,
+    required String message,
+  }) => _admin.dispatcherNotifyCustomer(orderId: orderId, message: message);
 
   Future<AccountRecord> dispatcherUpdateStatus(String orderId, String status) =>
       _admin.dispatcherUpdateStatus(orderId, status);
@@ -1100,13 +1091,12 @@ class ApiClient implements ApiTransport {
     String? vendorId,
     String? vehicleId,
     String? driverId,
-  }) =>
-      _admin.assignAdminOrder(
-        id,
-        vendorId: vendorId,
-        vehicleId: vehicleId,
-        driverId: driverId,
-      );
+  }) => _admin.assignAdminOrder(
+    id,
+    vendorId: vendorId,
+    vehicleId: vehicleId,
+    driverId: driverId,
+  );
 
   Future<AccountRecord> updateAdminOrderStatus(String id, String status) =>
       _admin.updateAdminOrderStatus(id, status);
@@ -1122,8 +1112,7 @@ class ApiClient implements ApiTransport {
   Future<AccountRecord> updateAdminVendor(
     String id,
     Map<String, dynamic> body,
-  ) =>
-      _admin.updateAdminVendor(id, body);
+  ) => _admin.updateAdminVendor(id, body);
 
   Future<void> deleteAdminVendor(String id) => _admin.deleteAdminVendor(id);
 
@@ -1135,8 +1124,7 @@ class ApiClient implements ApiTransport {
   Future<AccountRecord> updateAdminCustomer(
     String id,
     Map<String, dynamic> body,
-  ) =>
-      _admin.updateAdminCustomer(id, body);
+  ) => _admin.updateAdminCustomer(id, body);
 
   Future<void> deleteAdminCustomer(String id) => _admin.deleteAdminCustomer(id);
 
@@ -1146,8 +1134,7 @@ class ApiClient implements ApiTransport {
   Future<AccountRecord> updateAdminCoupon(
     String id,
     Map<String, dynamic> body,
-  ) =>
-      _admin.updateAdminCoupon(id, body);
+  ) => _admin.updateAdminCoupon(id, body);
 
   Future<void> deleteAdminCoupon(String id) => _admin.deleteAdminCoupon(id);
 
@@ -1159,18 +1146,14 @@ class ApiClient implements ApiTransport {
   Future<AccountRecord> updateAdminService(
     String id,
     Map<String, dynamic> body,
-  ) =>
-      _admin.updateAdminService(id, body);
+  ) => _admin.updateAdminService(id, body);
 
   Future<List<AccountRecord>> adminPayouts() => _admin.adminPayouts();
 
   Future<List<AccountRecord>> adminPartnerApplications({String? status}) =>
       _admin.adminPartnerApplications(status: status);
 
-  Future<AdminEnquiryPage> adminEnquiries({
-    int page = 1,
-    int pageSize = 50,
-  }) =>
+  Future<AdminEnquiryPage> adminEnquiries({int page = 1, int pageSize = 50}) =>
       _admin.adminEnquiries(page: page, pageSize: pageSize);
 
   Future<AccountRecord> updateAdminEnquiry(
@@ -1178,11 +1161,7 @@ class ApiClient implements ApiTransport {
     required String status,
     String? responseNote,
   }) =>
-      _admin.updateAdminEnquiry(
-        id,
-        status: status,
-        responseNote: responseNote,
-      );
+      _admin.updateAdminEnquiry(id, status: status, responseNote: responseNote);
 
   Future<List<AccountRecord>> adminEnquiryHistory(String id) =>
       _admin.adminEnquiryHistory(id);
@@ -1191,15 +1170,17 @@ class ApiClient implements ApiTransport {
     String id, {
     required String status,
     String? reviewNote,
-  }) =>
-      _admin.reviewPartnerApplication(
-        id,
-        status: status,
-        reviewNote: reviewNote,
-      );
+  }) => _admin.reviewPartnerApplication(
+    id,
+    status: status,
+    reviewNote: reviewNote,
+  );
 
   Future<List<AccountRecord>> partnerApplicationHistory(String id) =>
       _admin.partnerApplicationHistory(id);
+
+  Future<List<AccountRecord>> partnerApplicationDocuments(String id) =>
+      _admin.partnerApplicationDocuments(id);
 
   Future<Map<String, dynamic>> adminReport(Map<String, dynamic> body) =>
       _admin.adminReport(body);
@@ -1220,13 +1201,12 @@ class ApiClient implements ApiTransport {
     String? actorId,
     String? action,
     String? entityType,
-  }) =>
-      _admin.adminAuditLogs(
-        page: page,
-        actorId: actorId,
-        action: action,
-        entityType: entityType,
-      );
+  }) => _admin.adminAuditLogs(
+    page: page,
+    actorId: actorId,
+    action: action,
+    entityType: entityType,
+  );
 
   // Notifications and devices.
 
@@ -1248,8 +1228,7 @@ class ApiClient implements ApiTransport {
   Future<void> registerDevice({
     required String token,
     required String platform,
-  }) =>
-      _notificationApi.registerDevice(token: token, platform: platform);
+  }) => _notificationApi.registerDevice(token: token, platform: platform);
 
   Future<void> unregisterDevice(String token) =>
       _notificationApi.unregisterDevice(token);

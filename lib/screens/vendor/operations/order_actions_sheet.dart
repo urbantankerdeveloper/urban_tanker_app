@@ -5,9 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../app/auth_feature_flags.dart';
 import '../../../app/providers.dart';
 import '../../../core/design_system/design_system.dart';
 import '../../../models/vendor.dart';
+import '../../../services/api_client.dart';
+import '../../../services/friendly_error.dart';
 import '../../../services/photo_permissions.dart';
 import '../../../services/temporary_photo.dart';
 
@@ -79,26 +82,27 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
     final theme = Theme.of(context);
     final vehicles = ref.watch(vendorVehiclesProvider).value ?? const [];
     final drivers = ref.watch(vendorDriversProvider).value ?? const [];
-    final assignableVehicles =
-        vehicles.where((item) => item.assignable).toList();
+    final assignableVehicles = vehicles
+        .where((item) => item.assignable)
+        .toList();
     final assignableDrivers = drivers.where((item) => item.assignable).toList();
     final assignedVehicleId =
         order.vehicleId ?? _vehicleIdForLabel(vehicles, order.vehicle);
     final assignedDriverId =
         order.driverId ?? _driverIdForLabel(drivers, order.driver);
-    final currentVehicleId = assignableVehicles.any(
-      (item) => item.id == assignedVehicleId,
-    )
+    final currentVehicleId =
+        assignableVehicles.any((item) => item.id == assignedVehicleId)
         ? assignedVehicleId
         : null;
-    final currentDriverId = assignableDrivers.any(
-      (item) => item.id == assignedDriverId,
-    )
+    final currentDriverId =
+        assignableDrivers.any((item) => item.id == assignedDriverId)
         ? assignedDriverId
         : null;
-    selectedVehicle ??= currentVehicleId ??
+    selectedVehicle ??=
+        currentVehicleId ??
         (assignableVehicles.isEmpty ? null : assignableVehicles.first.id);
-    selectedDriver ??= currentDriverId ??
+    selectedDriver ??=
+        currentDriverId ??
         (assignableDrivers.isEmpty ? null : assignableDrivers.first.id);
     final hasLocation = order.latitude != null && order.longitude != null;
     return SafeArea(
@@ -177,13 +181,16 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
               if (assignableVehicles.isNotEmpty)
                 DropdownButtonFormField<String>(
                   initialValue: selectedVehicle,
-                  decoration:
-                      const InputDecoration(labelText: 'Approved vehicle'),
+                  decoration: const InputDecoration(
+                    labelText: 'Approved vehicle',
+                  ),
                   items: assignableVehicles
-                      .map((item) => DropdownMenuItem(
-                            value: item.id,
-                            child: Text(item.registrationNumber),
-                          ))
+                      .map(
+                        (item) => DropdownMenuItem(
+                          value: item.id,
+                          child: Text(item.registrationNumber),
+                        ),
+                      )
                       .toList(),
                   onChanged: (value) => setState(() => selectedVehicle = value),
                 ),
@@ -191,13 +198,16 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
                 const SizedBox(height: AppSpace.md),
                 DropdownButtonFormField<String>(
                   initialValue: selectedDriver,
-                  decoration:
-                      const InputDecoration(labelText: 'Approved driver'),
+                  decoration: const InputDecoration(
+                    labelText: 'Approved driver',
+                  ),
                   items: assignableDrivers
-                      .map((item) => DropdownMenuItem(
-                            value: item.id,
-                            child: Text(item.name),
-                          ))
+                      .map(
+                        (item) => DropdownMenuItem(
+                          value: item.id,
+                          child: Text(item.name),
+                        ),
+                      )
                       .toList(),
                   onChanged: (value) => setState(() => selectedDriver = value),
                 ),
@@ -209,14 +219,14 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
                 onPressed: _saving
                     ? null
                     : selectedVehicle == null || selectedDriver == null
-                        ? () => _showAssignmentRequired(context)
-                        : () => _transition(
-                              context,
-                              ref,
-                              action: 'assign',
-                              vehicleId: selectedVehicle,
-                              driverId: selectedDriver,
-                            ),
+                    ? () => _showAssignmentRequired(context)
+                    : () => _transition(
+                        context,
+                        ref,
+                        action: 'assign',
+                        vehicleId: selectedVehicle,
+                        driverId: selectedDriver,
+                      ),
               ),
             ],
             if (order.status == 'pending_vendor' && order.offerId != null)
@@ -232,8 +242,8 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
                 onPressed: _saving
                     ? null
                     : assignedVehicleId == null || assignedDriverId == null
-                        ? () => _showAssignmentRequired(context)
-                        : () => _confirmAccept(context, ref),
+                    ? () => _showAssignmentRequired(context)
+                    : () => _confirmAccept(context, ref),
               ),
             if (order.status == 'vendor_assigned' && order.fulfilmentId != null)
               _statusButton(context, ref, 'en_route', 'Start delivery'),
@@ -253,8 +263,8 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
                 onPressed: _saving
                     ? null
                     : _sharingLocation
-                        ? _stopLocationSharing
-                        : _startLocationSharing,
+                    ? _stopLocationSharing
+                    : _startLocationSharing,
               ),
               const SizedBox(height: AppSpace.xs),
               Text(
@@ -364,20 +374,21 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
       _locationInterval,
       (_) => unawaited(_sendLatestPosition()),
     );
-    _locationSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 20,
-      ),
-    ).listen(
-      (position) {
-        _latestPosition = position;
-      },
-      onError: (Object error) {
-        _stopLocationSharing();
-        _showLocationMessage('Location sharing stopped: $error');
-      },
-    );
+    _locationSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 20,
+          ),
+        ).listen(
+          (position) {
+            _latestPosition = position;
+          },
+          onError: (Object error) {
+            _stopLocationSharing();
+            _showLocationMessage('Location sharing stopped: $error');
+          },
+        );
   }
 
   Future<void> _sendLatestPosition() async {
@@ -481,7 +492,7 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
         ..invalidate(vendorOrdersProvider)
         ..invalidate(vendorDashboardProvider);
       if (context.mounted) {
-        Navigator.pop(context, true);
+        Navigator.pop(context, action == 'accept' ? 'accepted' : 'updated');
         showAppSnack(
           context,
           'Order updated successfully.',
@@ -556,7 +567,10 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
       final photo = request.photo;
       String? proofPath;
       if (widget.order.fulfilmentId == null && photo != null) {
-        proofPath = await ref.read(appControllerProvider).api.uploadVendorFile(
+        proofPath = await ref
+            .read(appControllerProvider)
+            .api
+            .uploadVendorFile(
               fileName: photo.name,
               contentType: 'image/jpeg',
               bytes: await photo.readAsBytes(),
@@ -589,11 +603,33 @@ class _OrderActionsSheetState extends ConsumerState<OrderActionsSheet>
       }
     } catch (error) {
       if (context.mounted) {
-        showAppSnack(
-          context,
-          'Delivery verification failed: $error',
-          variant: AppSnackVariant.error,
-        );
+        final wrongOtp =
+            error is ApiException &&
+            error.statusCode == 400 &&
+            (error.message.toLowerCase().contains('invalid delivery otp') ||
+                error.message.toLowerCase().contains(
+                  'delivery otp is missing or expired',
+                ) ||
+                error.message.toLowerCase().contains('invalid delivery code') ||
+                error.message.toLowerCase().contains(
+                  'delivery code is missing or expired',
+                ));
+        if (AuthFeatureFlags.newUiEnabled && wrongOtp) {
+          await Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(
+              builder: (screenContext) => FailureStateScreen(
+                kind: FailureScreenKind.deliveryOtp,
+                onPrimary: () => Navigator.of(screenContext).pop(),
+              ),
+            ),
+          );
+        } else {
+          showAppSnack(
+            context,
+            friendlyError(error),
+            variant: AppSnackVariant.error,
+          );
+        }
       }
     } finally {
       unawaited(discardTemporaryPhotoFile(request.photo?.path));
@@ -630,8 +666,12 @@ Future<bool> showConfirmSheet(
   final confirmed = await showAppBottomSheet<bool>(
     context,
     builder: (sheetContext) => Padding(
-      padding:
-          const EdgeInsets.fromLTRB(AppSpace.xl, 0, AppSpace.xl, AppSpace.xl),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.xl,
+        0,
+        AppSpace.xl,
+        AppSpace.xl,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -684,8 +724,12 @@ class _RejectSheetState extends State<_RejectSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding:
-          const EdgeInsets.fromLTRB(AppSpace.xl, 0, AppSpace.xl, AppSpace.xl),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.xl,
+        0,
+        AppSpace.xl,
+        AppSpace.xl,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -786,8 +830,12 @@ class _VerifySheetState extends State<_VerifySheet> {
     return Form(
       key: _formKey,
       child: Padding(
-        padding:
-            const EdgeInsets.fromLTRB(AppSpace.xl, 0, AppSpace.xl, AppSpace.xl),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpace.xl,
+          0,
+          AppSpace.xl,
+          AppSpace.xl,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
