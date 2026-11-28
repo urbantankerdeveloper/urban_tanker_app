@@ -59,35 +59,40 @@ class DispatcherHomeScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: AppSpace.xl),
-            GridView.count(
-              crossAxisCount: 2,
-              crossAxisSpacing: AppSpace.md,
-              mainAxisSpacing: AppSpace.md,
-              childAspectRatio: 0.85,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _Metric(
-                  label: 'Awaiting assignment',
-                  value: value.awaitingAssignment,
-                  icon: Icons.pending_actions_outlined,
-                ),
-                _Metric(
-                  label: 'Vendor assigned',
-                  value: value.vendorAssigned,
-                  icon: Icons.assignment_turned_in_outlined,
-                ),
-                _Metric(
-                  label: 'En route',
-                  value: value.enRoute,
-                  icon: Icons.local_shipping_outlined,
-                ),
-                _Metric(
-                  label: 'Delivered today',
-                  value: value.deliveredToday,
-                  icon: Icons.check_circle_outline,
-                ),
-              ],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = constraints.maxWidth >= 700 ? 4 : 2;
+                return GridView.count(
+                  crossAxisCount: columns,
+                  crossAxisSpacing: AppSpace.md,
+                  mainAxisSpacing: AppSpace.md,
+                  childAspectRatio: columns == 4 ? 1.35 : 1.15,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _Metric(
+                      label: 'Awaiting assignment',
+                      value: value.awaitingAssignment,
+                      icon: Icons.pending_actions_outlined,
+                    ),
+                    _Metric(
+                      label: 'Vendor assigned',
+                      value: value.vendorAssigned,
+                      icon: Icons.assignment_turned_in_outlined,
+                    ),
+                    _Metric(
+                      label: 'En route',
+                      value: value.enRoute,
+                      icon: Icons.local_shipping_outlined,
+                    ),
+                    _Metric(
+                      label: 'Delivered today',
+                      value: value.deliveredToday,
+                      icon: Icons.check_circle_outline,
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: AppSpace.xl),
             PrimaryButton(
@@ -127,12 +132,19 @@ class _Metric extends StatelessWidget {
     return SurfaceCard(
       padding: const EdgeInsets.all(AppSpace.md),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(icon, color: context.colors.primary),
+          const SizedBox(height: AppSpace.xs),
           Text('$value', style: theme.textTheme.titleLarge),
-          Text(label, style: theme.textTheme.bodyMedium),
+          Text(
+            label,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium,
+          ),
         ],
       ),
     );

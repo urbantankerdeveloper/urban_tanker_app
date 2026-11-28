@@ -51,6 +51,7 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 0;
+  final Set<int> _visitedTabs = {0};
   List<TankerService> _services = const [];
   bool _loadingServices = false;
   bool _bookingFormOpening = false;
@@ -237,12 +238,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// Switches to [page] if the current role has a tab for it.
   void _selectPage(ShellPage page) {
     final index = tabsForRole(role).indexWhere((tab) => tab.page == page);
-    if (index >= 0) setState(() => _index = index);
+    if (index >= 0) _selectTab(index);
+  }
+
+  void _selectTab(int index) {
+    _visitedTabs.add(index);
+    setState(() => _index = index);
   }
 
   void _openDestination(WorkspaceNavigationDestination destination) {
     final section = destination.operationsSection;
-    setState(() => _index = destination.index);
+    _selectTab(destination.index);
     if (section != null) _operationsFocus.value = OperationsFocus(section);
   }
 
@@ -252,7 +258,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   void _goHome() {
-    setState(() => _index = 0);
+    _selectTab(0);
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
@@ -262,7 +268,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       showAppSnack(context, 'This notification has no valid destination.');
       return;
     }
-    setState(() => _index = notificationTabIndex(role, item));
+    _selectTab(notificationTabIndex(role, item));
     Navigator.of(context).pop();
     unawaited(openNotificationTarget(context, widget.controller, role, item));
   }
@@ -287,13 +293,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     if (user == null) return const SizedBox.shrink();
     final isCustomer = role == WorkspaceRole.customer;
     final tabs = tabsForRole(role);
-    final appBarTitle =
-        role == WorkspaceRole.admin && user.name.trim().isNotEmpty
-        ? user.name.trim()
+    final displayName = user.name.trim();
+    final appBarTitle = role != WorkspaceRole.customer && displayName.isNotEmpty
+        ? displayName
         : titleForRole(role);
     return Scaffold(
       appBar: AppBar(
-        title: Text(appBarTitle),
+        title: Text(appBarTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             tooltip: 'Home',
@@ -311,14 +317,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               role: role,
               child: SwipeNavigationArea(
                 onSwipeLeft: _index < tabs.length - 1
-                    ? () => setState(() => _index++)
+                    ? () => _selectTab(_index + 1)
                     : null,
-                onSwipeRight: _index > 0
-                    ? () => setState(() => _index--)
-                    : null,
+                onSwipeRight: _index > 0 ? () => _selectTab(_index - 1) : null,
                 child: IndexedStack(
                   index: _index,
-                  children: [for (final tab in tabs) _pageFor(tab.page, user)],
+                  children: [
+                    for (var i = 0; i < tabs.length; i++)
+                      if (i == _index || _visitedTabs.contains(i))
+                        _pageFor(tabs[i].page, user)
+                      else
+                        const SizedBox.shrink(),
+                  ],
                 ),
               ),
             ),
@@ -350,7 +360,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 ),
             ],
             selectedIndex: _index,
-            onSelected: (index) => setState(() => _index = index),
+            onSelected: _selectTab,
           ),
         ],
       ),
@@ -402,6 +412,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ShellPage.dispatchLive => const DispatcherLiveScreen(),
     ShellPage.dispatchAlerts => const DispatcherAlertsScreen(),
     ShellPage.adminDashboard => AdminDashboardScreen(
+      userName: user.name,
       onOpenOperations: _openAdminOperations,
       onOpenReports: () => _selectPage(ShellPage.adminReports),
     ),

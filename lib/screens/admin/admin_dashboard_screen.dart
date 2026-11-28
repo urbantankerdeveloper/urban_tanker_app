@@ -8,11 +8,13 @@ import '../../services/friendly_error.dart';
 
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({
+    required this.userName,
     required this.onOpenOperations,
     required this.onOpenReports,
     super.key,
   });
 
+  final String userName;
   final ValueChanged<OperationsFocus> onOpenOperations;
   final VoidCallback onOpenReports;
 
@@ -46,7 +48,7 @@ class AdminDashboardScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: AppSpace.sm),
                   Text(
-                    'Welcome back, Admin.',
+                    'Welcome back, ${userName.trim().isEmpty ? 'Admin' : userName.trim()}.',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       color: context.colors.onHero,
                     ),
